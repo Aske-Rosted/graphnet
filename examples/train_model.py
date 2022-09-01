@@ -42,7 +42,7 @@ wandb_logger = WandbLogger(
     project="example-script",
     entity="graphnet-team",
     save_dir=WANDB_DIR,
-    log_model=True,
+    log_model=False,
 )
 
 
@@ -61,10 +61,10 @@ def main():
         "accelerator": "gpu",
         "devices": [0],
         "target": "energy",
-        "n_epochs": 5,
+        "n_epochs": 1,
         "patience": 5,
     }
-    archive = "/groups/icecube/asogaard/gnn/results/"
+    archive = "/groups/hep/aske/IceCube/storage/results"
     run_name = "dynedge_{}_example".format(config["target"])
 
     # Log configuration to W&B
