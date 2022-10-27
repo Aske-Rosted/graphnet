@@ -13,12 +13,12 @@ if has_icecube_package():
 
 
 def frame_is_montecarlo(frame: "icetray.I3Frame") -> bool:
-    return ("MCInIcePrimary" in frame) or ("I3MCTree" in frame)
+    return ("MCInIcePrimary" in frame) or ("I3MCTree" in '\t'.join(frame.keys()))
 
 
-def frame_is_noise(frame: "icetray.I3Frame") -> bool:
+def frame_is_noise(frame: "icetray.I3Frame",MCTree="I3MCTree") -> bool:
     try:
-        frame["I3MCTree"][0].energy
+        frame[MCTree][0].energy
         return False
     except:  # noqa: E722
         try:

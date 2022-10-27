@@ -18,8 +18,8 @@ if has_icecube_package():
 
 
 class I3TruthExtractor(I3Extractor):
-    def __init__(self, name="truth", borders=None):
-        super().__init__(name)
+    def __init__(self, name="truth", borders=None, MCTree="I3MCTree"):
+        super().__init__(name,MCTree = MCTree)
         if borders is None:
             border_xy = np.array(
                 [
@@ -61,7 +61,7 @@ class I3TruthExtractor(I3Extractor):
     def __call__(self, frame, padding_value=-1) -> dict:
         """Extracts truth features."""
         is_mc = frame_is_montecarlo(frame)
-        is_noise = frame_is_noise(frame)
+        is_noise = frame_is_noise(frame,MCTree=self._MCTree)
         sim_type = self._find_data_type(is_mc, self._i3_file)
 
         output = {
@@ -197,7 +197,7 @@ class I3TruthExtractor(I3Extractor):
         return output
 
     def _extract_dbang_decay_length(self, frame, padding_value):
-        mctree = frame["I3MCTree"]
+        mctree = frame[self._MCTree]
         try:
             p_true = mctree.primaries[0]
             p_daughters = mctree.get_daughters(p_true)
@@ -311,11 +311,11 @@ class I3TruthExtractor(I3Extractor):
             try:
                 MCInIcePrimary = frame["MCInIcePrimary"]
             except KeyError:
-                MCInIcePrimary = frame["I3MCTree"][0]
+                MCInIcePrimary = frame[self._MCTree][0]
             if (
                 MCInIcePrimary.energy != MCInIcePrimary.energy
             ):  # This is a nan check. Only happens for some muons where second item in MCTree is primary. Weird!
-                MCInIcePrimary = frame["I3MCTree"][
+                MCInIcePrimary = frame[self._MCTree][
                     1
                 ]  # For some strange reason the second entry is identical in all variables and has no nans (always muon)
         else:
@@ -345,7 +345,7 @@ class I3TruthExtractor(I3Extractor):
             Tuple[float, float]: Energy of tracks from primary, and corresponding
                 inelasticity.
         """
-        mc_tree = frame["I3MCTree"]
+        mc_tree = frame[self._MCTree]
         primary = mc_tree.primaries[0]
         daughters = mc_tree.get_daughters(primary)
         tracks = []

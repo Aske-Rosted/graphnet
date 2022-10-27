@@ -11,7 +11,7 @@ if has_icecube_package():
 class I3Extractor(ABC, LoggerMixin):
     """Extracts relevant information from physics frames."""
 
-    def __init__(self, name):
+    def __init__(self, name,MCTree="I3MCTree"):
 
         # Member variables
         self._i3_file = None
@@ -19,6 +19,7 @@ class I3Extractor(ABC, LoggerMixin):
         self._gcd_dict = None
         self._calibration = None
         self._name = name
+        self._MCTree  = MCTree
 
     def set_files(self, i3_file, gcd_file):
         # @TODO: Is it necessary to set the `i3_file`? It is only used in one
