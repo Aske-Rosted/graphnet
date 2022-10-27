@@ -216,7 +216,7 @@ class Dataset(ABC, torch.utils.data.Dataset, LoggerMixin):
         """Return a list missing columns in `table`."""
         for column in columns:
             try:
-                self._query_table(table, [column], 0)
+                self._query_table(table, [column], self._indices[0])
             except ColumnMissingException:
                 if table not in self._missing_variables:
                     self._missing_variables[table] = []

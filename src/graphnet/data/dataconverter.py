@@ -412,6 +412,8 @@ class DataConverter(ABC, LoggerMixin):
 
             # Extract data from I3Frame
             results = self._extractors(frame)
+            if {} in results:
+                continue
             data_dict = OrderedDict(zip(self._table_names, results))
 
             # If an I3GenericExtractor is used, we want each automatically
