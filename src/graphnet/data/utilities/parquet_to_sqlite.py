@@ -106,7 +106,7 @@ class ParquetToSQLiteConverter(LoggerMixin):
         field_name: str = None,
         n_events_in_file: int = None,
     ):
-        df = self._make_df(ak_array, field_name, n_events_in_file)
+        df = self._convert_to_dataframe(ak_array, field_name, n_events_in_file)
         if field_name in self._created_tables:
             save_to_sql(
                 database_path,
@@ -156,6 +156,11 @@ class ParquetToSQLiteConverter(LoggerMixin):
         else:
             event_nos = np.arange(0, n_events_in_file, 1) + self._event_counter
         df["event_no"] = event_nos
+
+        df.drop(columns = df.columns[(df.dtypes == 'object').values])
+        # for i in df.columns[(df.dtypes == 'object').values]:
+        #      df[i] = df[i].astype(type(df[i][0]))
+
         return df
 
     def _create_output_directories(self, outdir: str, database_name: str):

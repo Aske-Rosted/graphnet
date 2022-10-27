@@ -18,7 +18,7 @@ def run_sql_code(database: str, code: str):
     c.close()
 
 
-def save_to_sql(df: pd.DataFrame, table_name: str, database: str):
+def save_to_sql(database: str, table_name: str, df: pd.DataFrame):
     """Save a dataframe `df` to a table `table_name` in SQLite database `database`.
 
     Table must exist already.
@@ -67,6 +67,8 @@ def create_table(
                 type_ = "INTEGER PRIMARY KEY NOT NULL"
             else:
                 type_ = "NOT NULL"
+        else:
+                type_ = "FLOAT"
         query_columns.append(f"{column} {type_}")
     query_columns = ", ".join(query_columns)
 
