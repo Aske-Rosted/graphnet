@@ -169,7 +169,7 @@ class SQLiteDataConverter(DataConverter):
                 else:
                     type_ = "NOT NULL"
             else:
-                type_ = "FLOAT"
+                type_ = database[column].dtype
             query_columns.append(f"{column} {type_}")
         query_columns = ", ".join(query_columns)
 
