@@ -52,9 +52,9 @@ class SQLiteDataset(Dataset):
             selection = "1=1"  # Identically true, to select all
 
         if self._database_list is None:
-            index = self._indices[index]
+            index = self._indices#[0] #index
         else:
-            index = self._indices[index][0]
+            index = self._indices[0]#[0] #index
 
         # Query table
         self._establish_connection(index)
