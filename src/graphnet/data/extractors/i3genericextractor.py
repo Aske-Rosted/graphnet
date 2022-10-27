@@ -111,7 +111,7 @@ class I3GenericExtractor(I3Extractor):
             except KeyError:
                 if self._keys is not None:
                     self.logger.warning(f"Key {key} not in frame. Skipping")
-                continue
+                break#continue
 
             # Special case(s)
             # -- Pulse series map
