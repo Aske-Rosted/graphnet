@@ -103,12 +103,13 @@ class DynEdgeHE(GNN):
         assert all(
             all(size > 0 for size in sizes) for sizes in dynedge_layer_sizes
         )
-
+        # reduction_layers
         self._dynedge_layer_sizes = dynedge_layer_sizes
         if reduction_layers is None:
             reduction_layers = [False] * len(dynedge_layer_sizes)
-        # Post-processing layer sizes
+        self._reduction_layers = reduction_layers
 
+        # Post-processing layer sizes
         reduction_inds = torch.squeeze(
             torch.argwhere(Tensor(reduction_layers)), dim=1
         )
@@ -217,13 +218,6 @@ class DynEdgeHE(GNN):
             torch.nn.ReLU(), torch.nn.Softmax(dim=0)
         )
         self._construct_layers()
-        if reduction_layers:
-            self._reduction_layers = reduction_layers
-            assert len(self._reduction_layers) == len(
-                self._dynedge_layer_sizes
-            )
-        else:
-            self._reduction_layers = [False for _ in self._dynedge_layer_sizes]
 
     def _construct_layers(self) -> None:
         """Construct layers (torch.nn.Modules)."""
@@ -250,7 +244,7 @@ class DynEdgeHE(GNN):
                 aggr="add",
                 nb_neighbors=(
                     self._nb_neighbours
-                    + torch.floor(Tensor([len(self._conv_layers) / 3]) * 3)
+                    + sum(self._reduction_layers[: len(self._conv_layers)]) * 3
                 ),
                 features_subset=self._features_subset,
             )
