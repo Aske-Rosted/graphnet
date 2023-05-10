@@ -84,7 +84,11 @@ def _group_identical(
     return torch.unique(tensor, return_inverse=True, sorted=False, dim=0)[1]
 
 
-def group_by(data: Union[Data, Batch], keys: List[str]) -> LongTensor:
+def group_by(
+    data: Union[Data, Batch],
+    keys: Optional[List[str]] = None,
+    batch: Optional[Tensor] = None,
+) -> LongTensor:
     """Group nodes in `data` that have identical values of `keys`.
 
     This grouping is done with in each event in case of batching. This allows
@@ -102,9 +106,18 @@ def group_by(data: Union[Data, Batch], keys: List[str]) -> LongTensor:
         groupby(data, ['f2'])       -> [0, 1, 1, 1, 2]
         groupby(data, ['f1', 'f2']) -> [0, 1, 2, 2, 3]
     """
-    features = [getattr(data, key) for key in keys]
-    tensor = torch.stack(features).T  # .int()  @TODO: Required? Use rounding?
-    batch = getattr(data, "batch", None)
+    if keys:
+        features = [getattr(data, key) for key in keys]
+        tensor = torch.stack(
+            features
+        ).T  # .int()  @TODO: Required? Use rounding?
+    else:
+        tensor = data
+    assert isinstance(
+        type(tensor), type(torch.tensor(0))
+    ), "Wrong type found in groupby data ensure tensor matrix format."
+    if batch is not None:
+        batch = getattr(data, "batch", None)
     index = _group_identical(tensor, batch)
     return index
 
