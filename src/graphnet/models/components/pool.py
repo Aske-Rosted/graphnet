@@ -114,7 +114,7 @@ def group_by(
     else:
         tensor = data
     assert isinstance(
-        type(tensor), type(torch.tensor(0))
+        type(tensor), torch.Tensor
     ), "Wrong type found in groupby data ensure tensor matrix format."
     if batch is not None:
         batch = getattr(data, "batch", None)

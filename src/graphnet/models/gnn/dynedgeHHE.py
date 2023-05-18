@@ -14,8 +14,7 @@ from graphnet.utilities.config import save_model_config
 from graphnet.models.gnn.gnn import GNN
 from graphnet.models import Model
 from graphnet.models.utils import calculate_xyzt_homophily
-from graphnet.models.components.pool import group_by
-
+import time
 
 from math import ceil
 
@@ -391,8 +390,11 @@ class NodeTimeRNN(GNN):
         """Apply learnable forward pass to the GNN."""
         x, batch = data.x, data.batch
 
-        # DOM_index = group_by(data.x[:,:3],batch)
-        x = NodeTimeRNN.dom_id(x, batch, self.device)
+        x = NodeTimeRNN.dom_id(
+            x,
+            batch,
+            self.device,
+        )
 
         # get location of first occurence of each unique value
 
@@ -443,7 +445,7 @@ class NodeTimeRNN(GNN):
     @torch.jit.script
     def dom_data_to_list(
         x: Tensor, batch: Tensor, unique: Tensor
-    ) -> Tuple[List[Tensor], List[Tensor], Tensor]:
+    ) -> Tuple[List[Tensor], List[Tensor], List[Tensor]]:
         """Convert DOM data to list of DOM activations.
 
         Args:
@@ -469,6 +471,7 @@ class NodeTimeRNN(GNN):
 
         return dom_data_list, xyzt_list, new_batch
 
+    @torch.jit.script
     def dom_id(x: Tensor, batch: Tensor, device: torch.device) -> Tensor:
         """Create unique DOM index.
 
