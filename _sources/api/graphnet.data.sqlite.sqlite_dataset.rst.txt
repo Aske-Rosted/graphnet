@@ -1,8 +1,0 @@
-
-sqlite\_dataset
-===============
-
-.. automodule:: graphnet.data.sqlite.sqlite_dataset
-   :members:
-   :undoc-members:
-   :show-inheritance:

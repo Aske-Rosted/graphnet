@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 
-<html lang="en">
+<html lang="en" data-content_root="../">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
 
 
@@ -112,18 +111,26 @@
     background: rgba(0,0,0,0.03);
   }
 
+  #eu-emblem {
+    margin: 0;
+  }
+
+  #eu-emblem figcaption {
+    display: none;
+  }
+
 </style>
-    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/material.css" />
-    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
-    <script src="../_static/doctools.js"></script>
-    <script src="../_static/sphinx_highlight.js"></script>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=83e35b93" />
+    <link rel="stylesheet" type="text/css" href="../_static/material.css?v=79c92029" />
+    <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../_static/doctools.js?v=888ff710"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="icon" href="../_static/favicon.svg"/>
     <link rel="author" title="About these documents" href="../about.html" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="sqlite_dataconverter" href="graphnet.data.sqlite.sqlite_dataconverter.html" />
-    <link rel="prev" title="parquet_dataset" href="graphnet.data.parquet.parquet_dataset.html" />
+    <link rel="prev" title="parquet_dataconverter" href="graphnet.data.parquet.parquet_dataconverter.html" />
   
    
 
@@ -170,7 +177,7 @@
   <label class="md-search__overlay" for="__search"></label>
   <div class="md-search__inner" role="search">
     <form class="md-search__form" action="../search.html" method="get" name="search">
-      <input type="text" class="md-search__input" name="q" placeholder="Search"
+      <input type="text" class="md-search__input" name="q" placeholder=""Search""
              autocapitalize="off" autocomplete="off" spellcheck="false"
              data-md-component="query" data-md-state="active">
       <label class="md-icon md-search__icon" for="__search"></label>
@@ -302,6 +309,13 @@
     <li class="md-nav__item">
     
     
+      <a href="graphnet.data.dataset.html" class="md-nav__link">dataset</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
       <a href="graphnet.data.extractors.html" class="md-nav__link">extractors</a>
       
     
@@ -331,20 +345,6 @@
     
     
       <a href="graphnet.data.sqlite.sqlite_dataconverter.html" class="md-nav__link">sqlite_dataconverter</a>
-      
-    
-    </li>
-    <li class="md-nav__item">
-    
-    
-      <a href="graphnet.data.sqlite.sqlite_dataset.html" class="md-nav__link">sqlite_dataset</a>
-      
-    
-    </li>
-    <li class="md-nav__item">
-    
-    
-      <a href="graphnet.data.sqlite.sqlite_dataset_perturbed.html" class="md-nav__link">sqlite_dataset_perturbed</a>
       
     
     </li>
@@ -382,13 +382,6 @@
     
     
       <a href="graphnet.data.dataloader.html" class="md-nav__link">dataloader</a>
-      
-    
-    </li>
-    <li class="md-nav__item">
-    
-    
-      <a href="graphnet.data.dataset.html" class="md-nav__link">dataset</a>
       
     
     </li>
@@ -468,7 +461,7 @@
           <article class="md-content__inner md-typeset" role="main">
             
   <section id="module-graphnet.data.sqlite">
-<span id="sqlite"></span><h1 id="api-graphnet-data-sqlite--page-root">sqlite<a class="headerlink" href="#api-graphnet-data-sqlite--page-root" title="Permalink to this heading">¶</a></h1>
+<span id="sqlite"></span><h1 id="api-graphnet-data-sqlite--page-root">sqlite<a class="headerlink" href="#api-graphnet-data-sqlite--page-root" title="Link to this heading">¶</a></h1>
 <p>SQLite-specific implementation of data classes.</p>
 <p><h2> Submodules </h2></p>
 <div class="toctree-wrapper compound">
@@ -478,14 +471,6 @@
 <li class="toctree-l2"><a class="reference internal" href="graphnet.data.sqlite.sqlite_dataconverter.html#graphnet.data.sqlite.sqlite_dataconverter.construct_dataframe"><code class="docutils literal notranslate"><span class="pre">construct_dataframe()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="graphnet.data.sqlite.sqlite_dataconverter.html#graphnet.data.sqlite.sqlite_dataconverter.is_pulse_map"><code class="docutils literal notranslate"><span class="pre">is_pulse_map()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="graphnet.data.sqlite.sqlite_dataconverter.html#graphnet.data.sqlite.sqlite_dataconverter.is_mc_tree"><code class="docutils literal notranslate"><span class="pre">is_mc_tree()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="graphnet.data.sqlite.sqlite_dataset.html">sqlite_dataset</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="graphnet.data.sqlite.sqlite_dataset.html#graphnet.data.sqlite.sqlite_dataset.SQLiteDataset"><code class="docutils literal notranslate"><span class="pre">SQLiteDataset</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="graphnet.data.sqlite.sqlite_dataset_perturbed.html">sqlite_dataset_perturbed</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="graphnet.data.sqlite.sqlite_dataset_perturbed.html#graphnet.data.sqlite.sqlite_dataset_perturbed.SQLiteDatasetPerturbed"><code class="docutils literal notranslate"><span class="pre">SQLiteDatasetPerturbed</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="graphnet.data.sqlite.sqlite_utilities.html">sqlite_utilities</a><ul>
@@ -512,7 +497,7 @@
     <div class="md-footer-nav">
       <nav class="md-footer-nav__inner md-grid">
           
-            <a href="graphnet.data.parquet.parquet_dataset.html" title="parquet_dataset"
+            <a href="graphnet.data.parquet.parquet_dataconverter.html" title="parquet_dataconverter"
                class="md-flex md-footer-nav__link md-footer-nav__link--prev"
                rel="prev">
               <div class="md-flex__cell md-flex__cell--shrink">
@@ -521,7 +506,7 @@
               <div class="md-flex__cell md-flex__cell--stretch md-footer-nav__title">
                 <span class="md-flex__ellipsis">
                   <span
-                      class="md-footer-nav__direction"> Previous </span> parquet_dataset </span>
+                      class="md-footer-nav__direction"> "Previous" </span> parquet_dataconverter </span>
               </div>
             </a>
           
@@ -531,7 +516,7 @@
                rel="next">
             <div class="md-flex__cell md-flex__cell--stretch md-footer-nav__title"><span
                 class="md-flex__ellipsis"> <span
-                class="md-footer-nav__direction"> Next </span> sqlite_dataconverter </span>
+                class="md-footer-nav__direction"> "Next" </span> sqlite_dataconverter </span>
             </div>
             <div class="md-flex__cell md-flex__cell--shrink"><i
                 class="md-icon md-icon--arrow-forward md-footer-nav__button"></i>
@@ -549,7 +534,7 @@
               
           </div>
             Created using
-            <a href="http://www.sphinx-doc.org/">Sphinx</a> 6.2.1.
+            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.2.5.
              and
             <a href="https://github.com/bashtage/sphinx-material/">Material for
               Sphinx</a>
