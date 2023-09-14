@@ -54,6 +54,7 @@ class DatasetConfig(BaseConfig):
     loss_weight_default_value: Optional[float] = None
     seed: Optional[int] = None
     graph_definition: Any = None
+    use_cache: bool = True
 
     def __init__(self, **data: Any) -> None:
         """Construct `DataConfig`.

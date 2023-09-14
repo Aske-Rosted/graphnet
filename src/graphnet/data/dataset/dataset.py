@@ -208,6 +208,7 @@ class Dataset(Logger, Configurable, torch.utils.data.Dataset, ABC):
         loss_weight_column: Optional[str] = None,
         loss_weight_default_value: Optional[float] = None,
         seed: Optional[int] = None,
+        use_cache: bool = True,
     ):
         """Construct Dataset.
 
@@ -254,6 +255,7 @@ class Dataset(Logger, Configurable, torch.utils.data.Dataset, ABC):
                 `"10000 random events ~ event_no % 5 > 0"` or `"20% random
                 events ~ event_no % 5 > 0"`).
             graph_definition: Method that defines the graph representation.
+            use_cache: Whether or not to save indices and selections to a temporary cache for faster initializing.
         """
         # Base class constructor
         super().__init__(name=__name__, class_name=self.__class__.__name__)
@@ -325,6 +327,7 @@ class Dataset(Logger, Configurable, torch.utils.data.Dataset, ABC):
             self,
             index_column=index_column,
             seed=seed,
+            use_cache=use_cache,
         )
 
         # Implementation-specific initialisation.
