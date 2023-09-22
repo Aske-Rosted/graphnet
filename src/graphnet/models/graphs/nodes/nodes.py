@@ -120,7 +120,7 @@ class NodesAsDOMTimeSeries(NodeDefinition):
 
     def _construct_nodes(self, x: torch.Tensor) -> Data:
         """Construct nodes from raw node features ´x´."""
-        #
+        # sort by time
         x = x[x[:, self._time_index].sort().indices]
         # Group pulses on the same DOM
         dom_index = _group_identical(x[:, self._id_columns])
@@ -142,5 +142,7 @@ class NodesAsDOMTimeSeries(NodeDefinition):
         time = time / charge
         x = torch.column_stack([x, time, charge])
         time_series, sort_ind = self._sort_by_n_pulses(time_series)
+        cutter = torch.tensor([len(ts) for ts in time_series])
         x = x[sort_ind]
-        return Data(x=x, time_series=[time_series])
+        time_series = torch.concat(time_series)
+        return Data(x=x, time_series=time_series, cutter=cutter, n_doms=len(x))
