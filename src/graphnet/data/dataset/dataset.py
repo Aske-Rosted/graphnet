@@ -112,6 +112,20 @@ class Dataset(Logger, Configurable, torch.utils.data.Dataset, ABC):
             "graph_definition" in source.dict().keys()
         ), "`DatasetConfig` incompatible with current GraphNeT version."
 
+        # Parse set of `path`s if path is list of paths.
+        if isinstance(source.path, type(list([str]))):
+            for i, path in enumerate(source.path):
+                source.path = path
+                if i == 0:
+                    datasets = cls.from_config(source)
+                else:
+                    tmp_dataset = cls.from_config(source)
+                    for key in datasets.keys():
+                        datasets[key] = cls.concatenate(
+                            [datasets[key], tmp_dataset[key]]
+                        )
+            return datasets
+
         # Parse set of `selection``.
         if isinstance(source.selection, dict):
             return cls._construct_datasets_from_dict(source)
