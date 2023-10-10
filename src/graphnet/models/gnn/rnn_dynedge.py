@@ -19,8 +19,8 @@ class RNN_DynEdge(GNN):
         nb_inputs: int,
         *,
         nb_neighbours: int = 8,
-        RNN_layers: int = 2,
-        RNN_hidden_size: int = 128,
+        RNN_layers: int = 3,
+        RNN_hidden_size: int = 256,
         features_subset: Optional[Union[List[int], slice]] = None,
         dynedge_layer_sizes: Optional[List[Tuple[int, ...]]] = None,
         post_processing_layer_sizes: Optional[List[int]] = None,
@@ -59,6 +59,10 @@ class RNN_DynEdge(GNN):
                 ),
                 (
                     512,
+                    1024,
+                ),
+                (
+                    1024,
                     1024,
                 ),
                 (
