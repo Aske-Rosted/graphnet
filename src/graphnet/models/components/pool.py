@@ -65,6 +65,7 @@ def sum_pool_and_distribute(
     tensor_unpooled = tensor_pooled[inv]
     return tensor_unpooled
 
+
 @torch.jit.script
 def _group_identical(
     tensor: Tensor, batch: Optional[LongTensor] = None

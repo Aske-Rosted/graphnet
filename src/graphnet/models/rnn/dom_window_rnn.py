@@ -60,18 +60,19 @@ class Dom_Window_RNN(GNN):
         #     dropout=dropout,
         #     elementwise_affine=elementwise_affine,
         # )
+
     def forward(self, data: Data) -> torch.Tensor:
         """Apply learnable forward pass to the GNN."""
-        data.time_series = data.time_series.reshape(data.time_series.shape[0],data.time_series.shape[1],1)
+        data.time_series = data.time_series.reshape(
+            data.time_series.shape[0], data.time_series.shape[1], 1
+        )
 
         # apply rnn layer
         # initial_state = torch.zeros(self._num_layers,data.time_series.shape[1],self._hidden_size,device=data.time_series.device)
         rnn_out = self._rnn(data.time_series)[-1][0]  # apply rnn layer
 
         # add rnn output to node features
-        data.x = torch.hstack(
-            [data.x, rnn_out]
-        ) 
+        data.x = torch.hstack([data.x, rnn_out])
 
         return data
 
@@ -108,7 +109,7 @@ class Dom_Window_RNN(GNN):
 #         else:
 #             self.ln_ih = ln(3 * hidden_size, elementwise_affine=False)
 #             self.ln_hh = ln(3 * hidden_size, elementwise_affine=False)
-        
+
 
 #     @torch.jit.script_method
 #     def forward(self, input, state):
@@ -125,11 +126,11 @@ class Dom_Window_RNN(GNN):
 #         reset = torch.sigmoid(reset)
 #         update = torch.sigmoid(update)
 #         new = torch.tanh(new_igates + reset * new_hgates)
-        
+
 #         hy = (1 - update) * new + update * hx
 
 #         return hy, hy
-    
+
 
 # def init_stacked_gru(num_layers, layer, first_layer_args, other_layer_args):
 #     layers = [layer(*first_layer_args)] + [layer(*other_layer_args)
@@ -173,7 +174,7 @@ class Dom_Window_RNN(GNN):
 #             output_states += [out_state]
 #             i += 1
 #         return output, output_states
-    
+
 # def script_lngru(input_size, hidden_size, num_layers,dropout=False,elementwise_affine=True):
 #     '''Returns a ScriptModule that mimics a PyTorch native LSTM.'''
 
@@ -183,4 +184,3 @@ class Dom_Window_RNN(GNN):
 
 #     return stack_type(num_layers, layer_type,
 #                       first_layer_args=[LayerNormGRUCell, input_size, hidden_size,elementwise_affine], other_layer_args=[LayerNormGRUCell, hidden_size * 1,                                      hidden_size,elementwise_affine], dropout=dropout)
-

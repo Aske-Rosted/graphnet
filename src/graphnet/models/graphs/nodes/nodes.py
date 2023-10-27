@@ -12,6 +12,7 @@ from graphnet.models import Model
 from graphnet.models.components.pool import _group_identical
 from time import time
 
+
 class NodeDefinition(Model):  # pylint: disable=too-few-public-methods
     """Base class for graph building."""
 
@@ -123,18 +124,23 @@ class NodesAsDOMTimeSeries(NodeDefinition):
         # sort by time
         x = x[x[:, self._time_index].sort().indices]
         # undo log10 scaling since we want to sum up charge
-        x[:,self._charge_index] = torch.pow(10,x[:,self._charge_index])
+        x[:, self._charge_index] = torch.pow(10, x[:, self._charge_index])
         # shift time to positive values with a small offset
-        x[:,self._time_index] +=  -min(x[:,self._time_index])
+        x[:, self._time_index] += -min(x[:, self._time_index])
         # Group pulses on the same DOM
         dom_index = _group_identical(x[:, self._id_columns])
 
         val, ind = dom_index.sort(stable=True)
-        counts = torch.concat([torch.tensor([0]),val.bincount().cumsum(-1)[:-1]])
-        unique_doms = x[:, self._id_columns+[self._time_index]][ind][counts]
+        counts = torch.concat(
+            [torch.tensor([0]), val.bincount().cumsum(-1)[:-1]]
+        )
+        unique_doms = x[:, self._id_columns + [self._time_index]][ind][counts]
 
         time_series = [
-            x[dom_index == index_key][:,[self._charge_index,self._time_index]] for index_key in dom_index.unique()
+            x[dom_index == index_key][
+                :, [self._charge_index, self._time_index]
+            ]
+            for index_key in dom_index.unique()
         ]
         # add total charge to unique dom features and apply log10 scaling
         charge = torch.stack(
@@ -150,46 +156,74 @@ class NodesAsDOMTimeSeries(NodeDefinition):
 
 
 @torch.jit.script
-def log10powsum(tensor:torch.Tensor) -> torch.Tensor:
-    return torch.log10(torch.sum(torch.pow(10,tensor)))
-    
+def log10powsum(tensor: torch.Tensor) -> torch.Tensor:
+    return torch.log10(torch.sum(torch.pow(10, tensor)))
+
+
 @torch.jit.script
-def pad_charge(tensor:torch.Tensor, time_range:torch.Tensor) -> torch.Tensor:
+def pad_charge(tensor: torch.Tensor, time_range: torch.Tensor) -> torch.Tensor:
     """Pad charge tensor to have same length as time range.
-    
+
     Args:
         tensor: tensor of shape (num_pulses,2) with time and charge.
-        
+
     Returns:
-        tensor: padded charge tensor of shape (len(time_range),1)."""
-    padded = torch.ones(len(time_range))*torch.tensor(-16.)
+        tensor: padded charge tensor of shape (len(time_range),1).
+    """
+    padded = torch.ones(len(time_range)) * torch.tensor(-16.0)
     for val in time_range:
-        if (tensor[:,0] == val).any():
-            padded[time_range == val] = tensor[tensor[:,0] == val,1]
+        if (tensor[:, 0] == val).any():
+            padded[time_range == val] = tensor[tensor[:, 0] == val, 1]
 
     return padded
 
-@torch.jit.script
-def return_closest(tt:torch.Tensor, tr:torch.Tensor) -> torch.Tensor:
-    return torch.argmin(abs(tt - tr.unsqueeze(1)),dim=0)
 
 @torch.jit.script
-def sum_charge(x:torch.Tensor,dom_index:torch.Tensor, id_columns:list[int], time_index:int, charge_index:int) -> torch.Tensor:
+def return_closest(tt: torch.Tensor, tr: torch.Tensor) -> torch.Tensor:
+    return torch.argmin(abs(tt - tr.unsqueeze(1)), dim=0)
+
+
+@torch.jit.script
+def sum_charge(
+    x: torch.Tensor,
+    dom_index: torch.Tensor,
+    id_columns: list[int],
+    time_index: int,
+    charge_index: int,
+) -> torch.Tensor:
     """Sum charge of pulses in the same time bin.
-    
+
     Args:
         tensor: tensor of shape (num_pulses,2) with time and charge.
-        
+
     Returns:
-        tensor: padded charge tensor of shape (len(time_range),1)."""
-    x = torch.stack([torch.hstack([
-            x[dom_index == index][:,id_columns+[time_index]][0],log10powsum(x[dom_index == index][:,charge_index])]) for index in torch.unique(dom_index)])
+        tensor: padded charge tensor of shape (len(time_range),1).
+    """
+    x = torch.stack(
+        [
+            torch.hstack(
+                [
+                    x[dom_index == index][:, id_columns + [time_index]][0],
+                    log10powsum(x[dom_index == index][:, charge_index]),
+                ]
+            )
+            for index in torch.unique(dom_index)
+        ]
+    )
     return x
 
+
 @torch.jit.script
-def create_time_series(x:torch.Tensor,dom_index:torch.Tensor, id_columns:list[int], time_index:int, charge_index:int, time_range:torch.Tensor) -> list[torch.Tensor]:
-    """Create time series 
-    
+def create_time_series(
+    x: torch.Tensor,
+    dom_index: torch.Tensor,
+    id_columns: list[int],
+    time_index: int,
+    charge_index: int,
+    time_range: torch.Tensor,
+) -> list[torch.Tensor]:
+    """Create time series.
+
     Args:
         tensor: padded charge tensor of shape (len(time_range),1).
         dom_index: indexing of doms for grouping.
@@ -197,30 +231,64 @@ def create_time_series(x:torch.Tensor,dom_index:torch.Tensor, id_columns:list[in
         time_index: index of time column.
         charge_index: index of charge column.
         time_range: time range to be used for padding.
-        
+
     Returns:
-        tensor: time series of shape (num_pulses,1)."""
+        tensor: time series of shape (num_pulses,1).
+    """
     time_series, unique_doms = [], []
     for index_key in torch.unique(dom_index):
-        unique_doms.append(torch.hstack([x[dom_index == index_key][0][id_columns],x[dom_index == index_key][0][time_index],x[dom_index == index_key][:,charge_index].max()]))
-        time_series.append(pad_charge(x[dom_index == index_key][:,[time_index]+[charge_index]],time_range))
+        unique_doms.append(
+            torch.hstack(
+                [
+                    x[dom_index == index_key][0][id_columns],
+                    x[dom_index == index_key][0][time_index],
+                    x[dom_index == index_key][:, charge_index].max(),
+                ]
+            )
+        )
+        time_series.append(
+            pad_charge(
+                x[dom_index == index_key][:, [time_index] + [charge_index]],
+                time_range,
+            )
+        )
     unique_doms = torch.vstack(unique_doms)
     time_series = torch.vstack(time_series)
     return [unique_doms, time_series]
 
+
 @torch.jit.script
-def get_unique_dom_features(x:torch.Tensor,dom_index:torch.Tensor, id_columns:list[int], time_index:int, charge_index:int, time_range:torch.Tensor) -> torch.Tensor:
-            unique_doms = []
-            for index_key in torch.unique(dom_index):
-                unique_doms.append(torch.hstack([x[dom_index == index_key][0][id_columns],x[dom_index == index_key][0][time_index],x[dom_index == index_key][:,charge_index].max()]))
-            unique_doms = torch.vstack(unique_doms)
-            return unique_doms
+def get_unique_dom_features(
+    x: torch.Tensor,
+    dom_index: torch.Tensor,
+    id_columns: list[int],
+    time_index: int,
+    charge_index: int,
+    time_range: torch.Tensor,
+) -> torch.Tensor:
+    unique_doms = []
+    for index_key in torch.unique(dom_index):
+        unique_doms.append(
+            torch.hstack(
+                [
+                    x[dom_index == index_key][0][id_columns],
+                    x[dom_index == index_key][0][time_index],
+                    x[dom_index == index_key][:, charge_index].max(),
+                ]
+            )
+        )
+    unique_doms = torch.vstack(unique_doms)
+    return unique_doms
 
 
-def create_sparse_charge_series(dom_index:torch.Tensor,time_index:torch.Tensor,values:torch.Tensor) -> torch.Tensor:
-    i = torch.vstack([dom_index,time_index])
+def create_sparse_charge_series(
+    dom_index: torch.Tensor, time_index: torch.Tensor, values: torch.Tensor
+) -> torch.Tensor:
+    i = torch.vstack([dom_index, time_index])
     v = values
-    s = torch.sparse_coo_tensor(i, v, (dom_index.max()+1, time_index.max()+1))
+    s = torch.sparse_coo_tensor(
+        i, v, (dom_index.max() + 1, time_index.max() + 1)
+    )
     s = s.coalesce()
     return s
 
@@ -237,7 +305,7 @@ def create_sparse_charge_series(dom_index:torch.Tensor,time_index:torch.Tensor,v
 #     sorted_time_series = [time_series[i] for i in sort_index]
 #     return sorted_time_series, sort_index
 
-        
+
 class NodesAsDOMTimeWindow(NodeDefinition):
     """Represent each node as DOM a with a time series of pulses."""
 
@@ -272,41 +340,56 @@ class NodesAsDOMTimeWindow(NodeDefinition):
         self._granularity = granularity
 
         super().__init__()
-    
 
     def _construct_nodes(self, x: torch.Tensor) -> Data:
         """Construct nodes from raw node features ´x´."""
         # sort by time
         x = x[x[:, self._time_index].sort().indices]
         # undo log10 scaling since we want to sum up charge
-        x[:,self._charge_index] = torch.pow(10,x[:,self._charge_index])
+        x[:, self._charge_index] = torch.pow(10, x[:, self._charge_index])
         # shift time to positive values with a small offset
-        x[:,self._time_index] +=  (0.1-min(x[:,self._time_index]))
+        x[:, self._time_index] += 0.1 - min(x[:, self._time_index])
 
         # create time range
-        self._time_range = torch.logspace(torch.log2(min(x[:,self._time_index])),(torch.log2(max(x[:,self._time_index]))),self._granularity,base=2.)
+        self._time_range = torch.logspace(
+            torch.log2(min(x[:, self._time_index])),
+            (torch.log2(max(x[:, self._time_index]))),
+            self._granularity,
+            base=2.0,
+        )
 
-        # group pulses on the same DOM 
+        # group pulses on the same DOM
         dom_index = _group_identical(x[:, self._id_columns])
 
         # get unique dom features
         # unique_doms = get_unique_dom_features(x,dom_index,self._id_columns,self._time_index,self._charge_index,self._time_range)
         val, ind = dom_index.sort(stable=True)
-        counts = torch.concat([torch.tensor([0]),val.bincount().cumsum(-1)[:-1]])
-        unique_doms = x[:, self._id_columns+[self._time_index]][ind][counts]
+        counts = torch.concat(
+            [torch.tensor([0]), val.bincount().cumsum(-1)[:-1]]
+        )
+        unique_doms = x[:, self._id_columns + [self._time_index]][ind][counts]
 
         # get coarse time index
-        coarse_time_index = return_closest(x[:,self._time_index],self._time_range)
+        coarse_time_index = return_closest(
+            x[:, self._time_index], self._time_range
+        )
 
         # Create torch sparse tensor summing up charge in the same time bin
-        time_series = create_sparse_charge_series(dom_index,coarse_time_index,x[:,self._charge_index])
+        time_series = create_sparse_charge_series(
+            dom_index, coarse_time_index, x[:, self._charge_index]
+        )
 
         # add total charge to unique dom features
-        unique_doms = torch.hstack([unique_doms,torch._sparse_sum(time_series,dim=1).to_dense().unsqueeze(1)])
+        unique_doms = torch.hstack(
+            [
+                unique_doms,
+                torch._sparse_sum(time_series, dim=1).to_dense().unsqueeze(1),
+            ]
+        )
         # apply inverse hyperbolic sine to charge values (handles zeros unlike log scaling)
-        
-        unique_doms[:,-1] = torch.asinh(5*unique_doms[:,-1])/5
-        time_series = torch.asinh(5*time_series)/5
+
+        unique_doms[:, -1] = torch.asinh(5 * unique_doms[:, -1]) / 5
+        time_series = torch.asinh(5 * time_series) / 5
         # convert to dense tensor
 
         time_series = time_series.to_dense()
@@ -321,13 +404,4 @@ class NodesAsDOMTimeWindow(NodeDefinition):
 
         # unique_doms, time_series = create_time_series(x,dom_index,self._id_columns,self._time_index,self._charge_index,self._time_range)
 
-
-        return Data(x=unique_doms, time_series = time_series)
-    
-
-    
-    
-
-    
-
-
+        return Data(x=unique_doms, time_series=time_series)

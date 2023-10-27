@@ -49,7 +49,9 @@ class Node_RNN(GNN):
     def forward(self, data: Data) -> torch.Tensor:
         """Apply learnable forward pass to the GNN."""
         cutter = data.cutter.cumsum(0)[:-1]
-        time_series = torch.nn.utils.rnn.pack_sequence(data.time_series.tensor_split(cutter.cpu()), enforce_sorted=False)
+        time_series = torch.nn.utils.rnn.pack_sequence(
+            data.time_series.tensor_split(cutter.cpu()), enforce_sorted=False
+        )
 
         rnn_out = self._rnn(time_series)[-1][0]
         # s = 0
@@ -57,7 +59,7 @@ class Node_RNN(GNN):
         # for e in data.n_doms.cumsum(dim=0):
         #     packed_sequences.append(torch.nn.utils.rnn.pack_sequence(
         #         time_series[s:e], enforce_sorted=True
-        #     ))  
+        #     ))
         #     # apply rnn layer
         #     rnn_out.append(self._rnn(ts)[-1][0])
         #     s = e
