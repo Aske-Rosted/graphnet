@@ -114,6 +114,7 @@ class Dataset(Logger, Configurable, torch.utils.data.Dataset, ABC):
 
         # Parse set of `path`s if path is list of paths.
         if isinstance(source.path, type(list([str]))):
+            keep_path = source.path
             for i, path in enumerate(source.path):
                 source.path = path
                 if i == 0:
@@ -124,6 +125,7 @@ class Dataset(Logger, Configurable, torch.utils.data.Dataset, ABC):
                         datasets[key] = cls.concatenate(
                             [datasets[key], tmp_dataset[key]]
                         )
+            source.path = keep_path
             return datasets
 
         # Parse set of `selection``.
