@@ -346,6 +346,7 @@
  | <a href="#U"><strong>U</strong></a>
  | <a href="#V"><strong>V</strong></a>
  | <a href="#W"><strong>W</strong></a>
+ | <a href="#X"><strong>X</strong></a>
  | <a href="#Z"><strong>Z</strong></a>
  
 </div>
@@ -435,11 +436,17 @@
       <li><a href="api/graphnet.models.standard_model.html#graphnet.models.standard_model.StandardModel.compute_loss">compute_loss() (graphnet.models.standard_model.StandardModel method)</a>
 
       <ul>
-        <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.Task.compute_loss">(graphnet.models.task.task.Task method)</a>
+        <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.LearnedTask.compute_loss">(graphnet.models.task.task.LearnedTask method)</a>
+</li>
+        <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.StandardFlowTask.compute_loss">(graphnet.models.task.task.StandardFlowTask method)</a>
+</li>
+        <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.StandardLearnedTask.compute_loss">(graphnet.models.task.task.StandardLearnedTask method)</a>
 </li>
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/graphnet.models.graphs.edges.minkowski.html#graphnet.models.graphs.edges.minkowski.compute_minkowski_distance_mat">compute_minkowski_distance_mat() (in module graphnet.models.graphs.edges.minkowski)</a>
+</li>
       <li><a href="api/graphnet.data.dataset.dataset.html#graphnet.data.dataset.dataset.Dataset.concatenate">concatenate() (graphnet.data.dataset.dataset.Dataset class method)</a>
 </li>
       <li><a href="api/graphnet.utilities.config.configurable.html#graphnet.utilities.config.configurable.Configurable.config">config (graphnet.utilities.config.configurable.Configurable property)</a>
@@ -517,6 +524,8 @@
 </li>
         <li><a href="api/graphnet.models.task.reconstruction.html#graphnet.models.task.reconstruction.EnergyReconstructionWithUncertainty.default_prediction_labels">(graphnet.models.task.reconstruction.EnergyReconstructionWithUncertainty attribute)</a>
 </li>
+        <li><a href="api/graphnet.models.task.reconstruction.html#graphnet.models.task.reconstruction.EnergyTCReconstruction.default_prediction_labels">(graphnet.models.task.reconstruction.EnergyTCReconstruction attribute)</a>
+</li>
         <li><a href="api/graphnet.models.task.reconstruction.html#graphnet.models.task.reconstruction.InelasticityReconstruction.default_prediction_labels">(graphnet.models.task.reconstruction.InelasticityReconstruction attribute)</a>
 </li>
         <li><a href="api/graphnet.models.task.reconstruction.html#graphnet.models.task.reconstruction.PositionReconstruction.default_prediction_labels">(graphnet.models.task.reconstruction.PositionReconstruction attribute)</a>
@@ -552,6 +561,8 @@
         <li><a href="api/graphnet.models.task.reconstruction.html#graphnet.models.task.reconstruction.EnergyReconstructionWithPower.default_target_labels">(graphnet.models.task.reconstruction.EnergyReconstructionWithPower attribute)</a>
 </li>
         <li><a href="api/graphnet.models.task.reconstruction.html#graphnet.models.task.reconstruction.EnergyReconstructionWithUncertainty.default_target_labels">(graphnet.models.task.reconstruction.EnergyReconstructionWithUncertainty attribute)</a>
+</li>
+        <li><a href="api/graphnet.models.task.reconstruction.html#graphnet.models.task.reconstruction.EnergyTCReconstruction.default_target_labels">(graphnet.models.task.reconstruction.EnergyTCReconstruction attribute)</a>
 </li>
         <li><a href="api/graphnet.models.task.reconstruction.html#graphnet.models.task.reconstruction.InelasticityReconstruction.default_target_labels">(graphnet.models.task.reconstruction.InelasticityReconstruction attribute)</a>
 </li>
@@ -614,6 +625,8 @@
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/graphnet.models.task.reconstruction.html#graphnet.models.task.reconstruction.EnergyTCReconstruction">EnergyTCReconstruction (class in graphnet.models.task.reconstruction)</a>
+</li>
       <li><a href="api/graphnet.data.dataset.dataset.html#graphnet.data.dataset.dataset.EnsembleDataset">EnsembleDataset (class in graphnet.data.dataset.dataset)</a>
 </li>
       <li><a href="api/graphnet.utilities.maths.html#graphnet.utilities.maths.eps_like">eps_like() (in module graphnet.utilities.maths)</a>
@@ -643,7 +656,7 @@
 </li>
         <li><a href="api/graphnet.models.detector.icecube.html#graphnet.models.detector.icecube.IceCubeUpgrade.feature_map">(graphnet.models.detector.icecube.IceCubeUpgrade method)</a>
 </li>
-        <li><a href="api/graphnet.models.detector.prometheus.html#graphnet.models.detector.prometheus.Prometheus.feature_map">(graphnet.models.detector.prometheus.Prometheus method)</a>
+        <li><a href="api/graphnet.models.detector.prometheus.html#graphnet.models.detector.prometheus.ORCA150.feature_map">(graphnet.models.detector.prometheus.ORCA150 method)</a>
 </li>
       </ul></li>
       <li><a href="api/graphnet.data.constants.html#graphnet.data.constants.FEATURES">FEATURES (class in graphnet.data.constants)</a>
@@ -668,7 +681,7 @@
 </li>
       <li><a href="api/graphnet.utilities.config.training_config.html#graphnet.utilities.config.training_config.TrainingConfig.fit">fit (graphnet.utilities.config.training_config.TrainingConfig attribute)</a>
 </li>
-      <li><a href="api/graphnet.models.model.html#graphnet.models.model.Model.fit">fit() (graphnet.models.model.Model method)</a>
+      <li><a href="api/graphnet.models.standard_model.html#graphnet.models.standard_model.StandardModel.fit">fit() (graphnet.models.standard_model.StandardModel method)</a>
 
       <ul>
         <li><a href="api/graphnet.training.weight_fitting.html#graphnet.training.weight_fitting.WeightFitter.fit">(graphnet.training.weight_fitting.WeightFitter method)</a>
@@ -709,11 +722,11 @@
 </li>
         <li><a href="api/graphnet.models.graphs.nodes.nodes.html#graphnet.models.graphs.nodes.nodes.NodeDefinition.forward">(graphnet.models.graphs.nodes.nodes.NodeDefinition method)</a>
 </li>
-        <li><a href="api/graphnet.models.model.html#graphnet.models.model.Model.forward">(graphnet.models.model.Model method)</a>
-</li>
         <li><a href="api/graphnet.models.standard_model.html#graphnet.models.standard_model.StandardModel.forward">(graphnet.models.standard_model.StandardModel method)</a>
 </li>
-        <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.Task.forward">(graphnet.models.task.task.Task method)</a>
+        <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.LearnedTask.forward">(graphnet.models.task.task.LearnedTask method)</a>
+</li>
+        <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.StandardFlowTask.forward">(graphnet.models.task.task.StandardFlowTask method)</a>
 </li>
         <li><a href="api/graphnet.training.loss_functions.html#graphnet.training.loss_functions.LogCMK.forward">(graphnet.training.loss_functions.LogCMK static method)</a>
 </li>
@@ -746,6 +759,16 @@
 </li>
       <li><a href="api/graphnet.data.dataconverter.html#graphnet.data.dataconverter.FileSet.gcd_file">gcd_file (graphnet.data.dataconverter.FileSet attribute)</a>
 </li>
+      <li><a href="api/graphnet.models.detector.detector.html#graphnet.models.detector.detector.Detector.geometry_table">geometry_table (graphnet.models.detector.detector.Detector property)</a>
+</li>
+      <li><a href="api/graphnet.models.detector.icecube.html#graphnet.models.detector.icecube.IceCube86.geometry_table_path">geometry_table_path (graphnet.models.detector.icecube.IceCube86 attribute)</a>
+
+      <ul>
+        <li><a href="api/graphnet.models.detector.icecube.html#graphnet.models.detector.icecube.IceCubeUpgrade.geometry_table_path">(graphnet.models.detector.icecube.IceCubeUpgrade attribute)</a>
+</li>
+        <li><a href="api/graphnet.models.detector.prometheus.html#graphnet.models.detector.prometheus.ORCA150.geometry_table_path">(graphnet.models.detector.prometheus.ORCA150 attribute)</a>
+</li>
+      </ul></li>
       <li><a href="api/graphnet.utilities.config.base_config.html#graphnet.utilities.config.base_config.get_all_argument_values">get_all_argument_values() (in module graphnet.utilities.config.base_config)</a>
 </li>
       <li><a href="api/graphnet.utilities.config.parsing.html#graphnet.utilities.config.parsing.get_all_grapnet_classes">get_all_grapnet_classes() (in module graphnet.utilities.config.parsing)</a>
@@ -1193,6 +1216,13 @@
 </li>
       </ul></li>
       <li>
+    graphnet.models.graphs.edges.minkowski
+
+      <ul>
+        <li><a href="api/graphnet.models.graphs.edges.minkowski.html#module-graphnet.models.graphs.edges.minkowski">module</a>
+</li>
+      </ul></li>
+      <li>
     graphnet.models.graphs.graph_definition
 
       <ul>
@@ -1410,6 +1440,13 @@
 </li>
       </ul></li>
       <li>
+    graphnet.utilities.deprecation_tools
+
+      <ul>
+        <li><a href="api/graphnet.utilities.deprecation_tools.html#module-graphnet.utilities.deprecation_tools">module</a>
+</li>
+      </ul></li>
+      <li>
     graphnet.utilities.filesys
 
       <ul>
@@ -1437,6 +1474,8 @@
         <li><a href="api/graphnet.utilities.maths.html#module-graphnet.utilities.maths">module</a>
 </li>
       </ul></li>
+      <li><a href="api/graphnet.training.callbacks.html#graphnet.training.callbacks.GraphnetEarlyStopping">GraphnetEarlyStopping (class in graphnet.training.callbacks)</a>
+</li>
       <li><a href="api/graphnet.deployment.i3modules.graphnet_module.html#graphnet.deployment.i3modules.graphnet_module.GraphNeTI3Module">GraphNeTI3Module (class in graphnet.deployment.i3modules.graphnet_module)</a>
 </li>
       <li><a href="api/graphnet.models.components.pool.html#graphnet.models.components.pool.group_by">group_by() (in module graphnet.models.components.pool)</a>
@@ -1609,6 +1648,8 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/graphnet.training.labels.html#graphnet.training.labels.Label">Label (class in graphnet.training.labels)</a>
 </li>
+      <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.LearnedTask">LearnedTask (class in graphnet.models.task.task)</a>
+</li>
       <li><a href="api/graphnet.models.graphs.utils.html#graphnet.models.graphs.utils.lex_sort">lex_sort() (in module graphnet.models.graphs.utils)</a>
 </li>
       <li><a href="api/graphnet.utilities.config.parsing.html#graphnet.utilities.config.parsing.list_all_submodules">list_all_submodules() (in module graphnet.utilities.config.parsing)</a>
@@ -1668,6 +1709,8 @@
       <li><a href="api/graphnet.models.components.pool.html#graphnet.models.components.pool.min_pool">min_pool() (in module graphnet.models.components.pool)</a>
 </li>
       <li><a href="api/graphnet.models.components.pool.html#graphnet.models.components.pool.min_pool_x">min_pool_x() (in module graphnet.models.components.pool)</a>
+</li>
+      <li><a href="api/graphnet.models.graphs.edges.minkowski.html#graphnet.models.graphs.edges.minkowski.MinkowskiKNNEdges">MinkowskiKNNEdges (class in graphnet.models.graphs.edges.minkowski)</a>
 </li>
       <li><a href="api/graphnet.models.model.html#graphnet.models.model.Model">Model (class in graphnet.models.model)</a>
 </li>
@@ -1821,6 +1864,8 @@
 </li>
         <li><a href="api/graphnet.models.graphs.edges.edges.html#module-graphnet.models.graphs.edges.edges">graphnet.models.graphs.edges.edges</a>
 </li>
+        <li><a href="api/graphnet.models.graphs.edges.minkowski.html#module-graphnet.models.graphs.edges.minkowski">graphnet.models.graphs.edges.minkowski</a>
+</li>
         <li><a href="api/graphnet.models.graphs.graph_definition.html#module-graphnet.models.graphs.graph_definition">graphnet.models.graphs.graph_definition</a>
 </li>
         <li><a href="api/graphnet.models.graphs.graphs.html#module-graphnet.models.graphs.graphs">graphnet.models.graphs.graphs</a>
@@ -1883,6 +1928,8 @@
 </li>
         <li><a href="api/graphnet.utilities.decorators.html#module-graphnet.utilities.decorators">graphnet.utilities.decorators</a>
 </li>
+        <li><a href="api/graphnet.utilities.deprecation_tools.html#module-graphnet.utilities.deprecation_tools">graphnet.utilities.deprecation_tools</a>
+</li>
         <li><a href="api/graphnet.utilities.filesys.html#module-graphnet.utilities.filesys">graphnet.utilities.filesys</a>
 </li>
         <li><a href="api/graphnet.utilities.imports.html#module-graphnet.utilities.imports">graphnet.utilities.imports</a>
@@ -1925,6 +1972,8 @@
 </li>
         <li><a href="api/graphnet.models.task.reconstruction.html#graphnet.models.task.reconstruction.EnergyReconstructionWithUncertainty.nb_inputs">(graphnet.models.task.reconstruction.EnergyReconstructionWithUncertainty attribute)</a>
 </li>
+        <li><a href="api/graphnet.models.task.reconstruction.html#graphnet.models.task.reconstruction.EnergyTCReconstruction.nb_inputs">(graphnet.models.task.reconstruction.EnergyTCReconstruction attribute)</a>
+</li>
         <li><a href="api/graphnet.models.task.reconstruction.html#graphnet.models.task.reconstruction.InelasticityReconstruction.nb_inputs">(graphnet.models.task.reconstruction.InelasticityReconstruction attribute)</a>
 </li>
         <li><a href="api/graphnet.models.task.reconstruction.html#graphnet.models.task.reconstruction.PositionReconstruction.nb_inputs">(graphnet.models.task.reconstruction.PositionReconstruction attribute)</a>
@@ -1939,11 +1988,17 @@
 </li>
         <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.IdentityTask.nb_inputs">(graphnet.models.task.task.IdentityTask property)</a>
 </li>
+        <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.LearnedTask.nb_inputs">(graphnet.models.task.task.LearnedTask property)</a>
+</li>
+        <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.StandardLearnedTask.nb_inputs">(graphnet.models.task.task.StandardLearnedTask property)</a>
+</li>
         <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.Task.nb_inputs">(graphnet.models.task.task.Task property)</a>
 </li>
       </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.StandardFlowTask.nb_inputs">nb_inputs() (graphnet.models.task.task.StandardFlowTask method)</a>
+</li>
       <li><a href="api/graphnet.models.gnn.gnn.html#graphnet.models.gnn.gnn.GNN.nb_outputs">nb_outputs (graphnet.models.gnn.gnn.GNN property)</a>
 
       <ul>
@@ -1968,13 +2023,23 @@
 <h2 id="O">O</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/graphnet.training.callbacks.html#graphnet.training.callbacks.ProgressBar.on_train_epoch_end">on_train_epoch_end() (graphnet.training.callbacks.ProgressBar method)</a>
+      <li><a href="api/graphnet.training.callbacks.html#graphnet.training.callbacks.GraphnetEarlyStopping.on_fit_end">on_fit_end() (graphnet.training.callbacks.GraphnetEarlyStopping method)</a>
 </li>
+      <li><a href="api/graphnet.training.callbacks.html#graphnet.training.callbacks.GraphnetEarlyStopping.on_train_epoch_end">on_train_epoch_end() (graphnet.training.callbacks.GraphnetEarlyStopping method)</a>
+
+      <ul>
+        <li><a href="api/graphnet.training.callbacks.html#graphnet.training.callbacks.ProgressBar.on_train_epoch_end">(graphnet.training.callbacks.ProgressBar method)</a>
+</li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/graphnet.training.callbacks.html#graphnet.training.callbacks.ProgressBar.on_train_epoch_start">on_train_epoch_start() (graphnet.training.callbacks.ProgressBar method)</a>
 </li>
+      <li><a href="api/graphnet.training.callbacks.html#graphnet.training.callbacks.GraphnetEarlyStopping.on_validation_end">on_validation_end() (graphnet.training.callbacks.GraphnetEarlyStopping method)</a>
+</li>
       <li><a href="api/graphnet.utilities.argparse.html#graphnet.utilities.argparse.Options">Options (class in graphnet.utilities.argparse)</a>
+</li>
+      <li><a href="api/graphnet.models.detector.prometheus.html#graphnet.models.detector.prometheus.ORCA150">ORCA150 (class in graphnet.models.detector.prometheus)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -2004,26 +2069,18 @@
 </li>
       <li><a href="api/graphnet.pisa.plotting.html#graphnet.pisa.plotting.plot_1D_contour">plot_1D_contour() (in module graphnet.pisa.plotting)</a>
 </li>
-      <li><a href="api/graphnet.pisa.plotting.html#graphnet.pisa.plotting.plot_2D_contour">plot_2D_contour() (in module graphnet.pisa.plotting)</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/graphnet.pisa.plotting.html#graphnet.pisa.plotting.plot_2D_contour">plot_2D_contour() (in module graphnet.pisa.plotting)</a>
+</li>
       <li><a href="api/graphnet.utilities.argparse.html#graphnet.utilities.argparse.Options.pop_default">pop_default() (graphnet.utilities.argparse.Options method)</a>
 </li>
       <li><a href="api/graphnet.models.task.reconstruction.html#graphnet.models.task.reconstruction.PositionReconstruction">PositionReconstruction (class in graphnet.models.task.reconstruction)</a>
 </li>
-      <li><a href="api/graphnet.models.model.html#graphnet.models.model.Model.predict">predict() (graphnet.models.model.Model method)</a>
-
-      <ul>
-        <li><a href="api/graphnet.models.standard_model.html#graphnet.models.standard_model.StandardModel.predict">(graphnet.models.standard_model.StandardModel method)</a>
+      <li><a href="api/graphnet.models.standard_model.html#graphnet.models.standard_model.StandardModel.predict">predict() (graphnet.models.standard_model.StandardModel method)</a>
 </li>
-      </ul></li>
-      <li><a href="api/graphnet.models.model.html#graphnet.models.model.Model.predict_as_dataframe">predict_as_dataframe() (graphnet.models.model.Model method)</a>
-
-      <ul>
-        <li><a href="api/graphnet.models.standard_model.html#graphnet.models.standard_model.StandardModel.predict_as_dataframe">(graphnet.models.standard_model.StandardModel method)</a>
+      <li><a href="api/graphnet.models.standard_model.html#graphnet.models.standard_model.StandardModel.predict_as_dataframe">predict_as_dataframe() (graphnet.models.standard_model.StandardModel method)</a>
 </li>
-      </ul></li>
       <li><a href="api/graphnet.models.standard_model.html#graphnet.models.standard_model.StandardModel.prediction_labels">prediction_labels (graphnet.models.standard_model.StandardModel property)</a>
 </li>
       <li><a href="api/graphnet.training.callbacks.html#graphnet.training.callbacks.ProgressBar">ProgressBar (class in graphnet.training.callbacks)</a>
@@ -2064,12 +2121,14 @@
 </li>
       <li><a href="api/graphnet.models.coarsening.html#graphnet.models.coarsening.Coarsening.reduce_options">reduce_options (graphnet.models.coarsening.Coarsening attribute)</a>
 </li>
-      <li><a href="api/graphnet.utilities.logging.html#graphnet.utilities.logging.RepeatFilter">RepeatFilter (class in graphnet.utilities.logging)</a>
+      <li><a href="api/graphnet.utilities.deprecation_tools.html#graphnet.utilities.deprecation_tools.rename_state_dict_entries">rename_state_dict_entries() (in module graphnet.utilities.deprecation_tools)</a>
 </li>
-      <li><a href="api/graphnet.utilities.imports.html#graphnet.utilities.imports.requires_icecube">requires_icecube() (in module graphnet.utilities.imports)</a>
+      <li><a href="api/graphnet.utilities.logging.html#graphnet.utilities.logging.RepeatFilter">RepeatFilter (class in graphnet.utilities.logging)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/graphnet.utilities.imports.html#graphnet.utilities.imports.requires_icecube">requires_icecube() (in module graphnet.utilities.imports)</a>
+</li>
       <li><a href="api/graphnet.models.components.layers.html#graphnet.models.components.layers.EdgeConvTito.reset_parameters">reset_parameters() (graphnet.models.components.layers.EdgeConvTito method)</a>
 </li>
       <li><a href="api/graphnet.data.utilities.string_selection_resolver.html#graphnet.data.utilities.string_selection_resolver.StringSelectionResolver.resolve">resolve() (graphnet.data.utilities.string_selection_resolver.StringSelectionResolver method)</a>
@@ -2112,6 +2171,18 @@
 </li>
       <li><a href="api/graphnet.utilities.config.dataset_config.html#graphnet.utilities.config.dataset_config.DatasetConfig.selection">selection (graphnet.utilities.config.dataset_config.DatasetConfig attribute)</a>
 </li>
+      <li><a href="api/graphnet.models.detector.icecube.html#graphnet.models.detector.icecube.IceCube86.sensor_id_column">sensor_id_column (graphnet.models.detector.icecube.IceCube86 attribute)</a>
+
+      <ul>
+        <li><a href="api/graphnet.models.detector.icecube.html#graphnet.models.detector.icecube.IceCubeUpgrade.sensor_id_column">(graphnet.models.detector.icecube.IceCubeUpgrade attribute)</a>
+</li>
+        <li><a href="api/graphnet.models.detector.prometheus.html#graphnet.models.detector.prometheus.ORCA150.sensor_id_column">(graphnet.models.detector.prometheus.ORCA150 attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="api/graphnet.models.detector.detector.html#graphnet.models.detector.detector.Detector.sensor_index_name">sensor_index_name (graphnet.models.detector.detector.Detector property)</a>
+</li>
+      <li><a href="api/graphnet.models.detector.detector.html#graphnet.models.detector.detector.Detector.sensor_position_names">sensor_position_names (graphnet.models.detector.detector.Detector property)</a>
+</li>
       <li><a href="api/graphnet.data.extractors.utilities.collections.html#graphnet.data.extractors.utilities.collections.serialise">serialise() (in module graphnet.data.extractors.utilities.collections)</a>
 </li>
       <li><a href="api/graphnet.data.extractors.i3extractor.html#graphnet.data.extractors.i3extractor.I3Extractor.set_files">set_files() (graphnet.data.extractors.i3extractor.I3Extractor method)</a>
@@ -2120,13 +2191,15 @@
         <li><a href="api/graphnet.data.extractors.i3extractor.html#graphnet.data.extractors.i3extractor.I3ExtractorCollection.set_files">(graphnet.data.extractors.i3extractor.I3ExtractorCollection method)</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/graphnet.models.graphs.nodes.nodes.html#graphnet.models.graphs.nodes.nodes.NodeDefinition.set_number_of_inputs">set_number_of_inputs() (graphnet.models.graphs.nodes.nodes.NodeDefinition method)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/graphnet.models.graphs.nodes.nodes.html#graphnet.models.graphs.nodes.nodes.NodeDefinition.set_output_feature_names">set_output_feature_names() (graphnet.models.graphs.nodes.nodes.NodeDefinition method)</a>
 </li>
       <li><a href="api/graphnet.utilities.logging.html#graphnet.utilities.logging.Logger.setLevel">setLevel() (graphnet.utilities.logging.Logger method)</a>
+</li>
+      <li><a href="api/graphnet.training.callbacks.html#graphnet.training.callbacks.GraphnetEarlyStopping.setup">setup() (graphnet.training.callbacks.GraphnetEarlyStopping method)</a>
 </li>
       <li><a href="api/graphnet.models.standard_model.html#graphnet.models.standard_model.StandardModel.shared_step">shared_step() (graphnet.models.standard_model.StandardModel method)</a>
 </li>
@@ -2136,6 +2209,10 @@
 </li>
       <li><a href="api/graphnet.utilities.argparse.html#graphnet.utilities.argparse.ArgumentParser.standard_arguments">standard_arguments (graphnet.utilities.argparse.ArgumentParser attribute)</a>
 </li>
+      <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.StandardFlowTask">StandardFlowTask (class in graphnet.models.task.task)</a>
+</li>
+      <li><a href="api/graphnet.models.task.task.html#graphnet.models.task.task.StandardLearnedTask">StandardLearnedTask (class in graphnet.models.task.task)</a>
+</li>
       <li><a href="api/graphnet.models.standard_model.html#graphnet.models.standard_model.StandardModel">StandardModel (class in graphnet.models.standard_model)</a>
 </li>
       <li><a href="api/graphnet.models.components.pool.html#graphnet.models.components.pool.std_pool">std_pool() (in module graphnet.models.components.pool)</a>
@@ -2143,6 +2220,16 @@
       <li><a href="api/graphnet.models.components.pool.html#graphnet.models.components.pool.std_pool_x">std_pool_x() (in module graphnet.models.components.pool)</a>
 </li>
       <li><a href="api/graphnet.utilities.logging.html#graphnet.utilities.logging.Logger.stream_handlers">stream_handlers (graphnet.utilities.logging.Logger property)</a>
+</li>
+      <li><a href="api/graphnet.models.detector.icecube.html#graphnet.models.detector.icecube.IceCube86.string_id_column">string_id_column (graphnet.models.detector.icecube.IceCube86 attribute)</a>
+
+      <ul>
+        <li><a href="api/graphnet.models.detector.icecube.html#graphnet.models.detector.icecube.IceCubeUpgrade.string_id_column">(graphnet.models.detector.icecube.IceCubeUpgrade attribute)</a>
+</li>
+        <li><a href="api/graphnet.models.detector.prometheus.html#graphnet.models.detector.prometheus.ORCA150.string_id_column">(graphnet.models.detector.prometheus.ORCA150 attribute)</a>
+</li>
+      </ul></li>
+      <li><a href="api/graphnet.models.detector.detector.html#graphnet.models.detector.detector.Detector.string_index_name">string_index_name (graphnet.models.detector.detector.Detector property)</a>
 </li>
       <li><a href="api/graphnet.utilities.config.dataset_config.html#graphnet.utilities.config.dataset_config.DatasetConfig.string_selection">string_selection (graphnet.utilities.config.dataset_config.DatasetConfig attribute)</a>
 </li>
@@ -2251,6 +2338,20 @@
   </ul></td>
 </tr></table>
 
+<h2 id="X">X</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/graphnet.models.detector.icecube.html#graphnet.models.detector.icecube.IceCube86.xyz">xyz (graphnet.models.detector.icecube.IceCube86 attribute)</a>
+
+      <ul>
+        <li><a href="api/graphnet.models.detector.icecube.html#graphnet.models.detector.icecube.IceCubeUpgrade.xyz">(graphnet.models.detector.icecube.IceCubeUpgrade attribute)</a>
+</li>
+        <li><a href="api/graphnet.models.detector.prometheus.html#graphnet.models.detector.prometheus.ORCA150.xyz">(graphnet.models.detector.prometheus.ORCA150 attribute)</a>
+</li>
+      </ul></li>
+  </ul></td>
+</tr></table>
+
 <h2 id="Z">Z</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
@@ -2283,7 +2384,7 @@
       <div class="md-footer-meta__inner md-grid">
         <div class="md-footer-copyright">
           <div class="md-footer-copyright__highlight">
-              &#169; Copyright 2021-2023, GraphNeT team.
+              &#169; Copyright 2021-2024, GraphNeT team.
               
           </div>
             Created using
