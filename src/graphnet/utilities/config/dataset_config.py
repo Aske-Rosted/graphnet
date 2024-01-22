@@ -56,6 +56,7 @@ class DatasetConfig(BaseConfig):
     seed: Optional[int] = None
     graph_definition: Any = None
     use_cache: bool = True
+    labels: Optional[Dict[str, Any]] = None
 
     def __init__(self, **data: Any) -> None:
         """Construct `DataConfig`.
