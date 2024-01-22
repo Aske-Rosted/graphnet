@@ -238,7 +238,9 @@ class I3InferenceModule(GraphNeTI3Module):
             len(task_predictions) == 1
         ), f"""This method assumes a single task. \n
                Got {len(task_predictions)} tasks."""
-        return self.model(data)[0].detach().numpy()
+        return (
+            task_predictions[0].detach().numpy()
+        )  # self.model(data)[0].detach().numpy()
 
 
 class I3PulseCleanerModule(I3InferenceModule):
