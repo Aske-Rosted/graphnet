@@ -1,6 +1,6 @@
 """Utility functions for construction of graphs."""
 
-from typing import List, Tuple
+from typing import List, Tuple, Callable
 import numpy as np
 
 
@@ -158,3 +158,50 @@ def cluster_summarize_with_percentiles(
         )
 
     return array
+
+
+class pulse_template:
+    """SPE shape for DOMs."""
+
+    def __init__(self, args: List[float]):
+        """Initialize SPE shape for DOMs.
+
+        Args:
+            args: List of parameters for the SPE shape. (c, x0, b1, b2)
+        """
+        self.args = args
+
+    def __call__(self, time: np.ndarray) -> np.ndarray:
+        """SPE shape implementation for DOMs."""
+        c, x0, b1, b2 = self.args
+        t = time - 11.5
+        func = c * (np.exp(-(t - x0) / b1) + np.exp((t - x0) / b2)) ** -8
+        return func
+
+
+def spe_atwd_old(time: np.ndarray) -> np.ndarray:
+    """SPE shape for ATWD."""
+    t = time - 11.5  # causality
+    c = 15.47 / 13.292860653948139
+    x0 = -3.929 - 5
+    b1 = 4.7
+    b2 = 39.0
+    return c * (np.exp(-(abs(t - x0)) / b1) + np.exp((abs(t - x0)) / b2)) ** -8
+
+
+def pulseseries_to_wf(
+    pulses: np.ndarray,
+    template: Callable,
+    times: np.ndarray,
+    norm: float = 1.0,
+) -> np.ndarray:
+    """Convolve pulses with SPE shape."""
+    wf = (
+        np.sum(
+            pulses[:, 0]
+            * template(times[..., None] - pulses[:, 1][None, ...]),
+            axis=1,
+        )
+        * norm
+    )
+    return wf

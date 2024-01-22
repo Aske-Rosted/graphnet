@@ -10,4 +10,5 @@ from .nodes import (
     NodesAsPulses,
     NodesAsDOMTimeSeries,
     PercentileClusters,
+    NodesAsRefoldedDOM,
 )
