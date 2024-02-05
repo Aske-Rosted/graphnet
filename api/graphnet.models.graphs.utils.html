@@ -385,10 +385,51 @@
       
         
 <nav class="md-nav md-nav--secondary">
+    <label class="md-nav__title" for="__toc">"Contents"</label>
   <ul class="md-nav__list" data-md-scrollfix="">
+        <li class="md-nav__item"><a href="#api-graphnet-models-graphs-utils--page-root" class="md-nav__link">utils</a><nav class="md-nav">
+              <ul class="md-nav__list">
+        <li class="md-nav__item"><a href="#graphnet.models.graphs.utils.lex_sort" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">lex_sort()</span></code></a>
+        </li>
+        <li class="md-nav__item"><a href="#graphnet.models.graphs.utils.gather_cluster_sequence" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">gather_cluster_sequence()</span></code></a>
+        </li>
+        <li class="md-nav__item"><a href="#graphnet.models.graphs.utils.identify_indices" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">identify_indices()</span></code></a>
+        </li>
+        <li class="md-nav__item"><a href="#graphnet.models.graphs.utils.cluster_summarize_with_percentiles" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">cluster_summarize_with_percentiles()</span></code></a>
+        </li></ul>
+            </nav>
+        </li>
   </ul>
 </nav>
+      <ul class="md-nav__list"> 
+    <li class="md-nav__item">
+    
+    
+      <a href="#graphnet.models.graphs.utils.lex_sort" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">lex_sort()</span></code></a>
       
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="#graphnet.models.graphs.utils.gather_cluster_sequence" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">gather_cluster_sequence()</span></code></a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="#graphnet.models.graphs.utils.identify_indices" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">identify_indices()</span></code></a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="#graphnet.models.graphs.utils.cluster_summarize_with_percentiles" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">cluster_summarize_with_percentiles()</span></code></a>
+      
+    
+    </li></ul>
     
     </li></ul>
     
@@ -472,7 +513,20 @@
               <div class="md-sidebar__inner">
                 
 <nav class="md-nav md-nav--secondary">
+    <label class="md-nav__title" for="__toc">"Contents"</label>
   <ul class="md-nav__list" data-md-scrollfix="">
+        <li class="md-nav__item"><a href="#api-graphnet-models-graphs-utils--page-root" class="md-nav__link">utils</a><nav class="md-nav">
+              <ul class="md-nav__list">
+        <li class="md-nav__item"><a href="#graphnet.models.graphs.utils.lex_sort" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">lex_sort()</span></code></a>
+        </li>
+        <li class="md-nav__item"><a href="#graphnet.models.graphs.utils.gather_cluster_sequence" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">gather_cluster_sequence()</span></code></a>
+        </li>
+        <li class="md-nav__item"><a href="#graphnet.models.graphs.utils.identify_indices" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">identify_indices()</span></code></a>
+        </li>
+        <li class="md-nav__item"><a href="#graphnet.models.graphs.utils.cluster_summarize_with_percentiles" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">cluster_summarize_with_percentiles()</span></code></a>
+        </li></ul>
+            </nav>
+        </li>
   </ul>
 </nav>
               </div>
@@ -482,8 +536,117 @@
         <div class="md-content">
           <article class="md-content__inner md-typeset" role="main">
             
-  <section id="utils">
-<h1 id="api-graphnet-models-graphs-utils--page-root">utils<a class="headerlink" href="#api-graphnet-models-graphs-utils--page-root" title="Link to this heading">¶</a></h1>
+  <section id="module-graphnet.models.graphs.utils">
+<span id="utils"></span><h1 id="api-graphnet-models-graphs-utils--page-root">utils<a class="headerlink" href="#api-graphnet-models-graphs-utils--page-root" title="Link to this heading">¶</a></h1>
+<p>Utility functions for construction of graphs.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="graphnet.models.graphs.utils.lex_sort">
+<span class="sig-prename descclassname"><span class="pre">graphnet.models.graphs.utils.</span></span><span class="sig-name descname"><span class="pre">lex_sort</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cluster_columns</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/graphnet/models/graphs/utils.html#lex_sort"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphnet.models.graphs.utils.lex_sort" title="Link to this definition">¶</a></dt>
+<dd><p>Sort numpy arrays according to columns on ´cluster_columns´.</p>
+<p>Note that <cite>x</cite> is sorted along the dimensions in <cite>cluster_columns</cite>
+backwards. I.e. <cite>cluster_columns = [0,1,2]</cite>
+means <cite>x</cite> is sorted along <cite>[2,1,0]</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">array</span></code></span>) – array to be sorted.</p></li>
+<li><p><strong>cluster_columns</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>]</span>) – Columns of <cite>x</cite> to be sorted along.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">ndarray</span></code></span></p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A sorted version of <cite>x</cite>.</p>
+</dd>
+</dl>
+</dd></dl>
+<dl class="py function">
+<dt class="sig sig-object py" id="graphnet.models.graphs.utils.gather_cluster_sequence">
+<span class="sig-prename descclassname"><span class="pre">graphnet.models.graphs.utils.</span></span><span class="sig-name descname"><span class="pre">gather_cluster_sequence</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">feature_idx</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cluster_columns</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/graphnet/models/graphs/utils.html#gather_cluster_sequence"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphnet.models.graphs.utils.gather_cluster_sequence" title="Link to this definition">¶</a></dt>
+<dd><p>Turn <cite>x</cite> into rows of clusters with sequences along columns.</p>
+<p>Sequences along columns are added which correspond to
+gathered sequences of the feature in <cite>x</cite> specified by column index
+<cite>feature_idx</cite> associated with each column. Sequences are padded with NaN to
+be of same length. Dimension of clustered array is <cite>[n_clusters, l +
+len(cluster_columns)]</cite>,where l is the largest sequence length.</p>
+<p><strong>Example</strong>:
+Suppose <cite>x</cite> represents a neutrino event and we have chosen to cluster on
+the PMT positions and that <cite>feature_idx</cite> correspond to pulse time.</p>
+<p>The resulting array will have dimensions <cite>[n_pmts, m + 3]</cite> where <cite>m</cite> is the
+maximum number of same-pmt pulses found in <cite>x</cite>, and <a href="#id1"><span class="problematic" id="id2">`</span></a>+3`for the three
+spatial directions  defining each cluster.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">ndarray</span></code></span>) – Array for clustering</p></li>
+<li><p><strong>feature_idx</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></span>) – Index of the feature in <cite>x</cite> to
+be gathered for each cluster.</p></li>
+<li><p><strong>cluster_columns</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>]</span>) – Index in <cite>x</cite> from which to build clusters.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Array with dimensions  <cite>[n_clusters, l + len(cluster_columns)]</cite>
+column_offset: Indices of the columns in <cite>array</cite> that defines clusters.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>array</p>
+</dd>
+</dl>
+</dd></dl>
+<dl class="py function">
+<dt class="sig sig-object py" id="graphnet.models.graphs.utils.identify_indices">
+<span class="sig-prename descclassname"><span class="pre">graphnet.models.graphs.utils.</span></span><span class="sig-name descname"><span class="pre">identify_indices</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">feature_names</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cluster_on</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/graphnet/models/graphs/utils.html#identify_indices"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphnet.models.graphs.utils.identify_indices" title="Link to this definition">¶</a></dt>
+<dd><p>Identify indices for clustering and summarization.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-data docutils literal notranslate"><span class="pre">Tuple</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>], <code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>], <code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]]</span></p>
+</dd>
+<dt class="field-even">Parameters<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>feature_names</strong> (<em>List</em><em>[</em><em>str</em><em>]</em>) – </p></li>
+<li><p><strong>cluster_on</strong> (<em>List</em><em>[</em><em>str</em><em>]</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+<dl class="py function">
+<dt class="sig sig-object py" id="graphnet.models.graphs.utils.cluster_summarize_with_percentiles">
+<span class="sig-prename descclassname"><span class="pre">graphnet.models.graphs.utils.</span></span><span class="sig-name descname"><span class="pre">cluster_summarize_with_percentiles</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">summarization_indices</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cluster_indices</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">percentiles</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">add_counts</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/graphnet/models/graphs/utils.html#cluster_summarize_with_percentiles"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphnet.models.graphs.utils.cluster_summarize_with_percentiles" title="Link to this definition">¶</a></dt>
+<dd><p>Turn <cite>x</cite> into clusters with percentile summary.</p>
+<p>From variables specified by column indices <cite>cluster_indices</cite>, <cite>x</cite> is turned
+into clusters. Information in columns of <cite>x</cite> specified by indices
+<cite>summarization_indices</cite> with each cluster is summarized using percentiles.
+It is assumed <cite>x</cite> represents a single event.</p>
+<p><strong>Example use-case</strong>:
+Suppose <cite>x</cite> contains raw pulses from a neutrino event where some DOMs have
+multiple measurements of Cherenkov radiation. If <cite>cluster_indices</cite> is set
+to the columns corresponding to the xyz-position of the DOMs, and the
+features specified in <cite>summarization_indices</cite> correspond to time, charge,
+then each row in the returned array will correspond to a DOM,
+and the time and charge for each DOM will be summarized by percentiles.
+Returned output array has dimensions
+<cite>[n_clusters, len(percentiles)*len(summarization_indices) + len(cluster_indices)]</cite></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">ndarray</span></code></span>) – Array to be clustered</p></li>
+<li><p><strong>summarization_indices</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>]</span>) – List of column indices that defines features
+that will be summarized with percentiles.</p></li>
+<li><p><strong>cluster_indices</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>]</span>) – List of column indices on which the clusters
+are constructed.</p></li>
+<li><p><strong>percentiles</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>]</span>) – percentiles used to summarize <cite>x</cite>. E.g. [10,50,90].</p></li>
+<li><p><strong>add_counts</strong> (<em>bool</em>) – </p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">ndarray</span></code></span></p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Percentile-summarized array</p>
+</dd>
+</dl>
+</dd></dl>
 </section>
 
 
