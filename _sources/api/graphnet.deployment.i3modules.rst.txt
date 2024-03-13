@@ -15,8 +15,7 @@ i3modules
 .. toctree::
    :maxdepth: 2
 
-   graphnet.deployment.i3modules.deployer
-   graphnet.deployment.i3modules.graphnet_module
+   graphnet.deployment.i3modules.deprecated_methods
 
 
 
