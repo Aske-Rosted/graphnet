@@ -123,10 +123,9 @@
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=83e35b93" />
     <link rel="stylesheet" type="text/css" href="../_static/material.css?v=79c92029" />
     <script src="../_static/documentation_options.js?v=5929fcd5"></script>
-    <script src="../_static/doctools.js?v=888ff710"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="icon" href="../_static/favicon.svg"/>
-    <link rel="author" title="About these documents" href="../about.html" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="extractors" href="graphnet.data.extractors.html" />
@@ -286,14 +285,42 @@
     <li class="md-nav__item">
     
     
-      <a href="../install.html" class="md-nav__link">Install</a>
+      <a href="../installation/install.html" class="md-nav__link">Installation</a>
       
     
     </li>
     <li class="md-nav__item">
     
     
-      <a href="../contribute.html" class="md-nav__link">Contribute</a>
+      <a href="../models/models.html" class="md-nav__link">Models In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../datasets/datasets.html" class="md-nav__link">Datasets In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../data_conversion/data_conversion.html" class="md-nav__link">Data Conversion in GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../integration/integration.html" class="md-nav__link">Integrating New Experiments into GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../contribute/contribute.html" class="md-nav__link">Contributing To GraphNeT</a>
       
     
     </li>
@@ -340,8 +367,6 @@
   <ul class="md-nav__list" data-md-scrollfix="">
         <li class="md-nav__item"><a href="#api-graphnet-data-dataset-dataset--page-root" class="md-nav__link">dataset</a><nav class="md-nav">
               <ul class="md-nav__list">
-        <li class="md-nav__item"><a href="#graphnet.data.dataset.dataset.ColumnMissingException" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">ColumnMissingException</span></code></a>
-        </li>
         <li class="md-nav__item"><a href="#graphnet.data.dataset.dataset.load_module" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">load_module()</span></code></a>
         </li>
         <li class="md-nav__item"><a href="#graphnet.data.dataset.dataset.parse_graph_definition" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">parse_graph_definition()</span></code></a>
@@ -371,13 +396,6 @@
   </ul>
 </nav>
       <ul class="md-nav__list"> 
-    <li class="md-nav__item">
-    
-    
-      <a href="#graphnet.data.dataset.dataset.ColumnMissingException" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">ColumnMissingException</span></code></a>
-      
-    
-    </li>
     <li class="md-nav__item">
     
     
@@ -518,6 +536,13 @@
     <li class="md-nav__item">
     
     
+      <a href="graphnet.data.curated_datamodule.html" class="md-nav__link">curated_datamodule</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
       <a href="graphnet.data.dataclasses.html" class="md-nav__link">dataclasses</a>
       
     
@@ -542,14 +567,14 @@
       <a href="graphnet.data.datamodule.html" class="md-nav__link">datamodule</a>
       
     
+    </li></ul>
+    
     </li>
     <li class="md-nav__item">
     
     
-      <a href="graphnet.data.pipeline.html" class="md-nav__link">pipeline</a>
+      <a href="graphnet.datasets.html" class="md-nav__link">datasets</a>
       
-    
-    </li></ul>
     
     </li>
     <li class="md-nav__item">
@@ -562,14 +587,14 @@
     <li class="md-nav__item">
     
     
-      <a href="graphnet.models.html" class="md-nav__link">models</a>
+      <a href="graphnet.exceptions.html" class="md-nav__link">exceptions</a>
       
     
     </li>
     <li class="md-nav__item">
     
     
-      <a href="graphnet.pisa.html" class="md-nav__link">pisa</a>
+      <a href="graphnet.models.html" class="md-nav__link">models</a>
       
     
     </li>
@@ -612,8 +637,6 @@
   <ul class="md-nav__list" data-md-scrollfix="">
         <li class="md-nav__item"><a href="#api-graphnet-data-dataset-dataset--page-root" class="md-nav__link">dataset</a><nav class="md-nav">
               <ul class="md-nav__list">
-        <li class="md-nav__item"><a href="#graphnet.data.dataset.dataset.ColumnMissingException" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">ColumnMissingException</span></code></a>
-        </li>
         <li class="md-nav__item"><a href="#graphnet.data.dataset.dataset.load_module" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">load_module()</span></code></a>
         </li>
         <li class="md-nav__item"><a href="#graphnet.data.dataset.dataset.parse_graph_definition" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">parse_graph_definition()</span></code></a>
@@ -652,12 +675,6 @@
   <section id="module-graphnet.data.dataset.dataset">
 <span id="dataset"></span><h1 id="api-graphnet-data-dataset-dataset--page-root">dataset<a class="headerlink" href="#api-graphnet-data-dataset-dataset--page-root" title="Link to this heading">¶</a></h1>
 <p>Base <a class="reference internal" href="#graphnet.data.dataset.dataset.Dataset" title="graphnet.data.dataset.dataset.Dataset"><code class="xref py py-class docutils literal notranslate"><span class="pre">Dataset</span></code></a> class(es) used in GraphNeT.</p>
-<dl class="py exception">
-<dt class="sig sig-object py" id="graphnet.data.dataset.dataset.ColumnMissingException">
-<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">graphnet.data.dataset.dataset.</span></span><span class="sig-name descname"><span class="pre">ColumnMissingException</span></span><a class="reference internal" href="../_modules/graphnet/data/dataset/dataset.html#ColumnMissingException"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphnet.data.dataset.dataset.ColumnMissingException" title="Link to this definition">¶</a></dt>
-<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Exception</span></code></p>
-<p>Exception to indicate a missing column in a dataset.</p>
-</dd></dl>
 <dl class="py function">
 <dt class="sig sig-object py" id="graphnet.data.dataset.dataset.load_module">
 <span class="sig-prename descclassname"><span class="pre">graphnet.data.dataset.dataset.</span></span><span class="sig-name descname"><span class="pre">load_module</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">class_name</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/graphnet/data/dataset/dataset.html#load_module"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphnet.data.dataset.dataset.load_module" title="Link to this definition">¶</a></dt>
@@ -683,7 +700,7 @@
 <dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference internal" href="graphnet.models.graphs.graph_definition.html#graphnet.models.graphs.graph_definition.GraphDefinition" title="graphnet.models.graphs.graph_definition.GraphDefinition"><code class="xref py py-class docutils literal notranslate"><span class="pre">GraphDefinition</span></code></a></span></p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>cfg</strong> (<em>dict</em>) – </p>
+<dd class="field-even"><p><strong>cfg</strong> (<em>dict</em>)</p>
 </dd>
 </dl>
 </dd></dl>
@@ -696,7 +713,7 @@
 <dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Dict</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>, <a class="reference internal" href="graphnet.training.labels.html#graphnet.training.labels.Label" title="graphnet.training.labels.Label"><code class="xref py py-class docutils literal notranslate"><span class="pre">Label</span></code></a>]</span></p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>cfg</strong> (<em>dict</em>) – </p>
+<dd class="field-even"><p><strong>cfg</strong> (<em>dict</em>)</p>
 </dd>
 </dl>
 </dd></dl>
@@ -752,8 +769,8 @@ subset of events when resolving a string-based selection (e.g.,
 events ~ event_no % 5 &gt; 0”</cite>).</p></li>
 <li><p><strong>graph_definition</strong> (<span class="sphinx_autodoc_typehints-type"><a class="reference internal" href="graphnet.models.graphs.graph_definition.html#graphnet.models.graphs.graph_definition.GraphDefinition" title="graphnet.models.graphs.graph_definition.GraphDefinition"><code class="xref py py-class docutils literal notranslate"><span class="pre">GraphDefinition</span></code></a></span>) – Method that defines the graph representation.</p></li>
 <li><p><strong>labels</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">Dict</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>, <code class="xref py py-data docutils literal notranslate"><span class="pre">Any</span></code>]]</span>, default: <code class="docutils literal notranslate"><span class="pre">None</span></code>) – Dictionary of labels to be added to the dataset.</p></li>
-<li><p><strong>args</strong> (<em>Any</em>) – </p></li>
-<li><p><strong>kwargs</strong> (<em>Any</em>) – </p></li>
+<li><p><strong>args</strong> (<em>Any</em>)</p></li>
+<li><p><strong>kwargs</strong> (<em>Any</em>)</p></li>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
@@ -769,7 +786,7 @@ events ~ event_no % 5 &gt; 0”</cite>).</p></li>
 <dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-data docutils literal notranslate"><span class="pre">Union</span></code>[<a class="reference internal" href="#graphnet.data.dataset.dataset.Dataset" title="graphnet.data.dataset.dataset.Dataset"><code class="xref py py-class docutils literal notranslate"><span class="pre">Dataset</span></code></a>, <a class="reference internal" href="#graphnet.data.dataset.dataset.EnsembleDataset" title="graphnet.data.dataset.dataset.EnsembleDataset"><code class="xref py py-class docutils literal notranslate"><span class="pre">EnsembleDataset</span></code></a>, <code class="xref py py-class docutils literal notranslate"><span class="pre">Dict</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>, <a class="reference internal" href="#graphnet.data.dataset.dataset.Dataset" title="graphnet.data.dataset.dataset.Dataset"><code class="xref py py-class docutils literal notranslate"><span class="pre">Dataset</span></code></a>], <code class="xref py py-class docutils literal notranslate"><span class="pre">Dict</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>, <a class="reference internal" href="#graphnet.data.dataset.dataset.EnsembleDataset" title="graphnet.data.dataset.dataset.EnsembleDataset"><code class="xref py py-class docutils literal notranslate"><span class="pre">EnsembleDataset</span></code></a>]]</span></p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>source</strong> (<a class="reference internal" href="graphnet.utilities.config.dataset_config.html#graphnet.utilities.config.dataset_config.DatasetConfig" title="graphnet.utilities.config.dataset_config.DatasetConfig"><em>DatasetConfig</em></a><em> | </em><em>str</em>) – </p>
+<dd class="field-even"><p><strong>source</strong> (<a class="reference internal" href="graphnet.utilities.config.dataset_config.html#graphnet.utilities.config.dataset_config.DatasetConfig" title="graphnet.utilities.config.dataset_config.DatasetConfig"><em>DatasetConfig</em></a><em> | </em><em>str</em>)</p>
 </dd>
 </dl>
 </dd></dl>
@@ -782,7 +799,7 @@ events ~ event_no % 5 &gt; 0”</cite>).</p></li>
 <dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference internal" href="#graphnet.data.dataset.dataset.EnsembleDataset" title="graphnet.data.dataset.dataset.EnsembleDataset"><code class="xref py py-class docutils literal notranslate"><span class="pre">EnsembleDataset</span></code></a></span></p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>datasets</strong> (<em>List</em><em>[</em><a class="reference internal" href="#graphnet.data.dataset.dataset.Dataset" title="graphnet.data.dataset.dataset.Dataset"><em>Dataset</em></a><em>]</em>) – </p>
+<dd class="field-even"><p><strong>datasets</strong> (<em>List</em><em>[</em><a class="reference internal" href="#graphnet.data.dataset.dataset.Dataset" title="graphnet.data.dataset.dataset.Dataset"><em>Dataset</em></a><em>]</em>)</p>
 </dd>
 </dl>
 </dd></dl>
@@ -814,7 +831,7 @@ Defaults to None.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-data docutils literal notranslate"><span class="pre">Tuple</span></code>[<code class="xref py py-data docutils literal notranslate"><span class="pre">Any</span></code>, <code class="xref py py-data docutils literal notranslate"><span class="pre">...</span></code>]]</span></p>
+<dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">ndarray</span></code></span></p>
 </dd>
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
 <dd class="field-odd"><p><dl class="simple">
@@ -825,7 +842,7 @@ returned</p>
 </p>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference internal" href="#graphnet.data.dataset.dataset.ColumnMissingException" title="graphnet.data.dataset.dataset.ColumnMissingException"><strong>ColumnMissingException</strong></a> – If one or more element in <cite>columns</cite> is not
+<dd class="field-even"><p><a class="reference internal" href="graphnet.exceptions.exceptions.html#graphnet.exceptions.exceptions.ColumnMissingException" title="graphnet.exceptions.exceptions.ColumnMissingException"><strong>ColumnMissingException</strong></a> – If one or more element in <cite>columns</cite> is not
     present in <cite>table</cite>.</p>
 </dd>
 </dl>
@@ -840,8 +857,8 @@ returned</p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
-<li><p><strong>fn</strong> (<em>Callable</em><em>[</em><em>[</em><em>Data</em><em>]</em><em>, </em><em>Any</em><em>]</em>) – </p></li>
-<li><p><strong>key</strong> (<em>str</em><em> | </em><em>None</em>) – </p></li>
+<li><p><strong>fn</strong> (<em>Callable</em><em>[</em><em>[</em><em>Data</em><em>]</em><em>, </em><em>Any</em><em>]</em>)</p></li>
+<li><p><strong>key</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -908,7 +925,7 @@ returned</p>
               
           </div>
             Created using
-            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.3.7.
              and
             <a href="https://github.com/bashtage/sphinx-material/">Material for
               Sphinx</a>

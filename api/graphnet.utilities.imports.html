@@ -123,10 +123,9 @@
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=83e35b93" />
     <link rel="stylesheet" type="text/css" href="../_static/material.css?v=79c92029" />
     <script src="../_static/documentation_options.js?v=5929fcd5"></script>
-    <script src="../_static/doctools.js?v=888ff710"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="icon" href="../_static/favicon.svg"/>
-    <link rel="author" title="About these documents" href="../about.html" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="logging" href="graphnet.utilities.logging.html" />
@@ -285,14 +284,42 @@
     <li class="md-nav__item">
     
     
-      <a href="../install.html" class="md-nav__link">Install</a>
+      <a href="../installation/install.html" class="md-nav__link">Installation</a>
       
     
     </li>
     <li class="md-nav__item">
     
     
-      <a href="../contribute.html" class="md-nav__link">Contribute</a>
+      <a href="../models/models.html" class="md-nav__link">Models In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../datasets/datasets.html" class="md-nav__link">Datasets In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../data_conversion/data_conversion.html" class="md-nav__link">Data Conversion in GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../integration/integration.html" class="md-nav__link">Integrating New Experiments into GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../contribute/contribute.html" class="md-nav__link">Contributing To GraphNeT</a>
       
     
     </li>
@@ -311,6 +338,13 @@
     <li class="md-nav__item">
     
     
+      <a href="graphnet.datasets.html" class="md-nav__link">datasets</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
       <a href="graphnet.deployment.html" class="md-nav__link">deployment</a>
       
     
@@ -318,14 +352,14 @@
     <li class="md-nav__item">
     
     
-      <a href="graphnet.models.html" class="md-nav__link">models</a>
+      <a href="graphnet.exceptions.html" class="md-nav__link">exceptions</a>
       
     
     </li>
     <li class="md-nav__item">
     
     
-      <a href="graphnet.pisa.html" class="md-nav__link">pisa</a>
+      <a href="graphnet.models.html" class="md-nav__link">models</a>
       
     
     </li>
@@ -394,8 +428,6 @@
         </li>
         <li class="md-nav__item"><a href="#graphnet.utilities.imports.has_torch_package" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">has_torch_package()</span></code></a>
         </li>
-        <li class="md-nav__item"><a href="#graphnet.utilities.imports.has_pisa_package" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">has_pisa_package()</span></code></a>
-        </li>
         <li class="md-nav__item"><a href="#graphnet.utilities.imports.requires_icecube" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">requires_icecube()</span></code></a>
         </li></ul>
             </nav>
@@ -414,13 +446,6 @@
     
     
       <a href="#graphnet.utilities.imports.has_torch_package" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">has_torch_package()</span></code></a>
-      
-    
-    </li>
-    <li class="md-nav__item">
-    
-    
-      <a href="#graphnet.utilities.imports.has_pisa_package" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">has_pisa_package()</span></code></a>
       
     
     </li>
@@ -478,8 +503,6 @@
         </li>
         <li class="md-nav__item"><a href="#graphnet.utilities.imports.has_torch_package" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">has_torch_package()</span></code></a>
         </li>
-        <li class="md-nav__item"><a href="#graphnet.utilities.imports.has_pisa_package" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">has_pisa_package()</span></code></a>
-        </li>
         <li class="md-nav__item"><a href="#graphnet.utilities.imports.requires_icecube" class="md-nav__link"><code class="docutils literal notranslate"><span class="pre">requires_icecube()</span></code></a>
         </li></ul>
             </nav>
@@ -517,16 +540,6 @@
 </dl>
 </dd></dl>
 <dl class="py function">
-<dt class="sig sig-object py" id="graphnet.utilities.imports.has_pisa_package">
-<span class="sig-prename descclassname"><span class="pre">graphnet.utilities.imports.</span></span><span class="sig-name descname"><span class="pre">has_pisa_package</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/graphnet/utilities/imports.html#has_pisa_package"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphnet.utilities.imports.has_pisa_package" title="Link to this definition">¶</a></dt>
-<dd><p>Check whether the <cite>pisa</cite> package is available.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code></span></p>
-</dd>
-</dl>
-</dd></dl>
-<dl class="py function">
 <dt class="sig sig-object py" id="graphnet.utilities.imports.requires_icecube">
 <span class="sig-prename descclassname"><span class="pre">graphnet.utilities.imports.</span></span><span class="sig-name descname"><span class="pre">requires_icecube</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">test_function</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/graphnet/utilities/imports.html#requires_icecube"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#graphnet.utilities.imports.requires_icecube" title="Link to this definition">¶</a></dt>
 <dd><p>Decorate <cite>test_function</cite> for use only if <cite>icecube</cite> module is present.</p>
@@ -535,7 +548,7 @@
 <dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-data docutils literal notranslate"><span class="pre">Callable</span></code></span></p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>test_function</strong> (<em>Callable</em>) – </p>
+<dd class="field-even"><p><strong>test_function</strong> (<em>Callable</em>)</p>
 </dd>
 </dl>
 </dd></dl>
@@ -588,7 +601,7 @@
               
           </div>
             Created using
-            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.3.7.
              and
             <a href="https://github.com/bashtage/sphinx-material/">Material for
               Sphinx</a>

@@ -122,10 +122,9 @@
     <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=83e35b93" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/material.css?v=79c92029" />
     <script src="../../../../_static/documentation_options.js?v=5929fcd5"></script>
-    <script src="../../../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
     <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="icon" href="../../../../_static/favicon.svg"/>
-    <link rel="author" title="About these documents" href="../../../../about.html" />
     <link rel="index" title="Index" href="../../../../genindex.html" />
     <link rel="search" title="Search" href="../../../../search.html" />
   
@@ -281,14 +280,42 @@
     <li class="md-nav__item">
     
     
-      <a href="../../../../install.html" class="md-nav__link">Install</a>
+      <a href="../../../../installation/install.html" class="md-nav__link">Installation</a>
       
     
     </li>
     <li class="md-nav__item">
     
     
-      <a href="../../../../contribute.html" class="md-nav__link">Contribute</a>
+      <a href="../../../../models/models.html" class="md-nav__link">Models In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../../../../datasets/datasets.html" class="md-nav__link">Datasets In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../../../../data_conversion/data_conversion.html" class="md-nav__link">Data Conversion in GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../../../../integration/integration.html" class="md-nav__link">Integrating New Experiments into GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../../../../contribute/contribute.html" class="md-nav__link">Contributing To GraphNeT</a>
       
     
     </li>
@@ -382,6 +409,13 @@
 <a class="viewcode-back" href="../../../../api/graphnet.models.detector.icecube.html#graphnet.models.detector.icecube.IceCubeKaggle">[docs]</a>
 <span class="k">class</span> <span class="nc">IceCubeKaggle</span><span class="p">(</span><span class="n">Detector</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""`Detector` class for Kaggle Competition."""</span>
+
+    <span class="n">geometry_table_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+        <span class="n">ICECUBE_GEOMETRY_TABLE_DIR</span><span class="p">,</span> <span class="s2">"icecube86.parquet"</span>
+    <span class="p">)</span>
+    <span class="n">xyz</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"x"</span><span class="p">,</span> <span class="s2">"y"</span><span class="p">,</span> <span class="s2">"z"</span><span class="p">]</span>
+    <span class="n">string_id_column</span> <span class="o">=</span> <span class="s2">"string"</span>
+    <span class="n">sensor_id_column</span> <span class="o">=</span> <span class="s2">"sensor_id"</span>
 
 <div class="viewcode-block" id="IceCubeKaggle.feature_map">
 <a class="viewcode-back" href="../../../../api/graphnet.models.detector.icecube.html#graphnet.models.detector.icecube.IceCubeKaggle.feature_map">[docs]</a>
@@ -533,7 +567,7 @@
               
           </div>
             Created using
-            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.3.7.
              and
             <a href="https://github.com/bashtage/sphinx-material/">Material for
               Sphinx</a>

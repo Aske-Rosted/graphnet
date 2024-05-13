@@ -122,10 +122,9 @@
     <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=83e35b93" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/material.css?v=79c92029" />
     <script src="../../../../_static/documentation_options.js?v=5929fcd5"></script>
-    <script src="../../../../_static/doctools.js?v=888ff710"></script>
+    <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
     <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="icon" href="../../../../_static/favicon.svg"/>
-    <link rel="author" title="About these documents" href="../../../../about.html" />
     <link rel="index" title="Index" href="../../../../genindex.html" />
     <link rel="search" title="Search" href="../../../../search.html" />
   
@@ -281,14 +280,42 @@
     <li class="md-nav__item">
     
     
-      <a href="../../../../install.html" class="md-nav__link">Install</a>
+      <a href="../../../../installation/install.html" class="md-nav__link">Installation</a>
       
     
     </li>
     <li class="md-nav__item">
     
     
-      <a href="../../../../contribute.html" class="md-nav__link">Contribute</a>
+      <a href="../../../../models/models.html" class="md-nav__link">Models In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../../../../datasets/datasets.html" class="md-nav__link">Datasets In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../../../../data_conversion/data_conversion.html" class="md-nav__link">Data Conversion in GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../../../../integration/integration.html" class="md-nav__link">Integrating New Experiments into GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../../../../contribute/contribute.html" class="md-nav__link">Contributing To GraphNeT</a>
       
     
     </li>
@@ -327,9 +354,10 @@
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">Type</span>
 
 <span class="kn">from</span> <span class="nn">graphnet.data</span> <span class="kn">import</span> <span class="n">DataConverter</span>
-<span class="kn">from</span> <span class="nn">graphnet.data.readers</span> <span class="kn">import</span> <span class="n">I3Reader</span>
+<span class="kn">from</span> <span class="nn">graphnet.data.readers</span> <span class="kn">import</span> <span class="n">I3Reader</span><span class="p">,</span> <span class="n">ParquetReader</span>
 <span class="kn">from</span> <span class="nn">graphnet.data.writers</span> <span class="kn">import</span> <span class="n">ParquetWriter</span><span class="p">,</span> <span class="n">SQLiteWriter</span>
 <span class="kn">from</span> <span class="nn">graphnet.data.extractors.icecube</span> <span class="kn">import</span> <span class="n">I3Extractor</span>
+<span class="kn">from</span> <span class="nn">graphnet.data.extractors.internal</span> <span class="kn">import</span> <span class="n">ParquetExtractor</span>
 <span class="kn">from</span> <span class="nn">graphnet.data.extractors.icecube.utilities.i3_filters</span> <span class="kn">import</span> <span class="n">I3Filter</span>
 
 
@@ -427,6 +455,45 @@
             <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
         <span class="p">)</span></div>
 
+
+
+<div class="viewcode-block" id="ParquetToSQLiteConverter">
+<a class="viewcode-back" href="../../../../api/graphnet.data.pre_configured.dataconverters.html#graphnet.data.pre_configured.dataconverters.ParquetToSQLiteConverter">[docs]</a>
+<span class="k">class</span> <span class="nc">ParquetToSQLiteConverter</span><span class="p">(</span><span class="n">DataConverter</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Preconfigured DataConverter for converting Parquet to SQLite files.</span>
+
+<span class="sd">    This class converts Parquet files written by ParquetWriter to SQLite.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">extractors</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ParquetExtractor</span><span class="p">],</span>
+        <span class="n">outdir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">index_column</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"event_no"</span><span class="p">,</span>
+        <span class="n">num_workers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Convert internal Parquet files to SQLite.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            extractors: The `Extractor`(s) that will be applied to the input</span>
+<span class="sd">                        files.</span>
+<span class="sd">            outdir: The directory to save the files in.</span>
+<span class="sd">            icetray_verbose: Set the level of verbosity of icetray.</span>
+<span class="sd">                             Defaults to 0.</span>
+<span class="sd">            index_column: Name of the event id column added to the events.</span>
+<span class="sd">                          Defaults to "event_no".</span>
+<span class="sd">            num_workers: The number of CPUs used for parallel processing.</span>
+<span class="sd">                         Defaults to 1 (no multiprocessing).</span>
+<span class="sd">        """</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
+            <span class="n">file_reader</span><span class="o">=</span><span class="n">ParquetReader</span><span class="p">(),</span>
+            <span class="n">save_method</span><span class="o">=</span><span class="n">SQLiteWriter</span><span class="p">(),</span>
+            <span class="n">extractors</span><span class="o">=</span><span class="n">extractors</span><span class="p">,</span>
+            <span class="n">num_workers</span><span class="o">=</span><span class="n">num_workers</span><span class="p">,</span>
+            <span class="n">index_column</span><span class="o">=</span><span class="n">index_column</span><span class="p">,</span>
+            <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
 </pre></div>
 
           </article>
@@ -451,7 +518,7 @@
               
           </div>
             Created using
-            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.3.7.
              and
             <a href="https://github.com/bashtage/sphinx-material/">Material for
               Sphinx</a>

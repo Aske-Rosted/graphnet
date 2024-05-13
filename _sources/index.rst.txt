@@ -1,10 +1,18 @@
-.. include:: about.md
-   :parser: myst_parser.sphinx_
+
+.. include:: substitutions.rst
+
+.. include:: intro/intro.rst
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
    :hidden:
 
-   install
-   contribute
+   installation/install.rst
+   models/models.rst
+   datasets/datasets.rst
+   data_conversion/data_conversion.rst
+   integration/integration.rst
+   contribute/contribute.rst
    api/graphnet.rst
+
+   

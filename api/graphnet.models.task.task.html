@@ -123,13 +123,12 @@
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=83e35b93" />
     <link rel="stylesheet" type="text/css" href="../_static/material.css?v=79c92029" />
     <script src="../_static/documentation_options.js?v=5929fcd5"></script>
-    <script src="../_static/doctools.js?v=888ff710"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="icon" href="../_static/favicon.svg"/>
-    <link rel="author" title="About these documents" href="../about.html" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="coarsening" href="graphnet.models.coarsening.html" />
+    <link rel="next" title="transformer" href="graphnet.models.transformer.html" />
     <link rel="prev" title="reconstruction" href="graphnet.models.task.reconstruction.html" />
   
    
@@ -286,14 +285,42 @@
     <li class="md-nav__item">
     
     
-      <a href="../install.html" class="md-nav__link">Install</a>
+      <a href="../installation/install.html" class="md-nav__link">Installation</a>
       
     
     </li>
     <li class="md-nav__item">
     
     
-      <a href="../contribute.html" class="md-nav__link">Contribute</a>
+      <a href="../models/models.html" class="md-nav__link">Models In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../datasets/datasets.html" class="md-nav__link">Datasets In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../data_conversion/data_conversion.html" class="md-nav__link">Data Conversion in GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../integration/integration.html" class="md-nav__link">Integrating New Experiments into GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../contribute/contribute.html" class="md-nav__link">Contributing To GraphNeT</a>
       
     
     </li>
@@ -312,7 +339,21 @@
     <li class="md-nav__item">
     
     
+      <a href="graphnet.datasets.html" class="md-nav__link">datasets</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
       <a href="graphnet.deployment.html" class="md-nav__link">deployment</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="graphnet.exceptions.html" class="md-nav__link">exceptions</a>
       
     
     </li>
@@ -600,6 +641,13 @@
     <li class="md-nav__item">
     
     
+      <a href="graphnet.models.transformer.html" class="md-nav__link">transformer</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
       <a href="graphnet.models.coarsening.html" class="md-nav__link">coarsening</a>
       
     
@@ -632,13 +680,6 @@
       
     
     </li></ul>
-    
-    </li>
-    <li class="md-nav__item">
-    
-    
-      <a href="graphnet.pisa.html" class="md-nav__link">pisa</a>
-      
     
     </li>
     <li class="md-nav__item">
@@ -785,8 +826,8 @@ restricted. By default the invertibility of <cite>transform_target</cite>
 is tested on the range [-1e6, 1e6].</p></li>
 <li><p><strong>loss_weight</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]</span>, default: <code class="docutils literal notranslate"><span class="pre">None</span></code>) – Name of the attribute in <cite>data</cite> containing per-event
 loss weights.</p></li>
-<li><p><strong>args</strong> (<em>Any</em>) – </p></li>
-<li><p><strong>kwargs</strong> (<em>Any</em>) – </p></li>
+<li><p><strong>args</strong> (<em>Any</em>)</p></li>
+<li><p><strong>kwargs</strong> (<em>Any</em>)</p></li>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
@@ -844,8 +885,8 @@ acts like a prediction head.</p>
 <li><p><strong>hidden_size</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></span>) – The number of columns in the output of
 the last latent layer of <cite>Model</cite> using this Task.
 Available through <cite>Model.nb_outputs</cite></p></li>
-<li><p><strong>args</strong> (<em>Any</em>) – </p></li>
-<li><p><strong>kwargs</strong> (<em>Any</em>) – </p></li>
+<li><p><strong>args</strong> (<em>Any</em>)</p></li>
+<li><p><strong>kwargs</strong> (<em>Any</em>)</p></li>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
@@ -863,8 +904,8 @@ Available through <cite>Model.nb_outputs</cite></p></li>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
-<li><p><strong>pred</strong> (<em>Tensor</em><em> | </em><em>Data</em>) – </p></li>
-<li><p><strong>data</strong> (<em>Data</em>) – </p></li>
+<li><p><strong>pred</strong> (<em>Tensor</em><em> | </em><em>Data</em>)</p></li>
+<li><p><strong>data</strong> (<em>Data</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -885,7 +926,7 @@ target dimensions.</p>
 <dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-data docutils literal notranslate"><span class="pre">Union</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">Data</span></code>]</span></p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>x</strong> (<em>Tensor</em><em> | </em><em>Data</em>) – </p>
+<dd class="field-even"><p><strong>x</strong> (<em>Tensor</em><em> | </em><em>Data</em>)</p>
 </dd>
 </dl>
 </dd></dl>
@@ -904,8 +945,8 @@ with the vast majority of supervised learning tasks.</p>
 <li><p><strong>hidden_size</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code></span>) – The number of columns in the output of
 the last latent layer of <cite>Model</cite> using this Task.
 Available through <cite>Model.nb_outputs</cite></p></li>
-<li><p><strong>args</strong> (<em>Any</em>) – </p></li>
-<li><p><strong>kwargs</strong> (<em>Any</em>) – </p></li>
+<li><p><strong>args</strong> (<em>Any</em>)</p></li>
+<li><p><strong>kwargs</strong> (<em>Any</em>)</p></li>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
@@ -927,8 +968,8 @@ Available through <cite>Model.nb_outputs</cite></p></li>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
-<li><p><strong>pred</strong> (<em>Tensor</em><em> | </em><em>Data</em>) – </p></li>
-<li><p><strong>data</strong> (<em>Data</em>) – </p></li>
+<li><p><strong>pred</strong> (<em>Tensor</em><em> | </em><em>Data</em>)</p></li>
+<li><p><strong>data</strong> (<em>Data</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -947,8 +988,8 @@ the direct inputs from <cite>Model</cite>.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>args</strong> (<em>Any</em>) – </p></li>
-<li><p><strong>kwargs</strong> (<em>Any</em>) – </p></li>
+<li><p><strong>args</strong> (<em>Any</em>)</p></li>
+<li><p><strong>kwargs</strong> (<em>Any</em>)</p></li>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
@@ -984,8 +1025,8 @@ the direct inputs from <cite>Model</cite>.</p>
 <li><p><strong>hidden_size</strong> – The number of columns in the output of
 the last latent layer of <cite>Model</cite> using this Task.
 Available through <cite>Model.nb_outputs</cite></p></li>
-<li><p><strong>args</strong> (<em>Any</em>) – </p></li>
-<li><p><strong>kwargs</strong> (<em>Any</em>) – </p></li>
+<li><p><strong>args</strong> (<em>Any</em>)</p></li>
+<li><p><strong>kwargs</strong> (<em>Any</em>)</p></li>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
@@ -1012,8 +1053,8 @@ Available through <cite>Model.nb_outputs</cite></p></li>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
-<li><p><strong>x</strong> (<em>Tensor</em><em> | </em><em>Data</em>) – </p></li>
-<li><p><strong>jacobian</strong> (<em>Tensor</em><em> | </em><em>None</em>) – </p></li>
+<li><p><strong>x</strong> (<em>Tensor</em><em> | </em><em>Data</em>)</p></li>
+<li><p><strong>jacobian</strong> (<em>Tensor</em><em> | </em><em>None</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -1065,12 +1106,12 @@ Available through <cite>Model.nb_outputs</cite></p></li>
             </a>
           
           
-            <a href="graphnet.models.coarsening.html" title="coarsening"
+            <a href="graphnet.models.transformer.html" title="transformer"
                class="md-flex md-footer-nav__link md-footer-nav__link--next"
                rel="next">
             <div class="md-flex__cell md-flex__cell--stretch md-footer-nav__title"><span
                 class="md-flex__ellipsis"> <span
-                class="md-footer-nav__direction"> "Next" </span> coarsening </span>
+                class="md-footer-nav__direction"> "Next" </span> transformer </span>
             </div>
             <div class="md-flex__cell md-flex__cell--shrink"><i
                 class="md-icon md-icon--arrow-forward md-footer-nav__button"></i>
@@ -1088,7 +1129,7 @@ Available through <cite>Model.nb_outputs</cite></p></li>
               
           </div>
             Created using
-            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.3.7.
              and
             <a href="https://github.com/bashtage/sphinx-material/">Material for
               Sphinx</a>

@@ -123,10 +123,9 @@
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=83e35b93" />
     <link rel="stylesheet" type="text/css" href="../_static/material.css?v=79c92029" />
     <script src="../_static/documentation_options.js?v=5929fcd5"></script>
-    <script src="../_static/doctools.js?v=888ff710"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="icon" href="../_static/favicon.svg"/>
-    <link rel="author" title="About these documents" href="../about.html" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="model_config" href="graphnet.utilities.config.model_config.html" />
@@ -286,14 +285,42 @@
     <li class="md-nav__item">
     
     
-      <a href="../install.html" class="md-nav__link">Install</a>
+      <a href="../installation/install.html" class="md-nav__link">Installation</a>
       
     
     </li>
     <li class="md-nav__item">
     
     
-      <a href="../contribute.html" class="md-nav__link">Contribute</a>
+      <a href="../models/models.html" class="md-nav__link">Models In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../datasets/datasets.html" class="md-nav__link">Datasets In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../data_conversion/data_conversion.html" class="md-nav__link">Data Conversion in GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../integration/integration.html" class="md-nav__link">Integrating New Experiments into GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../contribute/contribute.html" class="md-nav__link">Contributing To GraphNeT</a>
       
     
     </li>
@@ -312,6 +339,13 @@
     <li class="md-nav__item">
     
     
+      <a href="graphnet.datasets.html" class="md-nav__link">datasets</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
       <a href="graphnet.deployment.html" class="md-nav__link">deployment</a>
       
     
@@ -319,14 +353,14 @@
     <li class="md-nav__item">
     
     
-      <a href="graphnet.models.html" class="md-nav__link">models</a>
+      <a href="graphnet.exceptions.html" class="md-nav__link">exceptions</a>
       
     
     </li>
     <li class="md-nav__item">
     
     
-      <a href="graphnet.pisa.html" class="md-nav__link">pisa</a>
+      <a href="graphnet.models.html" class="md-nav__link">models</a>
       
     
     </li>
@@ -843,22 +877,22 @@ construction more transparent and reproducible.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>path</strong> (<em>str</em><em> | </em><em>List</em><em>[</em><em>str</em><em>]</em>) – </p></li>
-<li><p><strong>pulsemaps</strong> (<em>str</em><em> | </em><em>List</em><em>[</em><em>str</em><em>]</em>) – </p></li>
-<li><p><strong>features</strong> (<em>List</em><em>[</em><em>str</em><em>]</em>) – </p></li>
-<li><p><strong>truth</strong> (<em>List</em><em>[</em><em>str</em><em>]</em>) – </p></li>
-<li><p><strong>node_truth</strong> (<em>List</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>) – </p></li>
-<li><p><strong>index_column</strong> (<em>str</em>) – </p></li>
-<li><p><strong>truth_table</strong> (<em>str</em>) – </p></li>
-<li><p><strong>node_truth_table</strong> (<em>str</em><em> | </em><em>None</em>) – </p></li>
-<li><p><strong>string_selection</strong> (<em>List</em><em>[</em><em>int</em><em>] </em><em>| </em><em>None</em>) – </p></li>
-<li><p><strong>selection</strong> (<em>str</em><em> | </em><em>List</em><em>[</em><em>str</em><em>] </em><em>| </em><em>List</em><em>[</em><em>int</em><em> | </em><em>List</em><em>[</em><em>int</em><em>]</em><em>] </em><em>| </em><em>Dict</em><em>[</em><em>str</em><em>, </em><em>str</em><em> | </em><em>List</em><em>[</em><em>str</em><em>]</em><em>] </em><em>| </em><em>None</em>) – </p></li>
-<li><p><strong>loss_weight_table</strong> (<em>str</em><em> | </em><em>None</em>) – </p></li>
-<li><p><strong>loss_weight_column</strong> (<em>str</em><em> | </em><em>None</em>) – </p></li>
-<li><p><strong>loss_weight_default_value</strong> (<em>float</em><em> | </em><em>None</em>) – </p></li>
-<li><p><strong>seed</strong> (<em>int</em><em> | </em><em>None</em>) – </p></li>
-<li><p><strong>graph_definition</strong> (<em>Any</em>) – </p></li>
-<li><p><strong>labels</strong> (<em>Dict</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>] </em><em>| </em><em>None</em>) – </p></li>
+<li><p><strong>path</strong> (<em>str</em><em> | </em><em>List</em><em>[</em><em>str</em><em>]</em>)</p></li>
+<li><p><strong>pulsemaps</strong> (<em>str</em><em> | </em><em>List</em><em>[</em><em>str</em><em>]</em>)</p></li>
+<li><p><strong>features</strong> (<em>List</em><em>[</em><em>str</em><em>]</em>)</p></li>
+<li><p><strong>truth</strong> (<em>List</em><em>[</em><em>str</em><em>]</em>)</p></li>
+<li><p><strong>node_truth</strong> (<em>List</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>index_column</strong> (<em>str</em>)</p></li>
+<li><p><strong>truth_table</strong> (<em>str</em>)</p></li>
+<li><p><strong>node_truth_table</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>string_selection</strong> (<em>List</em><em>[</em><em>int</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>selection</strong> (<em>str</em><em> | </em><em>List</em><em>[</em><em>str</em><em>] </em><em>| </em><em>List</em><em>[</em><em>int</em><em> | </em><em>List</em><em>[</em><em>int</em><em>]</em><em>] </em><em>| </em><em>Dict</em><em>[</em><em>str</em><em>, </em><em>str</em><em> | </em><em>List</em><em>[</em><em>str</em><em>]</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>loss_weight_table</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>loss_weight_column</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>loss_weight_default_value</strong> (<em>float</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>seed</strong> (<em>int</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>graph_definition</strong> (<em>Any</em>)</p></li>
+<li><p><strong>labels</strong> (<em>Dict</em><em>[</em><em>str</em><em>, </em><em>Any</em><em>] </em><em>| </em><em>None</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -951,7 +985,7 @@ themselves models.</p>
 </dd></dl>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="graphnet.utilities.config.dataset_config.DatasetConfig.model_fields">
-<span class="sig-name descname"><span class="pre">model_fields</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar[dict[str,</span> <span class="pre">FieldInfo]]</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'features':</span> <span class="pre">FieldInfo(annotation=List[str],</span> <span class="pre">required=True),</span> <span class="pre">'graph_definition':</span> <span class="pre">FieldInfo(annotation=Any,</span> <span class="pre">required=False),</span> <span class="pre">'index_column':</span> <span class="pre">FieldInfo(annotation=str,</span> <span class="pre">required=False,</span> <span class="pre">default='event_no'),</span> <span class="pre">'labels':</span> <span class="pre">FieldInfo(annotation=Union[Dict[str,</span> <span class="pre">Any],</span> <span class="pre">NoneType],</span> <span class="pre">required=False),</span> <span class="pre">'loss_weight_column':</span> <span class="pre">FieldInfo(annotation=Union[str,</span> <span class="pre">NoneType],</span> <span class="pre">required=False),</span> <span class="pre">'loss_weight_default_value':</span> <span class="pre">FieldInfo(annotation=Union[float,</span> <span class="pre">NoneType],</span> <span class="pre">required=False),</span> <span class="pre">'loss_weight_table':</span> <span class="pre">FieldInfo(annotation=Union[str,</span> <span class="pre">NoneType],</span> <span class="pre">required=False),</span> <span class="pre">'node_truth':</span> <span class="pre">FieldInfo(annotation=Union[List[str],</span> <span class="pre">NoneType],</span> <span class="pre">required=False),</span> <span class="pre">'node_truth_table':</span> <span class="pre">FieldInfo(annotation=Union[str,</span> <span class="pre">NoneType],</span> <span class="pre">required=False),</span> <span class="pre">'path':</span> <span class="pre">FieldInfo(annotation=Union[str,</span> <span class="pre">List[str]],</span> <span class="pre">required=True),</span> <span class="pre">'pulsemaps':</span> <span class="pre">FieldInfo(annotation=Union[str,</span> <span class="pre">List[str]],</span> <span class="pre">required=True),</span> <span class="pre">'seed':</span> <span class="pre">FieldInfo(annotation=Union[int,</span> <span class="pre">NoneType],</span> <span class="pre">required=False),</span> <span class="pre">'selection':</span> <span class="pre">FieldInfo(annotation=Union[str,</span> <span class="pre">List[str],</span> <span class="pre">List[Union[int,</span> <span class="pre">List[int]]],</span> <span class="pre">Dict[str,</span> <span class="pre">Union[str,</span> <span class="pre">List[str]]],</span> <span class="pre">NoneType],</span> <span class="pre">required=False),</span> <span class="pre">'string_selection':</span> <span class="pre">FieldInfo(annotation=Union[List[int],</span> <span class="pre">NoneType],</span> <span class="pre">required=False),</span> <span class="pre">'truth':</span> <span class="pre">FieldInfo(annotation=List[str],</span> <span class="pre">required=True),</span> <span class="pre">'truth_table':</span> <span class="pre">FieldInfo(annotation=str,</span> <span class="pre">required=False,</span> <span class="pre">default='truth')}</span></em><a class="headerlink" href="#graphnet.utilities.config.dataset_config.DatasetConfig.model_fields" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">model_fields</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar[dict[str,</span> <span class="pre">FieldInfo]]</span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'features':</span> <span class="pre">FieldInfo(annotation=List[str],</span> <span class="pre">required=True),</span> <span class="pre">'graph_definition':</span> <span class="pre">FieldInfo(annotation=Any,</span> <span class="pre">required=False,</span> <span class="pre">default=None),</span> <span class="pre">'index_column':</span> <span class="pre">FieldInfo(annotation=str,</span> <span class="pre">required=False,</span> <span class="pre">default='event_no'),</span> <span class="pre">'labels':</span> <span class="pre">FieldInfo(annotation=Union[Dict[str,</span> <span class="pre">Any],</span> <span class="pre">NoneType],</span> <span class="pre">required=False,</span> <span class="pre">default=None),</span> <span class="pre">'loss_weight_column':</span> <span class="pre">FieldInfo(annotation=Union[str,</span> <span class="pre">NoneType],</span> <span class="pre">required=False,</span> <span class="pre">default=None),</span> <span class="pre">'loss_weight_default_value':</span> <span class="pre">FieldInfo(annotation=Union[float,</span> <span class="pre">NoneType],</span> <span class="pre">required=False,</span> <span class="pre">default=None),</span> <span class="pre">'loss_weight_table':</span> <span class="pre">FieldInfo(annotation=Union[str,</span> <span class="pre">NoneType],</span> <span class="pre">required=False,</span> <span class="pre">default=None),</span> <span class="pre">'node_truth':</span> <span class="pre">FieldInfo(annotation=Union[List[str],</span> <span class="pre">NoneType],</span> <span class="pre">required=False,</span> <span class="pre">default=None),</span> <span class="pre">'node_truth_table':</span> <span class="pre">FieldInfo(annotation=Union[str,</span> <span class="pre">NoneType],</span> <span class="pre">required=False,</span> <span class="pre">default=None),</span> <span class="pre">'path':</span> <span class="pre">FieldInfo(annotation=Union[str,</span> <span class="pre">List[str]],</span> <span class="pre">required=True),</span> <span class="pre">'pulsemaps':</span> <span class="pre">FieldInfo(annotation=Union[str,</span> <span class="pre">List[str]],</span> <span class="pre">required=True),</span> <span class="pre">'seed':</span> <span class="pre">FieldInfo(annotation=Union[int,</span> <span class="pre">NoneType],</span> <span class="pre">required=False,</span> <span class="pre">default=None),</span> <span class="pre">'selection':</span> <span class="pre">FieldInfo(annotation=Union[str,</span> <span class="pre">List[str],</span> <span class="pre">List[Union[int,</span> <span class="pre">List[int]]],</span> <span class="pre">Dict[str,</span> <span class="pre">Union[str,</span> <span class="pre">List[str]]],</span> <span class="pre">NoneType],</span> <span class="pre">required=False,</span> <span class="pre">default=None),</span> <span class="pre">'string_selection':</span> <span class="pre">FieldInfo(annotation=Union[List[int],</span> <span class="pre">NoneType],</span> <span class="pre">required=False,</span> <span class="pre">default=None),</span> <span class="pre">'truth':</span> <span class="pre">FieldInfo(annotation=List[str],</span> <span class="pre">required=True),</span> <span class="pre">'truth_table':</span> <span class="pre">FieldInfo(annotation=str,</span> <span class="pre">required=False,</span> <span class="pre">default='truth')}</span></em><a class="headerlink" href="#graphnet.utilities.config.dataset_config.DatasetConfig.model_fields" title="Link to this definition">¶</a></dt>
 <dd><p>Metadata about the fields defined on the model,
 mapping of field names to [<cite>FieldInfo</cite>][pydantic.fields.FieldInfo].</p>
 <p>This replaces <cite>Model.__fields__</cite> from Pydantic V1.</p>
@@ -966,7 +1000,7 @@ mapping of field names to [<cite>FieldInfo</cite>][pydantic.fields.FieldInfo].</
 <dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-data docutils literal notranslate"><span class="pre">Callable</span></code></span></p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>init_fn</strong> (<em>Callable</em>) – </p>
+<dd class="field-even"><p><strong>init_fn</strong> (<em>Callable</em>)</p>
 </dd>
 </dl>
 </dd></dl>
@@ -1031,7 +1065,7 @@ mapping of field names to [<cite>FieldInfo</cite>][pydantic.fields.FieldInfo].</
               
           </div>
             Created using
-            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.3.7.
              and
             <a href="https://github.com/bashtage/sphinx-material/">Material for
               Sphinx</a>

@@ -123,13 +123,12 @@
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=83e35b93" />
     <link rel="stylesheet" type="text/css" href="../_static/material.css?v=79c92029" />
     <script src="../_static/documentation_options.js?v=5929fcd5"></script>
-    <script src="../_static/doctools.js?v=888ff710"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="icon" href="../_static/favicon.svg"/>
-    <link rel="author" title="About these documents" href="../about.html" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="pisa" href="graphnet.pisa.html" />
+    <link rel="next" title="training" href="graphnet.training.html" />
     <link rel="prev" title="standard_model" href="graphnet.models.standard_model.html" />
   
    
@@ -285,14 +284,42 @@
     <li class="md-nav__item">
     
     
-      <a href="../install.html" class="md-nav__link">Install</a>
+      <a href="../installation/install.html" class="md-nav__link">Installation</a>
       
     
     </li>
     <li class="md-nav__item">
     
     
-      <a href="../contribute.html" class="md-nav__link">Contribute</a>
+      <a href="../models/models.html" class="md-nav__link">Models In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../datasets/datasets.html" class="md-nav__link">Datasets In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../data_conversion/data_conversion.html" class="md-nav__link">Data Conversion in GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../integration/integration.html" class="md-nav__link">Integrating New Experiments into GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../contribute/contribute.html" class="md-nav__link">Contributing To GraphNeT</a>
       
     
     </li>
@@ -311,7 +338,21 @@
     <li class="md-nav__item">
     
     
+      <a href="graphnet.datasets.html" class="md-nav__link">datasets</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
       <a href="graphnet.deployment.html" class="md-nav__link">deployment</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="graphnet.exceptions.html" class="md-nav__link">exceptions</a>
       
     
     </li>
@@ -359,6 +400,13 @@
     
     
       <a href="graphnet.models.task.html" class="md-nav__link">task</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="graphnet.models.transformer.html" class="md-nav__link">transformer</a>
       
     
     </li>
@@ -452,13 +500,6 @@
     <li class="md-nav__item">
     
     
-      <a href="graphnet.pisa.html" class="md-nav__link">pisa</a>
-      
-    
-    </li>
-    <li class="md-nav__item">
-    
-    
       <a href="graphnet.training.html" class="md-nav__link">training</a>
       
     
@@ -533,9 +574,9 @@ input features in x.</p>
 </dd>
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>x</strong> (<em>Tensor</em>) – </p></li>
-<li><p><strong>edge_index</strong> (<em>LongTensor</em>) – </p></li>
-<li><p><strong>batch</strong> (<em>Batch</em>) – </p></li>
+<li><p><strong>x</strong> (<em>Tensor</em>)</p></li>
+<li><p><strong>edge_index</strong> (<em>LongTensor</em>)</p></li>
+<li><p><strong>batch</strong> (<em>Batch</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -589,7 +630,7 @@ features for each time step.</p>
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>x</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code></span>) – array-like tensor with shape <cite>[n,d]</cite> where <cite>n</cite> is the total number</p></li>
-<li><p><strong>features.</strong> (<em>of pulses in the batch and d is the number</em><em> of  </em><em>node</em>) – </p></li>
+<li><p><strong>features.</strong> (<em>of pulses in the batch and d is the number</em><em> of  </em><em>node</em>)</p></li>
 <li><p><strong>batch_idx</strong> (<span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">LongTensor</span></code></span>) – a LongTensor identifying which row in <cite>x</cite> belongs to
 which training example.
 E.g. <cite>torch_geometric.data.Batch.batch</cite>.</p></li>
@@ -638,12 +679,12 @@ mask: A tensor that identifies masked entries in <cite>x</cite>.</p>
             </a>
           
           
-            <a href="graphnet.pisa.html" title="pisa"
+            <a href="graphnet.training.html" title="training"
                class="md-flex md-footer-nav__link md-footer-nav__link--next"
                rel="next">
             <div class="md-flex__cell md-flex__cell--stretch md-footer-nav__title"><span
                 class="md-flex__ellipsis"> <span
-                class="md-footer-nav__direction"> "Next" </span> pisa </span>
+                class="md-footer-nav__direction"> "Next" </span> training </span>
             </div>
             <div class="md-flex__cell md-flex__cell--shrink"><i
                 class="md-icon md-icon--arrow-forward md-footer-nav__button"></i>
@@ -661,7 +702,7 @@ mask: A tensor that identifies masked entries in <cite>x</cite>.</p>
               
           </div>
             Created using
-            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.3.7.
              and
             <a href="https://github.com/bashtage/sphinx-material/">Material for
               Sphinx</a>

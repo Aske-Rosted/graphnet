@@ -123,10 +123,9 @@
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=83e35b93" />
     <link rel="stylesheet" type="text/css" href="../_static/material.css?v=79c92029" />
     <script src="../_static/documentation_options.js?v=5929fcd5"></script>
-    <script src="../_static/doctools.js?v=888ff710"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="icon" href="../_static/favicon.svg"/>
-    <link rel="author" title="About these documents" href="../about.html" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="utils" href="graphnet.models.utils.html" />
@@ -285,14 +284,42 @@
     <li class="md-nav__item">
     
     
-      <a href="../install.html" class="md-nav__link">Install</a>
+      <a href="../installation/install.html" class="md-nav__link">Installation</a>
       
     
     </li>
     <li class="md-nav__item">
     
     
-      <a href="../contribute.html" class="md-nav__link">Contribute</a>
+      <a href="../models/models.html" class="md-nav__link">Models In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../datasets/datasets.html" class="md-nav__link">Datasets In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../data_conversion/data_conversion.html" class="md-nav__link">Data Conversion in GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../integration/integration.html" class="md-nav__link">Integrating New Experiments into GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../contribute/contribute.html" class="md-nav__link">Contributing To GraphNeT</a>
       
     
     </li>
@@ -311,7 +338,21 @@
     <li class="md-nav__item">
     
     
+      <a href="graphnet.datasets.html" class="md-nav__link">datasets</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
       <a href="graphnet.deployment.html" class="md-nav__link">deployment</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="graphnet.exceptions.html" class="md-nav__link">exceptions</a>
       
     
     </li>
@@ -359,6 +400,13 @@
     
     
       <a href="graphnet.models.task.html" class="md-nav__link">task</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="graphnet.models.transformer.html" class="md-nav__link">transformer</a>
       
     
     </li>
@@ -544,13 +592,6 @@
     <li class="md-nav__item">
     
     
-      <a href="graphnet.pisa.html" class="md-nav__link">pisa</a>
-      
-    
-    </li>
-    <li class="md-nav__item">
-    
-    
       <a href="graphnet.training.html" class="md-nav__link">training</a>
       
     
@@ -642,8 +683,8 @@ model (detector read-in, GNN backbone, and task-specific read-outs).</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>args</strong> (<em>Any</em>) – </p></li>
-<li><p><strong>kwargs</strong> (<em>Any</em>) – </p></li>
+<li><p><strong>args</strong> (<em>Any</em>)</p></li>
+<li><p><strong>kwargs</strong> (<em>Any</em>)</p></li>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
@@ -660,18 +701,18 @@ model (detector read-in, GNN backbone, and task-specific read-outs).</p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
-<li><p><strong>train_dataloader</strong> (<em>DataLoader</em>) – </p></li>
-<li><p><strong>val_dataloader</strong> (<em>DataLoader</em><em> | </em><em>None</em>) – </p></li>
-<li><p><strong>max_epochs</strong> (<em>int</em>) – </p></li>
-<li><p><strong>early_stopping_patience</strong> (<em>int</em>) – </p></li>
-<li><p><strong>gpus</strong> (<em>List</em><em>[</em><em>int</em><em>] </em><em>| </em><em>int</em><em> | </em><em>None</em>) – </p></li>
-<li><p><strong>callbacks</strong> (<em>List</em><em>[</em><em>Callback</em><em>] </em><em>| </em><em>None</em>) – </p></li>
-<li><p><strong>ckpt_path</strong> (<em>str</em><em> | </em><em>None</em>) – </p></li>
-<li><p><strong>logger</strong> (<em>Logger</em><em> | </em><em>None</em>) – </p></li>
-<li><p><strong>log_every_n_steps</strong> (<em>int</em>) – </p></li>
-<li><p><strong>gradient_clip_val</strong> (<em>float</em><em> | </em><em>None</em>) – </p></li>
-<li><p><strong>distribution_strategy</strong> (<em>str</em><em> | </em><em>None</em>) – </p></li>
-<li><p><strong>trainer_kwargs</strong> (<em>Any</em>) – </p></li>
+<li><p><strong>train_dataloader</strong> (<em>DataLoader</em>)</p></li>
+<li><p><strong>val_dataloader</strong> (<em>DataLoader</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>max_epochs</strong> (<em>int</em>)</p></li>
+<li><p><strong>early_stopping_patience</strong> (<em>int</em>)</p></li>
+<li><p><strong>gpus</strong> (<em>List</em><em>[</em><em>int</em><em>] </em><em>| </em><em>int</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>callbacks</strong> (<em>List</em><em>[</em><em>Callback</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>ckpt_path</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>logger</strong> (<em>Logger</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>log_every_n_steps</strong> (<em>int</em>)</p></li>
+<li><p><strong>gradient_clip_val</strong> (<em>float</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>distribution_strategy</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>trainer_kwargs</strong> (<em>Any</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -705,7 +746,7 @@ model (detector read-in, GNN backbone, and task-specific read-outs).</p>
 <dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-data docutils literal notranslate"><span class="pre">Union</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">Tensor</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">Data</span></code>]]</span></p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>data</strong> (<em>Data</em><em> | </em><em>List</em><em>[</em><em>Data</em><em>]</em>) – </p>
+<dd class="field-even"><p><strong>data</strong> (<em>Data</em><em> | </em><em>List</em><em>[</em><em>Data</em><em>]</em>)</p>
 </dd>
 </dl>
 </dd></dl>
@@ -721,8 +762,8 @@ between the training and validation step.</p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
-<li><p><strong>batch</strong> (<em>List</em><em>[</em><em>Data</em><em>]</em>) – </p></li>
-<li><p><strong>batch_idx</strong> (<em>int</em>) – </p></li>
+<li><p><strong>batch</strong> (<em>List</em><em>[</em><em>Data</em><em>]</em>)</p></li>
+<li><p><strong>batch_idx</strong> (<em>int</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -737,8 +778,8 @@ between the training and validation step.</p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
-<li><p><strong>train_batch</strong> (<em>Data</em><em> | </em><em>List</em><em>[</em><em>Data</em><em>]</em>) – </p></li>
-<li><p><strong>batch_idx</strong> (<em>int</em>) – </p></li>
+<li><p><strong>train_batch</strong> (<em>Data</em><em> | </em><em>List</em><em>[</em><em>Data</em><em>]</em>)</p></li>
+<li><p><strong>batch_idx</strong> (<em>int</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -753,8 +794,8 @@ between the training and validation step.</p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
-<li><p><strong>val_batch</strong> (<em>Data</em><em> | </em><em>List</em><em>[</em><em>Data</em><em>]</em>) – </p></li>
-<li><p><strong>batch_idx</strong> (<em>int</em>) – </p></li>
+<li><p><strong>val_batch</strong> (<em>Data</em><em> | </em><em>List</em><em>[</em><em>Data</em><em>]</em>)</p></li>
+<li><p><strong>batch_idx</strong> (<em>int</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -769,9 +810,9 @@ between the training and validation step.</p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
-<li><p><strong>preds</strong> (<em>Tensor</em>) – </p></li>
-<li><p><strong>data</strong> (<em>List</em><em>[</em><em>Data</em><em>]</em>) – </p></li>
-<li><p><strong>verbose</strong> (<em>bool</em>) – </p></li>
+<li><p><strong>preds</strong> (<em>Tensor</em>)</p></li>
+<li><p><strong>data</strong> (<em>List</em><em>[</em><em>Data</em><em>]</em>)</p></li>
+<li><p><strong>verbose</strong> (<em>bool</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -795,7 +836,7 @@ between the training and validation step.</p>
 <dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference internal" href="graphnet.models.model.html#graphnet.models.model.Model" title="graphnet.models.model.Model"><code class="xref py py-class docutils literal notranslate"><span class="pre">Model</span></code></a></span></p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>mode</strong> (<em>bool</em>) – </p>
+<dd class="field-even"><p><strong>mode</strong> (<em>bool</em>)</p>
 </dd>
 </dl>
 </dd></dl>
@@ -809,9 +850,9 @@ between the training and validation step.</p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
-<li><p><strong>dataloader</strong> (<em>DataLoader</em>) – </p></li>
-<li><p><strong>gpus</strong> (<em>List</em><em>[</em><em>int</em><em>] </em><em>| </em><em>int</em><em> | </em><em>None</em>) – </p></li>
-<li><p><strong>distribution_strategy</strong> (<em>str</em><em> | </em><em>None</em>) – </p></li>
+<li><p><strong>dataloader</strong> (<em>DataLoader</em>)</p></li>
+<li><p><strong>gpus</strong> (<em>List</em><em>[</em><em>int</em><em>] </em><em>| </em><em>int</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>distribution_strategy</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -828,11 +869,11 @@ DataFrame.</p>
 </dd>
 <dt class="field-even">Parameters<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
-<li><p><strong>dataloader</strong> (<em>DataLoader</em>) – </p></li>
-<li><p><strong>prediction_columns</strong> (<em>List</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>) – </p></li>
-<li><p><strong>additional_attributes</strong> (<em>List</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>) – </p></li>
-<li><p><strong>gpus</strong> (<em>List</em><em>[</em><em>int</em><em>] </em><em>| </em><em>int</em><em> | </em><em>None</em>) – </p></li>
-<li><p><strong>distribution_strategy</strong> (<em>str</em><em> | </em><em>None</em>) – </p></li>
+<li><p><strong>dataloader</strong> (<em>DataLoader</em>)</p></li>
+<li><p><strong>prediction_columns</strong> (<em>List</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>additional_attributes</strong> (<em>List</em><em>[</em><em>str</em><em>] </em><em>| </em><em>None</em>)</p></li>
+<li><p><strong>gpus</strong> (<em>List</em><em>[</em><em>int</em><em>] </em><em>| </em><em>int</em><em> | </em><em>None</em>)</p></li>
+<li><p><strong>distribution_strategy</strong> (<em>str</em><em> | </em><em>None</em>)</p></li>
 </ul>
 </dd>
 </dl>
@@ -887,7 +928,7 @@ DataFrame.</p>
               
           </div>
             Created using
-            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.3.7.
              and
             <a href="https://github.com/bashtage/sphinx-material/">Material for
               Sphinx</a>

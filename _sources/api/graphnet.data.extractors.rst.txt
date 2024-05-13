@@ -15,6 +15,9 @@ extractors
    :maxdepth: 2
 
    graphnet.data.extractors.icecube
+   graphnet.data.extractors.internal
+   graphnet.data.extractors.liquido
+   graphnet.data.extractors.prometheus
 
 |start-h2| Submodules |end-h2|
 
@@ -22,6 +25,7 @@ extractors
 .. toctree::
    :maxdepth: 2
 
+   graphnet.data.extractors.combine_extractors
    graphnet.data.extractors.extractor
 
 

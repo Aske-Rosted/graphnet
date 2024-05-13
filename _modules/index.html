@@ -122,10 +122,9 @@
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=83e35b93" />
     <link rel="stylesheet" type="text/css" href="../_static/material.css?v=79c92029" />
     <script src="../_static/documentation_options.js?v=5929fcd5"></script>
-    <script src="../_static/doctools.js?v=888ff710"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="icon" href="../_static/favicon.svg"/>
-    <link rel="author" title="About these documents" href="../about.html" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
   
@@ -280,14 +279,42 @@
     <li class="md-nav__item">
     
     
-      <a href="../install.html" class="md-nav__link">Install</a>
+      <a href="../installation/install.html" class="md-nav__link">Installation</a>
       
     
     </li>
     <li class="md-nav__item">
     
     
-      <a href="../contribute.html" class="md-nav__link">Contribute</a>
+      <a href="../models/models.html" class="md-nav__link">Models In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../datasets/datasets.html" class="md-nav__link">Datasets In GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../data_conversion/data_conversion.html" class="md-nav__link">Data Conversion in GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../integration/integration.html" class="md-nav__link">Integrating New Experiments into GraphNeT</a>
+      
+    
+    </li>
+    <li class="md-nav__item">
+    
+    
+      <a href="../contribute/contribute.html" class="md-nav__link">Contributing To GraphNeT</a>
       
     
     </li>
@@ -322,6 +349,7 @@
             
   <h1 id="modules-index--page-root">All modules for which code is available</h1>
 <ul><li><a href="graphnet/data/constants.html">graphnet.data.constants</a></li>
+<li><a href="graphnet/data/curated_datamodule.html">graphnet.data.curated_datamodule</a></li>
 <li><a href="graphnet/data/dataclasses.html">graphnet.data.dataclasses</a></li>
 <li><a href="graphnet/data/dataconverter.html">graphnet.data.dataconverter</a></li>
 <li><a href="graphnet/data/dataloader.html">graphnet.data.dataloader</a></li>
@@ -329,6 +357,7 @@
 <li><a href="graphnet/data/dataset/dataset.html">graphnet.data.dataset.dataset</a></li>
 <li><a href="graphnet/data/dataset/parquet/parquet_dataset.html">graphnet.data.dataset.parquet.parquet_dataset</a></li>
 <li><a href="graphnet/data/dataset/sqlite/sqlite_dataset.html">graphnet.data.dataset.sqlite.sqlite_dataset</a></li>
+<li><a href="graphnet/data/extractors/combine_extractors.html">graphnet.data.extractors.combine_extractors</a></li>
 <li><a href="graphnet/data/extractors/extractor.html">graphnet.data.extractors.extractor</a></li>
 <li><a href="graphnet/data/extractors/icecube/i3extractor.html">graphnet.data.extractors.icecube.i3extractor</a></li>
 <li><a href="graphnet/data/extractors/icecube/i3featureextractor.html">graphnet.data.extractors.icecube.i3featureextractor</a></li>
@@ -346,29 +375,37 @@
 <li><a href="graphnet/data/extractors/icecube/utilities/frames.html">graphnet.data.extractors.icecube.utilities.frames</a></li>
 <li><a href="graphnet/data/extractors/icecube/utilities/i3_filters.html">graphnet.data.extractors.icecube.utilities.i3_filters</a></li>
 <li><a href="graphnet/data/extractors/icecube/utilities/types.html">graphnet.data.extractors.icecube.utilities.types</a></li>
+<li><a href="graphnet/data/extractors/internal/parquet_extractor.html">graphnet.data.extractors.internal.parquet_extractor</a></li>
+<li><a href="graphnet/data/extractors/liquido/h5_extractor.html">graphnet.data.extractors.liquido.h5_extractor</a></li>
+<li><a href="graphnet/data/extractors/prometheus/prometheus_extractor.html">graphnet.data.extractors.prometheus.prometheus_extractor</a></li>
 <li><a href="graphnet/data/parquet/deprecated_methods.html">graphnet.data.parquet.deprecated_methods</a></li>
-<li><a href="graphnet/data/pipeline.html">graphnet.data.pipeline</a></li>
 <li><a href="graphnet/data/pre_configured/dataconverters.html">graphnet.data.pre_configured.dataconverters</a></li>
 <li><a href="graphnet/data/readers/graphnet_file_reader.html">graphnet.data.readers.graphnet_file_reader</a></li>
 <li><a href="graphnet/data/readers/i3reader.html">graphnet.data.readers.i3reader</a></li>
+<li><a href="graphnet/data/readers/internal_parquet_reader.html">graphnet.data.readers.internal_parquet_reader</a></li>
+<li><a href="graphnet/data/readers/liquido_reader.html">graphnet.data.readers.liquido_reader</a></li>
+<li><a href="graphnet/data/readers/prometheus_reader.html">graphnet.data.readers.prometheus_reader</a></li>
 <li><a href="graphnet/data/sqlite/deprecated_methods.html">graphnet.data.sqlite.deprecated_methods</a></li>
-<li><a href="graphnet/data/utilities/parquet_to_sqlite.html">graphnet.data.utilities.parquet_to_sqlite</a></li>
 <li><a href="graphnet/data/utilities/random.html">graphnet.data.utilities.random</a></li>
 <li><a href="graphnet/data/utilities/sqlite_utilities.html">graphnet.data.utilities.sqlite_utilities</a></li>
 <li><a href="graphnet/data/utilities/string_selection_resolver.html">graphnet.data.utilities.string_selection_resolver</a></li>
 <li><a href="graphnet/data/writers/graphnet_writer.html">graphnet.data.writers.graphnet_writer</a></li>
 <li><a href="graphnet/data/writers/parquet_writer.html">graphnet.data.writers.parquet_writer</a></li>
 <li><a href="graphnet/data/writers/sqlite_writer.html">graphnet.data.writers.sqlite_writer</a></li>
+<li><a href="graphnet/datasets/prometheus_datasets.html">graphnet.datasets.prometheus_datasets</a></li>
+<li><a href="graphnet/datasets/test_dataset.html">graphnet.datasets.test_dataset</a></li>
 <li><a href="graphnet/deployment/deployer.html">graphnet.deployment.deployer</a></li>
 <li><a href="graphnet/deployment/deployment_module.html">graphnet.deployment.deployment_module</a></li>
 <li><a href="graphnet/deployment/icecube/cleaning_module.html">graphnet.deployment.icecube.cleaning_module</a></li>
 <li><a href="graphnet/deployment/icecube/inference_module.html">graphnet.deployment.icecube.inference_module</a></li>
+<li><a href="graphnet/exceptions/exceptions.html">graphnet.exceptions.exceptions</a></li>
 <li><a href="graphnet/models/coarsening.html">graphnet.models.coarsening</a></li>
 <li><a href="graphnet/models/components/embedding.html">graphnet.models.components.embedding</a></li>
 <li><a href="graphnet/models/components/layers.html">graphnet.models.components.layers</a></li>
 <li><a href="graphnet/models/components/pool.html">graphnet.models.components.pool</a></li>
 <li><a href="graphnet/models/detector/detector.html">graphnet.models.detector.detector</a></li>
 <li><a href="graphnet/models/detector/icecube.html">graphnet.models.detector.icecube</a></li>
+<li><a href="graphnet/models/detector/liquido.html">graphnet.models.detector.liquido</a></li>
 <li><a href="graphnet/models/detector/prometheus.html">graphnet.models.detector.prometheus</a></li>
 <li><a href="graphnet/models/gnn/RNN_tito.html">graphnet.models.gnn.RNN_tito</a></li>
 <li><a href="graphnet/models/gnn/convnet.html">graphnet.models.gnn.convnet</a></li>
@@ -390,9 +427,8 @@
 <li><a href="graphnet/models/task/classification.html">graphnet.models.task.classification</a></li>
 <li><a href="graphnet/models/task/reconstruction.html">graphnet.models.task.reconstruction</a></li>
 <li><a href="graphnet/models/task/task.html">graphnet.models.task.task</a></li>
+<li><a href="graphnet/models/transformer/iseecube.html">graphnet.models.transformer.iseecube</a></li>
 <li><a href="graphnet/models/utils.html">graphnet.models.utils</a></li>
-<li><a href="graphnet/pisa/fitting.html">graphnet.pisa.fitting</a></li>
-<li><a href="graphnet/pisa/plotting.html">graphnet.pisa.plotting</a></li>
 <li><a href="graphnet/training/callbacks.html">graphnet.training.callbacks</a></li>
 <li><a href="graphnet/training/labels.html">graphnet.training.labels</a></li>
 <li><a href="graphnet/training/loss_functions.html">graphnet.training.loss_functions</a></li>
@@ -434,7 +470,7 @@
               
           </div>
             Created using
-            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+            <a href="http://www.sphinx-doc.org/">Sphinx</a> 7.3.7.
              and
             <a href="https://github.com/bashtage/sphinx-material/">Material for
               Sphinx</a>
