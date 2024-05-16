@@ -609,11 +609,13 @@ class Dataset(
         """
         # Convert truth to dict
         if len(truth.shape) == 1:
-            truth = truth.reshape(1, -1)
-        truth_dict = {
-            key: truth[:, index] for index, key in enumerate(self._truth)
-        }
-
+            truth_dict = {
+                key: truth[0][index] for index, key in enumerate(self._truth)
+            }
+        else:
+            truth_dict = {
+                key: truth[:, index] for index, key in enumerate(self._truth)
+            }
         # Define custom labels
         labels_dict = self._get_labels(truth_dict)
 

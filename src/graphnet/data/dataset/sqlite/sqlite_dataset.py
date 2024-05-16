@@ -52,7 +52,9 @@ class SQLiteDataset(Dataset):
     ) -> List[Tuple[Any, ...]]:
         """Query table at a specific index, optionally with some selection."""
         # Check(s)
+        column_len = 1
         if isinstance(columns, list):
+            column_len = len(columns)
             columns = ", ".join(columns)
 
         if not selection:  # I.e., `None` or `""`
@@ -81,6 +83,13 @@ class SQLiteDataset(Dataset):
                 raise ColumnMissingException(str(e))
             else:
                 raise e
+        if column_len > 1:
+            types: Union[List[str], str] = [
+                str(np.array(result[0][i]).dtype) for i in range(column_len)
+            ]
+            if len(set(types)) > 1:
+                types = ",".join(types)
+                result = np.asarray(result, dtype=types)
         return np.asarray(result)
 
     def _get_all_indices(self) -> List[int]:
