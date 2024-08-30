@@ -107,11 +107,11 @@ class Task(Model):
 
         self._transform_prediction_training: Callable[
             [Tensor], Tensor
-        ] = lambda x: x
+        ] = self._identity
         self._transform_prediction_inference: Callable[
             [Tensor], Tensor
-        ] = lambda x: x
-        self._transform_target: Callable[[Tensor], Tensor] = lambda x: x
+        ] = self._identity
+        self._transform_target: Callable[[Tensor], Tensor] = self._identity
         self._validate_and_set_transforms(
             transform_prediction_and_target,
             transform_target,
@@ -216,6 +216,10 @@ class Task(Model):
                 self._transform_target = transform_target
             if transform_inference is not None:
                 self._transform_prediction_inference = transform_inference
+
+    def _identity(self, x: Tensor) -> Tensor:
+        """Identity function."""
+        return x
 
 
 class LearnedTask(Task):
