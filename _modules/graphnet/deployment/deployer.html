@@ -122,7 +122,7 @@
     <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=83e35b93" />
     <link rel="stylesheet" type="text/css" href="../../../_static/material.css?v=79c92029" />
     <script src="../../../_static/documentation_options.js?v=5929fcd5"></script>
-    <script src="../../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
     <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="icon" href="../../../_static/favicon.svg"/>
     <link rel="index" title="Index" href="../../../genindex.html" />
@@ -322,14 +322,7 @@
     <li class="md-nav__item">
     
     
-      <a href="../../../api/graphnet.html" class="md-nav__link">Subpackages</a>
-      
-    
-    </li>
-    <li class="md-nav__item">
-    
-    
-      <a href="../../../api/graphnet.html#submodules" class="md-nav__link">Submodules</a>
+      <a href="../../../api/graphnet.html" class="md-nav__link">API</a>
       
     
     </li>
@@ -357,6 +350,7 @@
             
   <h1 id="modules-graphnet-deployment-deployer--page-root">Source code for graphnet.deployment.deployer</h1><div class="highlight"><pre>
 <span></span><span class="sd">"""Contains the graphnet deployment module."""</span>
+
 <span class="kn">import</span> <span class="nn">random</span>
 <span class="kn">from</span> <span class="nn">abc</span> <span class="kn">import</span> <span class="n">abstractmethod</span><span class="p">,</span> <span class="n">ABC</span>
 <span class="kn">import</span> <span class="nn">multiprocessing</span>
@@ -367,7 +361,7 @@
 <span class="kn">from</span> <span class="nn">.deployment_module</span> <span class="kn">import</span> <span class="n">DeploymentModule</span>
 <span class="kn">from</span> <span class="nn">graphnet.utilities.logging</span> <span class="kn">import</span> <span class="n">Logger</span>
 
-<span class="k">if</span> <span class="n">has_torch_package</span> <span class="ow">or</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+<span class="k">if</span> <span class="n">has_torch_package</span><span class="p">()</span> <span class="ow">or</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
     <span class="kn">import</span> <span class="nn">torch</span>
 
 
@@ -517,7 +511,7 @@
               
           </div>
             Created using
-            <a href="http://www.sphinx-doc.org/">Sphinx</a> 8.0.2.
+            <a href="http://www.sphinx-doc.org/">Sphinx</a> 8.1.3.
              and
             <a href="https://github.com/bashtage/sphinx-material/">Material for
               Sphinx</a>
