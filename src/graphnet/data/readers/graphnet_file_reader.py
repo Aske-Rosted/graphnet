@@ -74,6 +74,8 @@ class GraphNeTFileReader(Logger, ABC):
         for dir in path:
             for accepted_file_extension in self.accepted_file_extensions:
                 files.extend(glob.glob(dir + f"/*{accepted_file_extension}"))
+        
+        print(files)
 
         # Check that files are OK.
         self.validate_files(files)

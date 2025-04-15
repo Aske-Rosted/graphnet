@@ -126,12 +126,12 @@ class I3TruthExtractor(I3Extractor):
             "Starting_Track": padding_value,
             "Starting_Outer": padding_value,
             "Starting_Inner": padding_value,
+            "Doms_Hit"
             "multiplicity_at_cyl": padding_value,
-            "Homogenized_QTot_Splits": frame['Homogenized_QTot_New'].value,
-            "Negative_Resiudals_First_Hit_Charge": padding_value,
-            "Negative_Resiudals_First_Hit_Energy": padding_value,
-            "Negative_Resiudals_First_Hit_Primary": padding_value,
-
+            "multiplicity_at_cyl_floored": padding_value,
+            "leading_energy_at_cyl": padding_value,
+            "bundle_energy_at_cyl": padding_value,
+            "Homogenized_QTot_Splits": frame['Homogenized_QTot_New'].value
         }
 
         if sim_type=="NuGen":
@@ -139,16 +139,10 @@ class I3TruthExtractor(I3Extractor):
             output["Starting_Track"] = self._check_throughgoing(frame)
             output["Starting_Outer"] = self._check_throughgoing_new(frame, outer=True)
             output["Starting_Inner"] = self._check_throughgoing_new(frame, outer=False)
-            output['Negative_Resiudals_First_Hit_Charge'] = int(0)
-            output['Negative_Resiudals_First_Hit_Energy'] = int(0)
-            output['Negative_Resiudals_First_Hit_Primary'] = int(0)
-
 
         elif sim_type=="corsika":
             output["Neutrino"] = 0
-            output['Negative_Resiudals_First_Hit_Charge'] = frame['FirstHitInfo_charge']['lateral_neg']
-            output['Negative_Resiudals_First_Hit_Energy'] = frame['FirstHitInfo_energy']['lateral_neg']
-            output['Negative_Resiudals_First_Hit_Primary'] = frame['FirstHitInfo_primary']['lateral_neg']
+            output = self._bundle_info(frame, output_dict=output)
         else:
             output["Neutrino"] = 0
 
@@ -220,6 +214,7 @@ class I3TruthExtractor(I3Extractor):
                     }
                 )
 
+        #print(output)
         return output
 
     def _extract_dbang_decay_length(
@@ -426,6 +421,71 @@ class I3TruthExtractor(I3Extractor):
             return 0
         else:
             return 1
+    
+    def _is_muon(self, particle):
+        ''' Checks if particle is a Muon: MuPlus or MuMinus
+
+        Parameters
+        ----------
+        particle : I3Particle or I3MMCTrack
+            Particle to be checked.
+
+        Returns
+        -------
+        is_muon : bool
+            True if particle is a muon, else false.
+        '''
+        if particle == None:
+            return False
+        if isinstance(particle, simclasses.I3MMCTrack):
+            particle = particle.particle
+            print(particle.pdg_encoding)
+        return particle.pdg_encoding in (-13,13)
+
+    def _bundle_info(self, frame, output_dict):
+        tracklist = frame['MMCTrackList']
+
+        energies_at_entry = []
+        energies_at_cyl = []
+        pos_at_cyl = None
+
+        for particle in tracklist:
+            muon = particle.particle
+            # Check if particle is a muon
+            if not self._is_muon(muon):
+                continue
+
+            cyl_energy = particle.Ei
+            energies_at_cyl.append(cyl_energy)
+
+            cyl_position = np.atleast_2d([particle.xi, particle.yi, particle.zi])
+            if pos_at_cyl is None:
+                pos_at_cyl = cyl_position
+            else:
+                pos_at_cyl = np.append(pos_at_cyl, cyl_position, axis=0)
+
+        energies_at_cyl = np.array(energies_at_cyl)
+        energies_at_cyl = energies_at_cyl[np.isfinite(energies_at_cyl)]
+
+        output_dict['multiplicity_at_cyl'] = len(
+            energies_at_cyl)
+        
+
+        mult_mask = energies_at_cyl >= 100
+        output_dict['multiplicity_at_cyl_floored'] = len(
+            energies_at_cyl[mult_mask])
+        
+        try:
+            output_dict['leading_energy_rel_cyl'] = np.max(
+                energies_at_cyl) / np.sum(energies_at_cyl)
+            output_dict['leading_energy_at_cyl'] = np.max(energies_at_cyl)
+            output_dict['bundle_energy_at_cyl'] = np.sum(energies_at_cyl)
+        except:
+            output_dict['leading_energy_rel_cyl'] = -1
+
+
+        
+        return output_dict
 
 
     # Utility methods

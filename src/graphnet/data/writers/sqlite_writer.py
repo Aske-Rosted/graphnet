@@ -160,7 +160,11 @@ class SQLiteWriter(GraphNeTWriter):
         for file_count, input_file in tqdm(enumerate(files), colour="green"):
 
             # Extract table names and index column name in database
-            tables, primary_key = get_primary_keys(database=input_file)
+            try:
+                tables, primary_key = get_primary_keys(database=input_file)
+            except:
+                print(f'error with: {input_file}')
+                continue
 
             for table_name in tables.keys():
                 # Extract all data in the table from the given database
