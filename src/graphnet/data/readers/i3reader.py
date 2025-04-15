@@ -6,6 +6,7 @@ from graphnet.utilities.imports import has_icecube_package
 from graphnet.data.extractors.icecube.utilities.i3_filters import (
     I3Filter,
     NullSplitI3Filter,
+    ChargeFilter,
 )
 from graphnet.data.extractors.icecube import I3Extractor
 from graphnet.data.dataclasses import I3FileSet
