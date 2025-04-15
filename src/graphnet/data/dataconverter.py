@@ -77,7 +77,7 @@ class DataConverter(ABC, Logger):
         super().__init__(name=__name__, class_name=self.__class__.__name__)
 
     @final
-    def __call__(self, input_file: Union[str, List[str]], folder: bool = True) -> None:
+    def __call__(self, input_dir: Union[str, List[str]]) -> None:
         """Extract data from files in `input_dir` and save to disk.
 
         Args:
@@ -87,33 +87,16 @@ class DataConverter(ABC, Logger):
         """
         # Get the file reader to produce a list of input files
         # in the directory
-        if folder == True:
-            input_files = self._file_reader.find_files(path=input_file)
-            self._file_reader.validate_files(input_files=input_files)
-            self._launch_jobs(input_files=input_files)
-            self._output_files = [
-                os.path.join(
-                    self._output_dir,
-                    self._create_file_name(file)
-                    + self._save_method.file_extension,
-                )
-                for file in input_files
-            ]
-        else:
-            gcd_file = '/cvmfs/icecube.opensciencegrid.org/data/GCD/GeoCalibDetectorStatus_2020.Run134142.Pass2_V0.i3.gz'
-            file_list = []
-            for file in input_file:
-                file_list.append(I3FileSet(i3_file=file, gcd_file=gcd_file))
-            self._file_reader.validate_files(input_files=file_list)
-            self._launch_jobs(input_files=file_list)
-            self._output_files = [
-                os.path.join(
-                    self._output_dir,
-                    self._create_file_name(file)
-                    + self._save_method.file_extension,
-                )
-                for file in file_list
-            ]
+        input_files = self._file_reader.find_files(path=input_dir)
+        self._launch_jobs(input_files=input_files)
+        self._output_files = [
+            os.path.join(
+                self._output_dir,
+                self._create_file_name(file)
+                + self._save_method.file_extension,
+            )
+            for file in input_files
+        ]
 
     @final
     def _launch_jobs(

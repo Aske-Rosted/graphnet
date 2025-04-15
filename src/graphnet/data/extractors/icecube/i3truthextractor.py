@@ -11,20 +11,11 @@ from .utilities.frames import (
 )
 from graphnet.utilities.imports import has_icecube_package
 
-parent_dir = '/data/user/mnakos/EHE_Globalfit'
-import sys
-sys.path.append(parent_dir)
-from Process_Selection.Helpers.geometry_cut import boundary_check
-from Process_Selection.Helpers.starting_boundaries import check_boundary
-
-#from EHE_processing.modules.mc_infos import BundleCharacterization
-
 if has_icecube_package() or TYPE_CHECKING:
     from icecube import (
         dataclasses,
         icetray,
         phys_services,
-        simclasses,
     )  # pyright: reportMissingImports=false
 
 
@@ -35,8 +26,7 @@ class I3TruthExtractor(I3Extractor):
         self,
         name: str = "truth",
         borders: Optional[List[np.ndarray]] = None,
-        mctree: Optional[str] = "I3MCTree_preMuonProp",
-        sim_type: Optional[str] = "corsika",
+        mctree: Optional[str] = "I3MCTree",
     ):
         """Construct I3TruthExtractor.
 
@@ -89,17 +79,15 @@ class I3TruthExtractor(I3Extractor):
         else:
             self._borders = borders
         self._mctree = mctree
-        self._sim_type = sim_type
 
     def __call__(
         self, frame: "icetray.I3Frame", padding_value: Any = -1
     ) -> Dict[str, Any]:
         """Extract truth-level information."""
         is_mc = frame_is_montecarlo(frame, self._mctree)
-        is_noise = False
-        #is_noise = frame_is_noise(frame, self._mctree)
-        #sim_type = self._find_data_type(is_mc, self._i3_file)
-        sim_type = self._sim_type
+        is_noise = frame_is_noise(frame, self._mctree)
+        sim_type = self._find_data_type(is_mc, self._i3_file)
+
         output = {
             "energy": padding_value,
             "position_x": padding_value,
@@ -122,35 +110,16 @@ class I3TruthExtractor(I3Extractor):
             "energy_track": padding_value,
             "energy_cascade": padding_value,
             "inelasticity": padding_value,
-            "Neutrino": padding_value,
-            "Starting_Track": padding_value,
-            "Starting_Outer": padding_value,
-            "Starting_Inner": padding_value,
-            "multiplicity_at_cyl": padding_value,
-            "Homogenized_QTot_Splits": frame['Homogenized_QTot_New'].value,
-            "Negative_Resiudals_First_Hit_Charge": padding_value,
-            "Negative_Resiudals_First_Hit_Energy": padding_value,
-            "Negative_Resiudals_First_Hit_Primary": padding_value,
-
+            "DeepCoreFilter_13": padding_value,
+            "CascadeFilter_13": padding_value,
+            "MuonFilter_13": padding_value,
+            "OnlineL2Filter_17": padding_value,
+            "L3_oscNext_bool": padding_value,
+            "L4_oscNext_bool": padding_value,
+            "L5_oscNext_bool": padding_value,
+            "L6_oscNext_bool": padding_value,
+            "L7_oscNext_bool": padding_value,
         }
-
-        if sim_type=="NuGen":
-            output["Neutrino"] = 1
-            output["Starting_Track"] = self._check_throughgoing(frame)
-            output["Starting_Outer"] = self._check_throughgoing_new(frame, outer=True)
-            output["Starting_Inner"] = self._check_throughgoing_new(frame, outer=False)
-            output['Negative_Resiudals_First_Hit_Charge'] = int(0)
-            output['Negative_Resiudals_First_Hit_Energy'] = int(0)
-            output['Negative_Resiudals_First_Hit_Primary'] = int(0)
-
-
-        elif sim_type=="corsika":
-            output["Neutrino"] = 0
-            output['Negative_Resiudals_First_Hit_Charge'] = frame['FirstHitInfo_charge']['lateral_neg']
-            output['Negative_Resiudals_First_Hit_Energy'] = frame['FirstHitInfo_energy']['lateral_neg']
-            output['Negative_Resiudals_First_Hit_Primary'] = frame['FirstHitInfo_primary']['lateral_neg']
-        else:
-            output["Neutrino"] = 0
 
         # Only InIceSplit P frames contain ML appropriate I3RecoPulseSeriesMap etc.
         # At low levels i3files contain several other P frame splits (e.g NullSplit),
@@ -160,7 +129,43 @@ class I3TruthExtractor(I3Extractor):
             "Final",
         ]:
             return output
-#
+
+        if "FilterMask" in frame:
+            if "DeepCoreFilter_13" in frame["FilterMask"]:
+                output["DeepCoreFilter_13"] = int(
+                    bool(frame["FilterMask"]["DeepCoreFilter_13"])
+                )
+            if "CascadeFilter_13" in frame["FilterMask"]:
+                output["CascadeFilter_13"] = int(
+                    bool(frame["FilterMask"]["CascadeFilter_13"])
+                )
+            if "MuonFilter_13" in frame["FilterMask"]:
+                output["MuonFilter_13"] = int(
+                    bool(frame["FilterMask"]["MuonFilter_13"])
+                )
+            if "OnlineL2Filter_17" in frame["FilterMask"]:
+                output["OnlineL2Filter_17"] = int(
+                    bool(frame["FilterMask"]["OnlineL2Filter_17"])
+                )
+
+        elif "DeepCoreFilter_13" in frame:
+            output["DeepCoreFilter_13"] = int(bool(frame["DeepCoreFilter_13"]))
+
+        if "L3_oscNext_bool" in frame:
+            output["L3_oscNext_bool"] = int(bool(frame["L3_oscNext_bool"]))
+
+        if "L4_oscNext_bool" in frame:
+            output["L4_oscNext_bool"] = int(bool(frame["L4_oscNext_bool"]))
+
+        if "L5_oscNext_bool" in frame:
+            output["L5_oscNext_bool"] = int(bool(frame["L5_oscNext_bool"]))
+
+        if "L6_oscNext_bool" in frame:
+            output["L6_oscNext_bool"] = int(bool(frame["L6_oscNext_bool"]))
+
+        if "L7_oscNext_bool" in frame:
+            output["L7_oscNext_bool"] = int(bool(frame["L7_oscNext_bool"]))
+
         if is_mc and (not is_noise):
             (
                 MCInIcePrimary,
@@ -406,28 +411,6 @@ class I3TruthExtractor(I3Extractor):
 
         return energy_track, energy_cascade, inelasticity
 
-    def _check_throughgoing(self, frame):
-        mctree = frame['I3MCTree_preMuonProp']
-
-        is_inside = boundary_check(mctree[1])
-        if is_inside == False:
-            return 0
-        else:
-            return 1
-        
-    def _check_throughgoing_new(self, frame, outer = True):
-        mctree = frame['I3MCTree_preMuonProp']
-
-        is_inside = check_boundary(
-            mctree[1],
-            outer,
-        )
-        if is_inside == False:
-            return 0
-        else:
-            return 1
-
-
     # Utility methods
     def _find_data_type(self, mc: bool, input_file: str) -> str:
         """Determine the data type.
@@ -439,7 +422,6 @@ class I3TruthExtractor(I3Extractor):
         Returns:
             The simulation/data type.
         """
-        print(len(input_file))
         # @TODO: Rewrite to automatically infer `mc` from `input_file`?
         if not mc:
             sim_type = "data"
@@ -447,8 +429,8 @@ class I3TruthExtractor(I3Extractor):
             sim_type = "muongun"
         elif "corsika" in input_file:
             sim_type = "corsika"
-        #elif "genie" in input_file or "nu" in input_file.lower():
-        #    sim_type = "genie"
+        elif "genie" in input_file or "nu" in input_file.lower():
+            sim_type = "genie"
         elif "noise" in input_file:
             sim_type = "noise"
         elif "L2" in input_file:  # not robust

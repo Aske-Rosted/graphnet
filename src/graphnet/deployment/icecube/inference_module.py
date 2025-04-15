@@ -80,23 +80,19 @@ class I3InferenceModule(DeploymentModule):
 
     def __call__(self, frame: I3Frame) -> bool:
         """Write predictions from model to frame."""
-
         # inference
         data = self._create_data_representation(frame=frame)
-        #print(data)
         predictions = self._apply_model(data=data)
-        #print(predictions)
 
-        return predictions
         # Check dimensions of predictions and prediction columns
-        #dim = self._check_dimensions(predictions=predictions)
+        dim = self._check_dimensions(predictions=predictions)
 
         # Build Dictionary from predictions
-        #data = self._create_dictionary(dim=dim, predictions=predictions)
-        #print(data)
+        data = self._create_dictionary(dim=dim, predictions=predictions)
+
         # Submit Dictionary to frame
-        #frame = self._add_to_frame(frame=frame, data=data)
-        #return True
+        frame = self._add_to_frame(frame=frame, data=data)
+        return True
 
     def _check_dimensions(self, predictions: np.ndarray) -> int:
         if len(predictions.shape) > 1:
@@ -179,12 +175,9 @@ class I3InferenceModule(DeploymentModule):
         features = None
         for i3extractor in self._i3_extractors:
             feature_dict = i3extractor(frame)
-            #print(feature_dict)
             features_pulsemap = np.array(
                 [feature_dict[key] for key in self._features]
             ).T
-            #print(features_pulsemap)
-            #print(type(features_pulsemap))
             if features is None:
                 features = features_pulsemap
             else:
