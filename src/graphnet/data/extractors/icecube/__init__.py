@@ -12,6 +12,12 @@ from .i3pulseextractor import (
     I3PulseExtractor,
     I3PulseExtractorIceCube86,
 )
+
+from .i3inferencepulseextractor import (
+    I3InferencePulseExtractor,
+    I3InferencePulseExtractorIceCube86,
+)
+
 from .i3pulseextractornugen import (
     I3PulseExtractorNugen,
     I3PulseExtractorNugenIceCube86,

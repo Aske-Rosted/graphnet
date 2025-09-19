@@ -275,7 +275,7 @@ class CoincidenceDominant(I3Filter):
 class ShortenFile(I3Filter):
     """Passes if the Event ID is less than 30."""
 
-    def __init__(self):
+    def __init__(self, max_event_id: int = 100):
         """Initialize ChargeFilter.
 
         Args:
@@ -286,6 +286,8 @@ class ShortenFile(I3Filter):
             If True, the frame is kept if any of the filter names are present.
             If False, the frame is kept if all of the filter names are present.
         """
+        self._max_event_id = max_event_id
+
     def _keep_frame(self, frame: "icetray.I3Frame") -> bool:
         """Check if current frame should be kept.
 
@@ -294,7 +296,7 @@ class ShortenFile(I3Filter):
                 The I3-frame to check.
         """
 
-        if frame['I3EventHeader'].event_id > 200:
+        if frame['I3EventHeader'].event_id > self._max_event_id:
             return False
         else:
             print(frame['I3EventHeader'].event_id)

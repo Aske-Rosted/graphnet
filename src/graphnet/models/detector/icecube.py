@@ -71,7 +71,65 @@ class IceCubeBundle(Detector):
     
     def _dom_cond(self, x: torch.tensor) -> torch.tensor:
         return x
+
+class IceCubeBundleNew(Detector):
+    """`Detector` class for IceCube-Bundle Rejection."""
+
+    geometry_table_path = os.path.join(
+        ICECUBE_GEOMETRY_TABLE_DIR, "icecube86.parquet"
+    )
+    xyz = ["dom_x", "dom_y", "dom_z"]
+    string_id_column = "string"
+    sensor_id_column = "sensor_id"
+
+    def feature_map(self) -> Dict[str, Callable]:
+        """Map standardization functions to each dimension of input data."""
+        feature_map = {
+            "dom_x": self._dom_xyz,
+            "dom_y": self._dom_xyz,
+            "dom_z": self._dom_xyz,
+            "dom_time": self._dom_time,
+            "adjusted_time": self._adjusted_time,
+            "dom_qtot": self._charge,
+            "dom_qtot_exc": self._charge,
+            "qcumsum": self._qcumsum,
+            "rde": self._rde,
+            "pmt_area": self._pmt_area,
+            "bright_dom": self._dom_cond,
+            "dom_hit": self._dom_cond,
+            "saturation_total_time": self._charge,
+            "in_saturation_window": self._identity,
+            "in_calibration_errata": self._identity,
+            "t_from_leading": self._identity,
+        }
+
+
+        return feature_map
+
+    def _dom_xyz(self, x: torch.tensor) -> torch.tensor:
+        return x / 500.0
+
+    def _dom_time(self, x: torch.tensor) -> torch.tensor:
+        return (x - 1.0e04) / 3.0e4
     
+    def _adjusted_time(self, x: torch.tensor) -> torch.tensor:
+        return x / 3.0e4
+    
+    def _qcumsum(self, x: torch.tensor) -> torch.tensor:
+        return x / 25
+    
+    def _charge(self, x: torch.tensor) -> torch.tensor:
+
+        return torch.log10(x + 1)
+
+    def _rde(self, x: torch.tensor) -> torch.tensor:
+        return (x - 1.25) / 0.25
+
+    def _pmt_area(self, x: torch.tensor) -> torch.tensor:
+        return x / 0.05
+    
+    def _dom_cond(self, x: torch.tensor) -> torch.tensor:
+        return x
 
 class IceCube86(Detector):
     """`Detector` class for IceCube-86."""

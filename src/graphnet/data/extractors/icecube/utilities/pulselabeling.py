@@ -50,12 +50,12 @@ def make_multiplicity_statistics(
     cylinder_muons = frame['MMCTrackList']
     tracks = []
     for track in cylinder_muons:
-        if full_mctree.is_in_subtree(primary, track.particle) == True: # Cleaning Coincidence Hits
-            tracks.append(track)
+        #if full_mctree.is_in_subtree(primary, track.particle) == True: # Cleaning Coincidence Hits
+        tracks.append(track)
 
     muon_multiplicity_cylinder = len(tracks)
     
-    deposited_muon_multiplicity = len(event_pulses['muon_id'].unique())
+    deposited_muon_multiplicity = len(event_pulses['muon_id'][event_pulses['hit_type_primary'] == 'lateral'].unique())
     primary_residual = event_pulses[(event_pulses['hit_type_primary'] == 'lateral') & (event_pulses['residual_primary'] < 0)]
     primary_residual_multiplicity = len(primary_residual['muon_id'].unique())
     del primary_residual

@@ -9,7 +9,7 @@ from torch_geometric.data import Data, Batch
 
 from graphnet.utilities.config import ModelConfig
 from graphnet.deployment import DeploymentModule
-from graphnet.data.extractors.icecube import I3FeatureExtractor
+from graphnet.data.extractors.icecube import I3PulseExtractor
 from graphnet.utilities.imports import has_icecube_package
 
 if has_icecube_package() or TYPE_CHECKING:
@@ -27,7 +27,7 @@ class I3InferenceModule(DeploymentModule):
     def __init__(
         self,
         pulsemap_extractor: Union[
-            List[I3FeatureExtractor], I3FeatureExtractor
+            List[I3PulseExtractor], I3PulseExtractor
         ],
         model_config: Union[ModelConfig, str],
         state_dict: str,

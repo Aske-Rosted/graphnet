@@ -10,14 +10,12 @@ if has_icecube_package() or TYPE_CHECKING:
     from icecube import icetray  # pyright: reportMissingImports=false
     from icecube import phys_services
     from icecube import dataclasses
-    from icecube import simclasses
-    from icecube import recclasses
 
 import pandas as pd
 import numpy as np
 from collections import defaultdict 
 
-class I3PulseExtractor(I3Extractor):
+class I3InferencePulseExtractor(I3Extractor):
     """Base class for labeling pulses from laterally spread muons in moun bundles."""
 
     def __init__(self, pulsemap: str, 
@@ -51,7 +49,7 @@ Chain
 -> label pulses
 -> 
 '''
-class I3PulseExtractorIceCube86(I3PulseExtractor):
+class I3InferencePulseExtractorIceCube86(I3InferencePulseExtractor):
     """Class processing through and labeling pulses."""
 
     def __call__(self, frame: "icetray.I3Frame") -> Dict[str, List[Any]]:
@@ -126,25 +124,6 @@ class I3PulseExtractorIceCube86(I3PulseExtractor):
         if "CalibrationErrata" in frame:
             calibration_errata = frame.Get("CalibrationErrata")
 
-
-        # Process MCPulses Information
-        particle_pdg = frame['PolyplopiaPrimary'].pdg_encoding
-        if (np.abs(particle_pdg) not in [12,14,16]):
-            mc_labeled_pulses, leading = self.get_mc_pulse_info(
-                frame, 
-                geo = self._gcd_dict,
-            )
-
-            
-            self.make_multiplicity_information(
-                frame,
-                mc_pulses=mc_labeled_pulses,
-            )
-        else:
-            leading = self._get_leading_nugen(
-                frame,
-            )
-
         
         for om_key in om_keys:
             # Common values for each OM
@@ -155,15 +134,6 @@ class I3PulseExtractorIceCube86(I3PulseExtractor):
             rde = self._get_relative_dom_efficiency(
                 frame, om_key, padding_value
             )
-
-            r = phys_services.I3Calculator.closest_approach_distance(leading[0], self._gcd_dict[om_key].position)
-            r_energy = phys_services.I3Calculator.closest_approach_distance(leading[1], self._gcd_dict[om_key].position)
-            r_primary = phys_services.I3Calculator.closest_approach_distance(leading[2], self._gcd_dict[om_key].position)
-
-            t_charge = leading[0].time + phys_services.I3Calculator.cherenkov_time(leading[0],self._gcd_dict[om_key].position)
-            t_energy = leading[1].time + phys_services.I3Calculator.cherenkov_time(leading[1],self._gcd_dict[om_key].position)
-            t_primary = leading[2].time + phys_services.I3Calculator.cherenkov_time(leading[2],self._gcd_dict[om_key].position) 
-
 
             string = om_key[0]
             dom_number = om_key[1]
@@ -255,16 +225,6 @@ class I3PulseExtractorIceCube86(I3PulseExtractor):
                     output["in_calibration_errata"].append(0)
                     output["errata_total_time"].append(0)
 
-                # Residual Information
-                output['r_charge'].append(r)
-                output['r_energy'].append(r_energy)
-                output['r_primary'].append(r_primary)
-                output['timing_residual_charge'].append(pulse.time - t_charge)
-                output['timing_residual_energy'].append(pulse.time - t_energy)
-                output['timing_residual_primary'].append(pulse.time - t_primary)
-
-
-
                 # Pulse flags
                 flags = getattr(pulse, "flags", padding_value)
                 if flags == padding_value:
@@ -294,12 +254,6 @@ class I3PulseExtractorIceCube86(I3PulseExtractor):
                                     "pmt_number": output['pmt_number'],
                                     "dom_number": output['dom_number'],
                                     "dom_type": output['dom_type'],
-                                    "r_charge": output['r_charge'],
-                                    "r_energy": output['r_energy'],
-                                    "r_primary": output['r_primary'],
-                                    "residual_charge": output['timing_residual_charge'],
-                                    "residual_energy": output['timing_residual_energy'],
-                                    "residual_primary": output['timing_residual_primary'],
                                     "in_saturation_window": output['in_saturation_window'],
                                     "in_calibration_errata": output['in_calibration_errata'],
                                     "saturation_total_time": output['saturation_total_time'],
@@ -340,32 +294,10 @@ class I3PulseExtractorIceCube86(I3PulseExtractor):
         #    min_times[t_name] = min_times[t_name] - min_times["time"].min()
 
 
-        if (np.abs(particle_pdg) not in [12,14,16]) and self._pulse_labeling:
+       
+        reco_pulses_final = min_times
 
-            reco_pulses_labeled = label_reco_pulses_newer(
-                reco_pulses=min_times,
-                mc_pulses=mc_labeled_pulses,
-            )
-
-            hit_types = ['charge', 'energy', 'primary']
-
-            for hit_type in hit_types:
-                reco_pulses_final = self.label_training_targets(
-                    leading_muon=hit_type,
-                    pulses=reco_pulses_labeled,
-                )
-
-        else:
-            reco_pulses_final = min_times
-
-        reco_pulses_final = reco_pulses_final.drop(['r_charge', 'r_energy', 'r_primary'], axis=1)
         output = reco_pulses_final.to_dict(orient='list')
-
-        frame['NumberStrings'] = dataclasses.I3Double(len(np.unique(evt_pulses['string'].values)))
-        frame['NumberDOMs'] = dataclasses.I3Double(len(np.unique(evt_pulses[['dom_x', 'dom_y', 'dom_z']].values)))
-        evt_pulses = evt_pulses[evt_pulses['hlc'] == 1]  # Only keep HLC pulses
-        frame['NumberStringsHLC'] = dataclasses.I3Double(len(np.unique(evt_pulses['string'].values)))
-        frame['NumberDOMsHLC'] = dataclasses.I3Double(len(np.unique(evt_pulses[['dom_x', 'dom_y', 'dom_z']].values))) 
         del reco_pulses_final, evt_pulses
         return output
 

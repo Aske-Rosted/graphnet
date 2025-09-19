@@ -8,6 +8,10 @@ and their features.
 from .nodes import (
     NodeDefinition,
     NodesAsPulses,
+    FirstHitPulses,
+    BinnedFeaturesOneNode,
+    BinnedPulses,
+    NodesAsPulsesNoSaturationErrata,
     PercentileClusters,
     NodeAsDOMTimeSeries,
     IceMixNodes,

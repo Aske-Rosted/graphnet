@@ -76,6 +76,16 @@ class MSELoss(LossFunction):
         elements = torch.mean((prediction - target) ** 2, dim=-1)
         return elements
 
+class RMSEAdjustedLoss(LossFunction):
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+
+        assert prediction.dim() == 2
+        assert prediction.size() == target.size()
+
+        elements = torch.mean((prediction - target) ** 2/((1+target) ** (.5)), dim=-1)
+        return elements
+
 
 class RMSELoss(MSELoss):
     """Root mean squared error loss."""
@@ -87,6 +97,13 @@ class RMSELoss(MSELoss):
         elements = torch.sqrt(elements)
         return elements
 
+class PoissonLoss(LossFunction):
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        
+        loss_func = nn.PoissonNLLLoss(log_input=False, reduction='none')
+        test = loss_func(prediction.float(), target.float())
+        return test
 
 class LogCoshLoss(LossFunction):
     """Log-cosh loss function.

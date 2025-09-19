@@ -231,3 +231,32 @@ class InelasticityReconstruction(StandardLearnedTask):
     def _forward(self, x: Tensor) -> Tensor:
         # Transform output to unit range
         return torch.sigmoid(x)
+
+class MuonMultiplicityReconstruction(StandardLearnedTask):
+
+    default_target_labels = ["deposited_muon_multiplicity"]
+    default_prediction_labels = ["deposited_muon_multiplicity_pred"]
+    nb_inputs = 1
+    def _forward(self, x: Tensor) -> Tensor:
+        # Leave as is
+        return torch.nn.functional.softplus(x, beta=0.05)
+    
+class LateralSpreadReconstruction(StandardLearnedTask):
+
+    default_target_labels = ['leading_rms_MCPE']
+    default_prediction_labels = ['leading_rms_MCPE_pred']
+    nb_inputs = 1
+
+    def _forward(self, x: Tensor) -> Tensor:
+        # Leave as is
+        return torch.nn.functional.softplus(x, beta=0.05)
+    
+class StochasticityReconstruction(StandardLearnedTask):
+
+    default_target_labels = ['stochasticity']
+    default_prediction_labels = ['stochasticity_pred']
+    nb_inputs = 1
+
+    def _forward(self, x: Tensor) -> Tensor:
+        # Leave as is
+        return x

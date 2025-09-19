@@ -16,6 +16,7 @@ from .graphnet_file_reader import GraphNeTFileReader
 
 if has_icecube_package():
     from icecube import icetray, dataio  # pyright: reportMissingImports=false
+    from icecube.dataio import I3FileStagerFile
 
 
 class I3Reader(GraphNeTFileReader):
@@ -81,7 +82,12 @@ class I3Reader(GraphNeTFileReader):
             )
 
         # Open I3 file
-        i3_file_io = dataio.I3File(file_path.i3_file, "r")
+        if file_path.i3_file[:6] == 'gsiftp':
+            fsf = I3FileStagerFile.GridFTPStager()
+            local_infile = fsf.GetReadablePath(file_path.i3_file)
+            i3_file_io = dataio.I3File(str(local_infile), "r")
+        else:
+            i3_file_io = dataio.I3File(file_path.i3_file, "r")
         data = list()
         while i3_file_io.more():
             try:

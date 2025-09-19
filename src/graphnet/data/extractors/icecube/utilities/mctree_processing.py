@@ -44,10 +44,9 @@ def get_leading_particle(
 
     e_initial = 0
     for track in tracklist:
-        if full_mctree.is_in_subtree(primary, track.particle) == True: # Cleaning Coincidence Hits
-            if track.Ei > e_initial:
-                e_initial = track.Ei
-                current = track.particle
+        if track.Ei > e_initial:
+            e_initial = track.Ei
+            current = track.particle
     
     return primary, current
 
@@ -65,6 +64,7 @@ def turn_mctree_into_light_sources(
     
     mctree = frame['I3MCTree']
     primary = frame['PolyplopiaPrimary']
+    number_primaries = len(mctree.get_primaries())
     oms = defaultdict(list)
         
     """
@@ -89,8 +89,10 @@ def turn_mctree_into_light_sources(
             continue
         if (np.abs(particle.pdg_encoding) == 12) | (np.abs(particle.pdg_encoding) == 14) | (np.abs(particle.pdg_encoding) == 16):
             continue
-        if mctree.is_in_subtree(primary, particle) == False: # Cleaning Coincidence Hits
-            continue
+        if number_primaries > 1:
+            if mctree.get_primary(particle).minor_id != primary.minor_id: # Cleaning Coincidence Hits
+            #if mctree.is_in_subtree(primary, particle) == False: # Cleaning Coincidence Hits
+                continue
         if np.abs(particle.pdg_encoding) in [13,15]:  # Selecting Muons and Taus
             try:
                 previous_sibling = mctree.previous_sibling(particle)
@@ -159,6 +161,7 @@ def turn_mcpe_into_light_sources(
     oms = defaultdict(list)
     mc_tree = frame['I3MCTree']
     primary = frame['PolyplopiaPrimary']
+    number_primaries = len(mc_tree.get_primaries())
 
     coincidence_hits = 0
     for _, dom in enumerate(doms_hit_by_different_particles):
@@ -170,9 +173,11 @@ def turn_mcpe_into_light_sources(
             # Skip If Noise Hits
             if (particle.minorID == 0) and (particle.majorID == 0):
                 continue
-            if mc_tree.is_in_subtree(primary, full_particle) == False: # Cleaning Coincidence Hits
-                coincidence_hits += len(dom_hits)
-                continue
+            if number_primaries > 1:
+                if mc_tree.get_primary(particle).minor_id != primary.minor_id: # Cleaning Coincidence Hits
+                #if mc_tree.is_in_subtree(primary, full_particle) == False: # Cleaning Coincidence Hits
+                    coincidence_hits += len(dom_hits)
+                    continue
         
             oms['x'].append(full_particle.pos.x)
             oms['y'].append(full_particle.pos.y)

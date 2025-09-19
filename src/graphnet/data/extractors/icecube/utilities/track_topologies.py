@@ -9,7 +9,7 @@ from icecube import (
 import pandas as pd
 import numpy as np
 dom_list = pd.read_csv(
-    '/data/user/mnakos/Nu_Source_Sample/CloseLightSource/Geometry/DOM_Positions.csv'
+    '/cvmfs/icecube.opensciencegrid.org/users/mnakos/process_training_data/DOM_Positions.csv',
 )
 
 import numpy as np
@@ -17,30 +17,82 @@ import shapely.geometry as geom
 
 MuonGunGCD= '/cvmfs/icecube.opensciencegrid.org/data/GCD/GeoCalibDetectorStatus_2020.Run134142.Pass2_V0.i3.gz'
 detector_boundaries = MuonGun.ExtrudedPolygon.from_file(MuonGunGCD, padding=0)
+detector_boundaries_100 = MuonGun.ExtrudedPolygon.from_file(MuonGunGCD, padding=100)
+detector_boundaries_200 = MuonGun.ExtrudedPolygon.from_file(MuonGunGCD, padding=200)
+
+
+def compute_lengths(first_pos, second_pos):
+
+    is_skimming = False
+    if np.isnan(first_pos) & np.isnan(second_pos):
+        track_length_inside_detector = 0
+        veto_length = 0
+        is_skimming = True
+    elif (first_pos < 0) & (second_pos <= 0):
+        track_length_inside_detector = 0
+        veto_length = second_pos - first_pos
+    elif (first_pos < 0) & (second_pos > 0):
+        track_length_inside_detector = second_pos
+        veto_length = -first_pos
+    else:
+        track_length_inside_detector = second_pos - first_pos
+        veto_length = 0
+
+    return track_length_inside_detector, veto_length, is_skimming
+
+def closest_to_center(
+    frame,
+    leading_particle,
+):
+        
+    d_c, x_d, y_d, z_d, s = closest_approach_distance_vector(
+        particle=leading_particle,
+        dom_x=0,
+        dom_y=0,
+        dom_z=0,
+    )
+
+    frame['ClosestApproachPosition'] = dataclasses.I3Position(x_d, y_d, z_d)
 
 def compute_skimming_event(
     frame,
     starting_inside,
     detector_boundaries = detector_boundaries,
+    detector_boundaries_100 = detector_boundaries_100,
+    detector_boundaries_200 = detector_boundaries_200,
 ):
-    primary = frame['PolyplopiaPrimary']
+    # Extra is the primary, primary is the primary composition
+    extra, primary = get_leading_particle(frame)
 
     intersections = detector_boundaries.intersection(primary.pos, primary.dir)
-
+    intersections_100 = detector_boundaries_100.intersection(primary.pos, primary.dir)
+    intersections_200 = detector_boundaries_200.intersection(primary.pos, primary.dir)
+    
     int_one, int_two = intersections.first, intersections.second
+    int_one_100, int_two_100 = intersections_100.first, intersections_100.second
+    int_one_200, int_two_200 = intersections_200.first, intersections_200.second
 
-    if np.isnan(int_one) & np.isnan(int_two):
-        frame['TrackLength_Inside_Detector'] = dataclasses.I3Double(0)
-        return True
-    else:
-        if starting_inside:
-            frame['TrackLength_Inside_Detector'] = dataclasses.I3Double(int_two)
-        else:
-            frame['TrackLength_Inside_Detector'] = dataclasses.I3Double(int_two - int_one)
-        return False
+    length, veto_size, skimming = compute_lengths(int_one, int_two)
+    length_100, veto_size_100, skimming_100 = compute_lengths(int_one_100, int_two_100)
+    length_200, veto_size_200, skimming_200 = compute_lengths(int_one_200, int_two_200)
+
+    frame['TrackLength_Inside_Detector'] = dataclasses.I3Double(length)
+    frame['TrackLength_Near_Detector_100'] = dataclasses.I3Double(length_100)
+    frame['TrackLength_Near_Detector_200'] = dataclasses.I3Double(length_200)
+    frame['VetoLength_Inside_Detector'] = dataclasses.I3Double(veto_size)
+    frame['VetoLength_Near_Detector_100'] = dataclasses.I3Double(veto_size_100)
+    frame['VetoLength_Near_Detector_200'] = dataclasses.I3Double(veto_size_200)
+
+    closest_to_center(
+        frame,
+        leading_particle=primary,
+    )
+
+    return skimming
+
 
 OUTER_LAYER = [1,2,3,4,5,6,13,21,30,40,50,59,67,74,73,72,78,77,76,75,68,60,51,41,31,22,14,7]
-INNER_LAYER = [8,9,10,11,12,20,29,39,49,58,66,65,64,71,70, 69,61,52,42,32,23,15] 
+INNER_LAYER = [8,9,10,11,12,20,29,39,49,58,66,65,64,71,70,69,61,52,42,32,23,15] 
 
 import matplotlib.path as mpltPath
 
@@ -117,11 +169,11 @@ def get_leading_particle(
 
     e_initial = 0
     for track in tracklist:
-        if full_mctree.is_in_subtree(primary, track.particle) == True: # Cleaning Coincidence Hits
-            if track.Ei > e_initial:
-                e_initial = track.Ei
-                current = track.particle
-    
+        #if full_mctree.is_in_subtree(primary, track.particle) == True: # Cleaning Coincidence Hits
+        if track.Ei > e_initial:
+            e_initial = track.Ei
+            current = track.particle
+
     return primary, current
 
 def indentify_interaction_vertex(

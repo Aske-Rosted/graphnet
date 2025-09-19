@@ -16,13 +16,11 @@ from .utilities.mctree_processing import (
 parent_dir = '/data/user/mnakos/EHE_Globalfit'
 import sys
 sys.path.append(parent_dir)
-from Process_Selection.Helpers.geometry_cut import boundary_check
-from Process_Selection.Helpers.starting_boundaries import check_boundary
+
 from .utilities.track_topologies import (
     compute_skimming_event,
     get_topology_metrics,
 )
-#from EHE_processing.modules.mc_infos import BundleCharacterization
 
 if has_icecube_package() or TYPE_CHECKING:
     from icecube import (
@@ -123,6 +121,10 @@ class I3BundleExtractor(I3Extractor):
             "SubrunID": frame["I3EventHeader"].sub_run_id,
             "EventID": frame["I3EventHeader"].event_id,
             "SubEventID": frame["I3EventHeader"].sub_event_id,
+            'true_starting': padding_value,  # True Starting Vertex Inside Detector Volume
+            'closest_approach_x': padding_value,  # Closest Approach X Coordinate
+            'closest_approach_y': padding_value,  # Closest Approach Y Coordinate
+            'closest_approach_z': padding_value,  # Closest Approach Z Coordinate
             'topology_primary_high': padding_value, 
             'topology_primary_low': padding_value,
             'topology_leading_high': padding_value,
@@ -145,12 +147,12 @@ class I3BundleExtractor(I3Extractor):
             "leading_rms_MCPE": padding_value,
             "leading_rms3_MCPE": padding_value,
             'leading_most_lateral_deposit': padding_value,
-            "primary_stochasticity_std_energy": padding_value,
-            "primary_stochasticity_pomean_energy": padding_value,
-            "primary_stochasticity_pomedian_energy": padding_value,
-            "primary_stochasticity_std_MCPE": padding_value,
-            "primary_stochasticity_pomean_MCPE": padding_value,
-            "primary_stochasticity_pomedian_MCPE": padding_value,
+            #"primary_stochasticity_std_energy": padding_value,
+            #"primary_stochasticity_pomean_energy": padding_value,
+            #"primary_stochasticity_pomedian_energy": padding_value,
+            #"primary_stochasticity_std_MCPE": padding_value,
+            #"primary_stochasticity_pomean_MCPE": padding_value,
+            #"primary_stochasticity_pomedian_MCPE": padding_value,
             "leading_stochasticity_std_energy": padding_value,
             "leading_stochasticity_pomean_energy": padding_value,
             "leading_stochasticity_pomedian_energy": padding_value,
@@ -160,7 +162,13 @@ class I3BundleExtractor(I3Extractor):
             "primary_length_deposited": padding_value,
             "leading_length_deposited": padding_value,
             "length_in_detector": padding_value,
-            "flat_spectrum_weight": self._generation_spectrum_correction(frame),
+            "length_in_detector_100": padding_value,
+            "length_in_detector_200": padding_value,
+            'hitstrings': frame['NumberStrings'].value,
+            'hitdoms': frame['NumberDOMs'].value,
+            'hitstringsHLC': frame['NumberStringsHLC'].value,
+            'hitdomsHLC': frame['NumberDOMsHLC'].value,
+            #"flat_spectrum_weight": self._generation_spectrum_correction(frame),
         }
 
         # Only InIceSplit P frames contain ML appropriate I3RecoPulseSeriesMap etc.
@@ -240,12 +248,12 @@ class I3BundleExtractor(I3Extractor):
                 "leading_rms_MCPE": frame['LeadingShowerProfile_MCPEs']['lateral_rms'],
                 "leading_rms3_MCPE": frame['LeadingShowerProfile_MCPEs']['lateral_rms3'],
                 'leading_most_lateral_deposit': frame['LeadingShowerProfile_MCPEs']['most_lateral_deposit'],
-                "primary_stochasticity_std_energy": frame['PrimaryShowerProfile_energy']['stochasticity_std'],
-                "primary_stochasticity_pomean_energy": frame['PrimaryShowerProfile_energy']['stochasticity_ratio_above_mean'],
-                "primary_stochasticity_pomedian_energy": frame['PrimaryShowerProfile_energy']['stochasticity_ratio_above_median'],
-                "primary_stochasticity_std_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_std'],
-                "primary_stochasticity_pomean_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_ratio_above_mean'],
-                "primary_stochasticity_pomedian_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_ratio_above_median'],
+                #"primary_stochasticity_std_energy": frame['PrimaryShowerProfile_energy']['stochasticity_std'],
+                #"primary_stochasticity_pomean_energy": frame['PrimaryShowerProfile_energy']['stochasticity_ratio_above_mean'],
+                #"primary_stochasticity_pomedian_energy": frame['PrimaryShowerProfile_energy']['stochasticity_ratio_above_median'],
+                #"primary_stochasticity_std_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_std'],
+                #"primary_stochasticity_pomean_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_ratio_above_mean'],
+                #"primary_stochasticity_pomedian_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_ratio_above_median'],
                 "leading_stochasticity_std_energy": frame['LeadingShowerProfile_energy']['stochasticity_std'],
                 "leading_stochasticity_pomean_energy": frame['LeadingShowerProfile_energy']['stochasticity_ratio_above_mean'],
                 "leading_stochasticity_pomedian_energy": frame['LeadingShowerProfile_energy']['stochasticity_ratio_above_median'],
@@ -295,10 +303,10 @@ class I3BundleExtractor(I3Extractor):
 
         e_initial = 0
         for track in tracklist:
-            if full_mctree.is_in_subtree(primary, track.particle) == True: # Cleaning Coincidence Hits
-                if track.Ei > e_initial:
-                    e_initial = track.Ei
-                    current = track.particle
+            #if full_mctree.is_in_subtree(primary, track.particle) == True: # Cleaning Coincidence Hits
+            if track.Ei > e_initial:
+                e_initial = track.Ei
+                current = track.particle
         
         return primary, current
     
@@ -328,10 +336,11 @@ class I3BundleExtractor(I3Extractor):
         Visible Starting Vertex outside Detector Volume: 2
         Starting Vertex inside Detector Volume and Meets New Parameterization: 12
         Throughgoing Event: 3 (Enters Detector)
-        Skimming Event: 4 (Throughgoing Event that Doesn't Enter the Detector)
+        Skimming Event: 43 (Throughgoing Event that Doesn't Enter the Detector)
         Starting Skimming: 42 (Throughoing, Meets Visible Starting Condition)
+
         """
-        if frame['PolyplopiaPrimary'].pdg_encoding in [12, 14, 16]:
+        if np.abs(frame['PolyplopiaPrimary'].pdg_encoding) in [12, 14, 16]:
             starting_metrics = get_topology_metrics(
                 frame,
             )
@@ -347,11 +356,17 @@ class I3BundleExtractor(I3Extractor):
         )
 
         dict_topology = {
+            'true_starting': int(starting_metrics[0]),  # True Starting Vertex Inside Detector Volume
             'topology_primary_high': self._label_topologies(starting_metrics[0], starting_metrics[1], is_skimming_event),
             'topology_primary_low': self._label_topologies(starting_metrics[0], starting_metrics[2], is_skimming_event),
             'topology_leading_high': self._label_topologies(starting_metrics[0], starting_metrics[2], is_skimming_event),
             'topology_leading_low': self._label_topologies(starting_metrics[0], starting_metrics[3], is_skimming_event),
             'length_in_detector': frame['TrackLength_Inside_Detector'].value,
+            'length_in_detector_100': frame['TrackLength_Near_Detector_100'].value,
+            'length_in_detector_200': frame['TrackLength_Near_Detector_200'].value,
+            'closest_approach_x': frame['ClosestApproachPosition'].x,
+            'closest_approach_y': frame['ClosestApproachPosition'].y,
+            'closest_approach_z': frame['ClosestApproachPosition'].z,
         }
 
         return dict_topology
