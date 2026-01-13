@@ -2,11 +2,12 @@
 
 from .i3extractor import I3Extractor
 from .i3featureextractor import (
-    I3FeatureExtractor,
+    I3PulseLevelExtractor,
     I3FeatureExtractorIceCube86,
     I3FeatureExtractorIceCubeDeepCore,
     I3FeatureExtractorIceCubeUpgrade,
     I3PulseNoiseTruthFlagIceCubeUpgrade,
+    I3PulseOriginLabels,
 )
 from .i3truthextractor import I3TruthExtractor
 from .i3retroextractor import I3RetroExtractor
