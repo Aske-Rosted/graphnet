@@ -248,6 +248,7 @@ class I3PulseOriginLabels(I3PulseLevelExtractor):
         mctree: str = "I3MCTree",
         mcpe_map: str = "I3MCPESeriesMapWithoutNoise",
         mcpe_map_id: str = "I3MCPESeriesMapParticleIDMap",
+        pulse_source_map: Optional[str] = None,
     ):
         """Construct I3PulseOriginLabels.
 
@@ -261,12 +262,14 @@ class I3PulseOriginLabels(I3PulseLevelExtractor):
             mctree: Name of the MCTree in the I3 frame.
             mcpe_map: Name of the MCPE series map in the I3 frame.
             mcpe_map_id: Name of the MCPE series map particle ID map in the I3 frame.
+            pulse_source_map: Name of the pulse source map in the I3 frame.
         """
         super().__init__(pulsemap, exclude, extractor_name)
         self._time_window = time_window
         self._mctree = mctree
         self._mcpe_map = mcpe_map
         self._mcpe_map_id = mcpe_map_id
+        self._pulse_source_map = pulse_source_map
 
     def __call__(self, frame: "icetray.I3Frame") -> Dict[str, List[Any]]:
         """Extract MCPE labels from `frame`.
@@ -285,14 +288,16 @@ class I3PulseOriginLabels(I3PulseLevelExtractor):
             "dom_y": [],
             "dom_z": [],
             "neutrino_fraction": [],
-            "neutrino_npe_fraction": [],
+            "noise_fraction": [],
             "npe": [],
-            "pulse_count": [],
-            "noise_hit": [],
+            "hit_count": [],
             "trackness": [],
             "overlap_count": [],
             "min_time_delta": [],
+            "total_npe_fraction": [],
         }
+        if self._pulse_source_map is not None:
+            output["source_truth"] = []
 
         # Get OM data
         if self._pulsemap in frame:
@@ -309,26 +314,52 @@ class I3PulseOriginLabels(I3PulseLevelExtractor):
             # Loop over pulses for each OM
             pulses = data[om_key]
             pulse_times, pulse_charges = self._get_pulse_info(pulses)
-            npe_list, times, nu_bool, track_like_list = self._get_mcpe_info(
-                frame, om_key
+            npe_list, times, nu_bool, track_like_list, noise_bool = (
+                self._get_mcpe_info(frame, om_key)
             )
+
             time_distance_matrix = pulse_times[:, None] - times[None, :]
             weight_matrix = self._get_gaussian_weight(time_distance_matrix) * (
                 np.abs(time_distance_matrix) <= self._time_window
             )
 
+            source_truth = []
+            if (self._pulse_source_map is not None) and frame.Has(
+                self._pulse_source_map
+            ):
+                source_truth_series = frame[self._pulse_source_map][om_key]
+                source_t, source_q, source_truth = np.array(
+                    [[p.time, p.charge, p.source] for p in source_truth_series]
+                ).T
+                # for each pulse, find the closest source truth
+                time_diffs = np.abs(pulse_times[:, None] - source_t[None, :])
+                # Record where there where no source truth within 50ns
+                no_source_within_50ns = np.min(time_diffs, axis=1) > 50.0
+                closest_indices = np.argmin(time_diffs, axis=1)
+                # assert that no pulses have the same source truth assigned
+                # assert len(closest_indices) == len(set(closest_indices)), "Multiple pulses assigned to same source truth!"
+                source_truth = source_truth[closest_indices]
+                source_truth[no_source_within_50ns] = -1
+            else:
+                source_truth = [-1] * len(pulse_times)  # no source found
+
+            total_mcpe_npe = np.sum(npe_list)
             with np.errstate(invalid="ignore"):
                 weight_matrix /= np.sum(weight_matrix, axis=0, keepdims=True)
                 weight_matrix = np.nan_to_num(weight_matrix, nan=0.0)
                 pulse_counts = np.sum(weight_matrix, axis=1)
-                neutrino_fractions = (weight_matrix @ nu_bool) / pulse_counts
-                neutrino_npe_fractions = (
-                    weight_matrix @ (npe_list * nu_bool)
-                ) / (weight_matrix @ npe_list)
+                noise_fractions = (weight_matrix @ noise_bool) / pulse_counts
+                noise_fractions = np.nan_to_num(noise_fractions, nan=1.0)
+                neutrino_fractions = (weight_matrix @ (npe_list * nu_bool)) / (
+                    weight_matrix @ npe_list
+                )
                 total_npe = weight_matrix @ npe_list
                 trackness = weight_matrix @ track_like_list / pulse_counts
                 min_time_deltas = (
-                    np.min(np.abs(time_distance_matrix), axis=1)
+                    time_distance_matrix[
+                        np.arange(time_distance_matrix.shape[0]),
+                        np.argmin(np.abs(time_distance_matrix), axis=1),
+                    ]
                     if len(times) > 0
                     else np.array([np.nan] * len(pulse_times))
                 )
@@ -340,11 +371,8 @@ class I3PulseOriginLabels(I3PulseLevelExtractor):
                 overlap_counts = np.sum(overlap_counts, axis=1)
 
             output["neutrino_fraction"].extend(neutrino_fractions.tolist())
-            output["neutrino_npe_fraction"].extend(
-                neutrino_npe_fractions.tolist()
-            )
             output["npe"].extend(total_npe.tolist())
-            output["pulse_count"].extend(pulse_counts.tolist())
+            output["hit_count"].extend(pulse_counts.tolist())
             output["charge"].extend(pulse_charges.tolist())
             output["dom_time"].extend(pulse_times.tolist())
             output["dom_x"].extend(
@@ -356,16 +384,26 @@ class I3PulseOriginLabels(I3PulseLevelExtractor):
             output["dom_z"].extend(
                 [self._gcd_dict[om_key].position.z] * len(pulse_times)
             )
-            output["noise_hit"].extend((pulse_counts == 0).tolist())
+            output["noise_fraction"].extend(
+                noise_fractions.tolist()
+            )  # if noise is not present in the mcpe map, this will be a binary.
             output["min_time_delta"].extend(min_time_deltas.tolist())
             output["trackness"].extend(trackness.tolist())
             output["overlap_count"].extend(overlap_counts.tolist())
-
+            output["total_npe_fraction"].extend(
+                (total_npe / total_mcpe_npe).tolist()
+            )
+            if self._pulse_source_map is not None:
+                output["source_truth"].extend(
+                    source_truth
+                    if len(source_truth) == len(pulse_times)
+                    else [-1] * len(pulse_times)
+                )
         return output
 
     def _get_mcpe_info(
         self, frame: "icetray.I3Frame", om_key: "icetray.OMKey"
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Determine the neutrino fraction of a pulse.
 
         Args:
@@ -379,56 +417,91 @@ class I3PulseOriginLabels(I3PulseLevelExtractor):
         nu_bool: list[bool] = []
         npe_list: list[float] = []
         track_like_list: list[float] = []
+        noise_list: list[bool] = []
         try:
-            mcpe_info = frame[self._mcpe_map][om_key]
-        except KeyError:
-            return (
-                np.array(npe_list),
-                np.array(times),
-                np.array(nu_bool),
-                np.array(track_like_list),
-            )
-        for i, mcpe in enumerate(mcpe_info):
-            try:
-                nu_primary = (
-                    frame[self._mctree].get_primary(mcpe.ID).is_neutrino
+            mcpe_info = np.array(frame[self._mcpe_map][om_key])
+        except KeyError as e:
+            if self._mcpe_map in str(e):
+                self.warning_once(
+                    f"MCPE map {self._mcpe_map} not found in frame."
                 )
-                track_like = frame[self._mctree].get_particle(mcpe.ID).is_track
-                nu_bool.append(nu_primary)
-            except RuntimeError as e:
-                # backup to using the mcpe id map to figure out the parent type, if any part of the mcpe has a neutrino as the primary, we count it as a neutrino mcpe this is a choice, but the information about which part of the mcpe corresponds to which primary is lost.
-                if "particle not found" in str(e):
-                    ids = [
-                        id_p
-                        for id_p, indexval in frame[self._mcpe_map_id][
-                            om_key
-                        ].items()
-                        if i in indexval
-                    ]
-                    bool_val = any(
-                        [
-                            frame[self._mctree].get_primary(id_p).is_neutrino
-                            for id_p in ids
-                        ]
-                    )
-                    track_like = [
-                        frame[self._mctree].get_particle(id_p).is_track
-                        for id_p in ids
-                    ]
-                    track_like = sum(track_like) / len(track_like)
-                    nu_bool.append(bool_val)
-                else:
-                    raise e
+                return (
+                    np.array(npe_list),
+                    np.array(times),
+                    np.array(nu_bool),
+                    np.array(track_like_list),
+                    np.array(noise_list),
+                )
+            elif "Invalid key" in str(e):
+                return (
+                    np.array(npe_list),
+                    np.array(times),
+                    np.array(nu_bool),
+                    np.array(track_like_list),
+                    np.array(noise_list),
+                )
+            else:
+                raise e
 
+        mcpe_id_map_keys = []
+        mcpe_index_map = []
+        try:
+            for id_key, id_vals in frame[self._mcpe_map_id][om_key].items():
+                mcpe_id_map_keys.extend([id_key] * len(id_vals))
+                # mcpe_id_map_vals.extend(mcpe_info[id_vals])
+                mcpe_index_map.extend(id_vals)
+
+        except KeyError:
+            # This just means all the pulses are noise hits (do nothing)
+            pass
+
+        mcpe_id_map_keys = np.array(mcpe_id_map_keys)
+        mcpe_index_map = np.array(mcpe_index_map)
+
+        for i, mcpe in enumerate(mcpe_info):
+            is_noise = False
+            if mcpe.ID == dataclasses.I3ParticleID(0, 0):
+                # Noise hit
+                track_like = 0.0
+                neutrino_bool = False
+                is_noise = True
+
+            elif mcpe.ID != dataclasses.I3ParticleID(0, -1):
+                # Not a multiple parent hit - use direct method
+                particle = frame[self._mctree].get_particle(mcpe.ID)
+                track_like = float(particle.is_track)
+                neutrino_bool = particle.is_neutrino
+
+            else:
+                # Hit with multiple parent particles - need to loop over all parent particles
+                particle_list = [
+                    frame[self._mctree].get_particle(p)
+                    for p in mcpe_id_map_keys[i == mcpe_index_map]
+                ]
+                if len(particle_list) == 0:
+                    warning_string = f"No parent particles found for MCPE with ID {mcpe.ID} in OMKey {om_key}.\n"
+                    warning_string += f"{frame['I3EventHeader']}\n"
+                    self.warning(warning_string)
+                    track_like = 0.0
+                    neutrino_bool = False
+                else:
+                    track_like = sum(
+                        [p.is_track for p in particle_list]
+                    ) / len(particle_list)
+                    neutrino_bool = any([p.is_neutrino for p in particle_list])
+
+            track_like_list.append(track_like)
+            nu_bool.append(neutrino_bool)
             times.append(mcpe.time)
             npe_list.append(mcpe.npe)
-            track_like_list.append(track_like)
+            noise_list.append(is_noise)
 
         return (
             np.array(npe_list),
             np.array(times),
             np.array(nu_bool),
             np.array(track_like_list),
+            np.array(noise_list),
         )
 
     def _get_pulse_info(

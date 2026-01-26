@@ -2,7 +2,7 @@
 
 
 class FEATURES:
-    """Namespace for standard names working with `I3FeatureExtractor`."""
+    """Namespace for standard names working with `I3PulseLevelExtractor`."""
 
     ICECUBE86 = [
         "dom_x",
