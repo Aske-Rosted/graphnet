@@ -11,6 +11,7 @@ from .inference_module import I3InferenceModule
 from graphnet.utilities.config import ModelConfig
 from graphnet.utilities.imports import has_icecube_package
 from graphnet.data.extractors.icecube import (
+    I3PulseLevelExtractor,
     I3FeatureExtractor,
     I3FeatureExtractorIceCubeUpgrade,
 )
@@ -36,7 +37,10 @@ class I3PulseCleanerModule(I3InferenceModule):
         pulsemap: str,
         features: List[str],
         pulsemap_extractor: Union[
-            List[I3FeatureExtractor], I3FeatureExtractor
+            List[I3PulseLevelExtractor],
+            I3PulseLevelExtractor,
+            List[I3FeatureExtractor],
+            I3FeatureExtractor,
         ],
         model_config: Union[ModelConfig, str],
         state_dict: str,

@@ -9,7 +9,7 @@ from typing import List
 from icecube.icetray import I3Tray  # pyright: reportMissingImports=false
 
 from graphnet.deployment.i3modules import I3InferenceModule
-from graphnet.data.extractors.i3featureextractor import (
+from graphnet.data.extractors.icecube import (
     I3FeatureExtractorIceCubeUpgrade,
 )
 from graphnet.data.constants import FEATURES

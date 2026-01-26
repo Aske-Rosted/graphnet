@@ -10,7 +10,10 @@ from torch_geometric.data import Data, Batch
 
 from graphnet.utilities.config import ModelConfig
 from graphnet.deployment import DeploymentModule
-from graphnet.data.extractors.icecube import I3FeatureExtractor
+from graphnet.data.extractors.icecube import (
+    I3PulseLevelExtractor,
+    I3FeatureExtractor,
+)
 from graphnet.utilities.imports import has_icecube_package
 
 if has_icecube_package() or TYPE_CHECKING:
@@ -28,7 +31,10 @@ class I3InferenceModule(DeploymentModule):
     def __init__(
         self,
         pulsemap_extractor: Union[
-            List[I3FeatureExtractor], I3FeatureExtractor
+            List[I3PulseLevelExtractor],
+            I3PulseLevelExtractor,
+            List[I3FeatureExtractor],
+            I3FeatureExtractor,
         ],
         model_config: Union[ModelConfig, str],
         state_dict: str,
@@ -165,7 +171,7 @@ class I3InferenceModule(DeploymentModule):
             return None
 
     def _extract_feature_array_from_frame(self, frame: I3Frame) -> np.array:
-        """Apply the I3FeatureExtractors to the I3Frame.
+        """Apply the I3PulseLevelExtractor(s) to the I3Frame.
 
         Arguments:
             frame: Physics I3Frame (PFrame)
