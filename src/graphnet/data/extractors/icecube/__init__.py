@@ -1,7 +1,8 @@
 """Collection of I3Extractors, extracting pure-python data from I3Frames."""
 
 from .i3extractor import I3Extractor
-from .i3featureextractor import (
+from .i3pulselevelextractor import (
+    I3FeatureExtractor,
     I3PulseLevelExtractor,
     I3FeatureExtractorIceCube86,
     I3FeatureExtractorIceCubeDeepCore,
