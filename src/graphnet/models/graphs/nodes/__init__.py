@@ -8,6 +8,7 @@ and their features.
 from .nodes import (
     NodeDefinition,
     NodesAsPulses,
+    NodesAsPulsesBundle,
     FirstHitPulses,
     BinnedFeaturesOneNode,
     BinnedPulses,

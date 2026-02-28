@@ -482,7 +482,60 @@ class FirstHitPulses(NodeDefinition):
             graph[:, idx] = x[ids, self.feature_indexes[feature]]
 
         return Data(x=graph)
+    
 
+class NodesAsPulsesBundle(NodeDefinition):
+    
+    def __init__(
+        self,
+        input_feature_names: Optional[List[str]] = None,
+        time_name: str = "adjusted_time",
+        time_column: str = "time",
+    ) -> None:
+     
+        super().__init__(input_feature_names=input_feature_names)
+
+        # time
+        if input_feature_names is None:
+            input_feature_names = [
+                "dom_x",
+                "dom_y",
+                "dom_z",
+                "adjusted_time",
+                "dom_qtot",
+            ]
+
+        self.n_features = len(input_feature_names)-1
+        self._time_name = time_name
+        self._time_column = time_column
+        self.all_features = input_feature_names
+        self.feature_indexes = {
+            feat: self.all_features.index(feat) for feat in input_feature_names
+        }
+
+        self.important_features = [feat for feat in input_feature_names if feat.startswith('charge_after_')]
+
+    def _define_output_feature_names(
+        self, input_feature_names: List[str]
+    ) -> List[str]:
+        return input_feature_names[:-1]
+
+    def _construct_nodes(self, x: torch.Tensor) -> Tuple[Data, List[str]]:
+
+        # Reduce Output Size By Only Keeping Relevant Features
+        graph = torch.zeros([len(x[:, self.feature_indexes[self._time_name]]), self.n_features])
+
+        # Modify Percentile_Based_Information
+        final_features = self.all_features[: self.n_features]
+        for idx, feature in enumerate(final_features):
+            if feature in self.important_features:
+                graph[:, self.feature_indexes[feature]] = (x[:, self.feature_indexes[feature]] - 
+                                                (x[:, self.feature_indexes[self._time_name]] + 
+                                                x[:, self.feature_indexes[self._time_column]]))
+            else:
+                graph[:, self.feature_indexes[feature]] = x[:, self.feature_indexes[feature]]
+
+        return Data(x=graph)
 
 class BinnedFeaturesOneNode(NodeDefinition):
     def __init__(

@@ -1,8 +1,12 @@
-from icecube import icetray, dataio
-from icecube import dataclasses
-from icecube import phys_services
-from icecube import dataclasses, simclasses, icetray
-from icecube import MuonGun, simclasses
+from graphnet.utilities.imports import has_icecube_package
+
+if has_icecube_package() or TYPE_CHECKING:
+    from icecube import icetray, dataio
+    from icecube import dataclasses
+    from icecube import phys_services
+    from icecube import dataclasses, simclasses, icetray
+    from icecube import MuonGun, simclasses
+    
 import numpy as np
 import pandas as pd
 
@@ -39,7 +43,7 @@ def get_leading_particle(
                 if particle.energy > highest_energy:
                     highest_energy = particle.energy
                     current = particle
-
+    """
     tracklist = frame['MMCTrackList']
 
     e_initial = 0
@@ -47,6 +51,7 @@ def get_leading_particle(
         if track.Ei > e_initial:
             e_initial = track.Ei
             current = track.particle
+    """
     
     return primary, current
 

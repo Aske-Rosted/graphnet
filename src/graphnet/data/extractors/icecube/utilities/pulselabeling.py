@@ -15,8 +15,12 @@ Steps:
 from collections import defaultdict 
 import numpy as np
 import pandas as pd
-from icecube import phys_services
-from icecube import dataclasses
+
+from graphnet.utilities.imports import has_icecube_package
+
+if has_icecube_package() or TYPE_CHECKING:
+    from icecube import phys_services
+    from icecube import dataclasses
 
 def get_all_bundle_muons(frame):
 

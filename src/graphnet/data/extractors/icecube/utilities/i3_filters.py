@@ -10,6 +10,7 @@ if has_icecube_package():
     from icecube import icetray
     from icecube import dataio
     from icecube import dataclasses
+    from icecube import simclasses
 from collections import defaultdict 
 import pandas as pd
 
@@ -166,6 +167,14 @@ class ChargeFilter(I3Filter):
         except:
             # no splitinicepulses
             return False
+        
+        try:
+            mctree = frame['I3MCTree']
+        except:
+            # mctree issue
+            print('mctree issue')
+            return False
+        
         om_keys = data.keys()
 
         for om_key in om_keys:
@@ -192,6 +201,9 @@ class ChargeFilter(I3Filter):
             },
         )
 
+
+        event_id = frame['I3EventHeader'].event_id
+        print(event_id)
 
         remove_deepcore = reco_pulses[(reco_pulses['string'] < 79) & (reco_pulses['rde'] <= 1.1)]
         total_charge = remove_deepcore['charge'].sum()

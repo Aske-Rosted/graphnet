@@ -1,11 +1,15 @@
 """
 For Computing If An Event is A Starting Track Under Several Definitions
 """
-from icecube import MuonGun
-from icecube import (  
-    icetray,
-    dataclasses,
-)
+
+from graphnet.utilities.imports import has_icecube_package
+
+if has_icecube_package() or TYPE_CHECKING:
+    from icecube import MuonGun
+    from icecube import (  
+        icetray,
+        dataclasses,
+    )
 import pandas as pd
 import numpy as np
 dom_list = pd.read_csv(
