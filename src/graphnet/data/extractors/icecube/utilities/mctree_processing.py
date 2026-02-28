@@ -1,12 +1,12 @@
 from graphnet.utilities.imports import has_icecube_package
 
-if has_icecube_package() or TYPE_CHECKING:
+if has_icecube_package():
     from icecube import icetray, dataio
     from icecube import dataclasses
     from icecube import phys_services
     from icecube import dataclasses, simclasses, icetray
     from icecube import MuonGun, simclasses
-    
+
 import numpy as np
 import pandas as pd
 
