@@ -18,7 +18,7 @@ import pandas as pd
 
 from graphnet.utilities.imports import has_icecube_package
 
-if has_icecube_package() or TYPE_CHECKING:
+if has_icecube_package():
     from icecube import phys_services
     from icecube import dataclasses
 

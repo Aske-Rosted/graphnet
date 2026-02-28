@@ -4,7 +4,7 @@ For Computing If An Event is A Starting Track Under Several Definitions
 
 from graphnet.utilities.imports import has_icecube_package
 
-if has_icecube_package() or TYPE_CHECKING:
+if has_icecube_package():
     from icecube import MuonGun
     from icecube import (  
         icetray,
