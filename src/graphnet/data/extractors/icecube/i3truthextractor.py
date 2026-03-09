@@ -88,7 +88,7 @@ class I3TruthExtractor(I3Extractor):
             self._borders = borders
 
         self._extend_boundary = extend_boundary
-        self._mctree = mctree
+        self.mctree = mctree
 
     def set_gcd(self, i3_file: str, gcd_file: Optional[str] = None) -> None:
         """Extract GFrame and CFrame from i3/gcd-file pair.
@@ -130,8 +130,8 @@ class I3TruthExtractor(I3Extractor):
         self, frame: "icetray.I3Frame", padding_value: Any = -1
     ) -> Dict[str, Any]:
         """Extract truth-level information."""
-        is_mc = frame_is_montecarlo(frame, self._mctree)
-        is_noise = frame_is_noise(frame, self._mctree)
+        is_mc = frame_is_montecarlo(frame, self.mctree)
+        is_noise = frame_is_noise(frame, self.mctree)
         sim_type = self._find_data_type(is_mc, self._i3_file, frame)
 
         output = {
@@ -289,7 +289,7 @@ class I3TruthExtractor(I3Extractor):
     def _extract_dbang_decay_length(
         self, frame: "icetray.I3Frame", padding_value: float = -1
     ) -> float:
-        mctree = frame[self._mctree]
+        mctree = frame[self.mctree]
         try:
             p_true = mctree.primaries[0]
             p_daughters = mctree.get_daughters(p_true)
@@ -418,12 +418,12 @@ class I3TruthExtractor(I3Extractor):
             try:
                 MCInIcePrimary = frame["MCInIcePrimary"]
             except KeyError:
-                MCInIcePrimary = frame[self._mctree][0]
+                MCInIcePrimary = frame[self.mctree][0]
             if (
                 MCInIcePrimary.energy != MCInIcePrimary.energy
             ):  # This is a nan check. Only happens for some muons
                 # where second item in MCTree is primary. Weird!
-                MCInIcePrimary = frame[self._mctree][1]
+                MCInIcePrimary = frame[self.mctree][1]
                 # For some strange reason the second entry is identical in
                 # all variables and has no nans (always muon)
         else:
@@ -472,7 +472,7 @@ class I3TruthExtractor(I3Extractor):
             Tuple containing the energy of tracks from primary, and the
                 corresponding inelasticity.
         """
-        mc_tree = frame[self._mctree]
+        mc_tree = frame[self.mctree]
         primary = mc_tree.primaries[0]
         daughters = mc_tree.get_daughters(primary)
         tracks = []

@@ -7,7 +7,12 @@ from graphnet.data.extractors.icecube.i3extractor import I3Extractor
 from typing import List, Dict
 
 if has_icecube_package() or TYPE_CHECKING:
-    from icecube import icetray  # pyright: reportMissingImports=false
+    from icecube import (
+        icetray,
+        dataclasses,
+    )  # pyright: reportMissingImports=false
+
+from copy import deepcopy
 
 
 class CombinedExtractor(I3Extractor):
@@ -44,5 +49,10 @@ class CombinedExtractor(I3Extractor):
         """
         output = {}
         for extractor in self._extractors:
+            if hasattr(extractor, "mctree") and frame.Has(extractor.mctree):
+                mctree_backup = deepcopy(frame[extractor.mctree])
             output.update(extractor(frame))
+            if hasattr(extractor, "mctree") and frame.Has(extractor.mctree):
+                frame.Delete(extractor.mctree)
+                frame[extractor.mctree] = mctree_backup
         return output
