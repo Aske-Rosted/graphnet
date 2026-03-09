@@ -12,9 +12,14 @@ from graphnet.data.dataclasses import I3FileSet
 from graphnet.utilities.filesys import find_i3_files
 from .graphnet_file_reader import GraphNeTFileReader
 
+from copy import deepcopy
+
 
 if has_icecube_package():
-    from icecube import icetray, dataio  # pyright: reportMissingImports=false
+    from icecube import (
+        icetray,
+        dataio,
+    )  # pyright: reportMissingImports=false
 
 
 class I3Reader(GraphNeTFileReader):
@@ -87,22 +92,54 @@ class I3Reader(GraphNeTFileReader):
         # Open I3 file
         i3_file_io = dataio.I3File(file_path.i3_file, "r")
         data = list()
-        while i3_file_io.more():
-            try:
-                frame = i3_file_io.pop_physics()
-            except Exception as e:
-                if "I3" in str(e):
+        try:
+            while i3_file_io.more():
+                try:
+                    frame = i3_file_io.pop_physics()
+                except Exception as e:
+                    if "I3" in str(e):
+                        continue
+                # check if frame should be skipped
+                if self._skip_frame(frame):
                     continue
-            # check if frame should be skipped
-            if self._skip_frame(frame):
-                continue
 
-            # Try to extract data from I3Frame
-            results = [extractor(frame) for extractor in self._extractors]
+                # Try to extract data from I3Frame
+                results = []
+                try:
+                    for extractor in self._extractors:
+                        if hasattr(extractor, "mctree") and frame.Has(
+                            extractor.mctree
+                        ):
+                            mctree_backup = deepcopy(frame[extractor.mctree])
 
-            data_dict = OrderedDict(zip(self.extracor_names, results))
+                        results.append(extractor(frame))
+                        if hasattr(extractor, "mctree") and frame.Has(
+                            extractor.mctree
+                        ):
+                            frame.Delete(extractor.mctree)
+                            frame[extractor.mctree] = mctree_backup
 
-            data.append(data_dict)
+                    data_dict = OrderedDict(zip(self.extracor_names, results))
+
+                except KeyError as e:
+                    if "Deserialization failed for object" in str(e):
+                        self.warning(
+                            f"KeyError {e} in file {file_path.i3_file}"
+                            " - skipping frame."
+                        )
+                        continue
+                    else:
+                        raise e
+
+                data.append(data_dict)
+        except KeyError as e:
+            if "Deserialization failed for object" in str(e):
+                self.warning(
+                    f"KeyError {e} in file {file_path.i3_file}"
+                    " - skipping remaining frames."
+                )
+            else:
+                raise e
         return data
 
     def find_files(self, path: Union[str, List[str]]) -> List[I3FileSet]:
