@@ -16,6 +16,9 @@ if has_icecube_package() or TYPE_CHECKING:
     from icecube.icetray import (
         I3Frame,
     )  # pyright: reportMissingImports=false
+    from icecube import (
+        dataclasses,
+    )
     from icecube.dataclasses import (
         I3Double,
     )  # pyright: reportMissingImports=false
@@ -29,13 +32,15 @@ class I3InferenceModule(DeploymentModule):
         pulsemap_extractor: Union[
             List[I3PulseExtractor], I3PulseExtractor
         ],
-        model_config: Union[ModelConfig, str],
-        state_dict: str,
-        model_name: str,
+        model_config: Union[List[ModelConfig], List[str], ModelConfig, str],
+        state_dict: Union[List[str], str],
+        model_name: Union[List[str], str],
         gcd_file: str,
         features: Optional[List[str]] = None,
         prediction_columns: Optional[Union[List[str], None]] = None,
         pulsemap: Optional[str] = None,
+        multiple_models: bool = False,
+        key_name: Optional[str] = None,
     ):
         """General class for inference on I3Frames (physics).
 
@@ -43,6 +48,7 @@ class I3InferenceModule(DeploymentModule):
             pulsemap_extractor: The extractor used to extract the pulsemap.
             model_config: The ModelConfig (or path to it) that summarizes the
                             model used for inference.
+                          
             state_dict: Path to state_dict containing the learned weights.
             model_name: The name used for the model. Will help define the
                         named entry in the I3Frame. E.g. "dynedge".
@@ -52,11 +58,15 @@ class I3InferenceModule(DeploymentModule):
                                Will help define the named entry in the I3Frame.
                                 E.g. ['energy_reco']. Optional.
             pulsemap: the pulsmap that the model is expecting as input.
+            multiple_models: process multiple models with the same feature set at once.
+            key_name: The name used for the key in the I3Frame. Will help define the
+                     named entry in the I3Frame. E.g. "dynedge_predictions".
         """
         super().__init__(
             model_config=model_config,
             state_dict=state_dict,
             prediction_columns=prediction_columns,
+            multiple_models=multiple_models,
         )
         # Checks
         assert isinstance(gcd_file, str), "gcd_file must be string"
@@ -66,14 +76,18 @@ class I3InferenceModule(DeploymentModule):
             self._i3_extractors = pulsemap_extractor
         else:
             self._i3_extractors = [pulsemap_extractor]
+        
+        # All 
         if features is None:
             features = self.model._graph_definition._input_feature_names
+
         self._graph_definition = self.model._graph_definition
         self._pulsemap = pulsemap
         self._gcd_file = gcd_file
         self.model_name = model_name
         self._features = features
-
+        self._multiple_models = multiple_models
+        self._key_name = key_name
         # Set GCD file for pulsemap extractor
         for i3_extractor in self._i3_extractors:
             i3_extractor.set_gcd(i3_file="", gcd_file=self._gcd_file)
@@ -81,22 +95,34 @@ class I3InferenceModule(DeploymentModule):
     def __call__(self, frame: I3Frame) -> bool:
         """Write predictions from model to frame."""
 
-        # inference
-        data = self._create_data_representation(frame=frame)
-        #print(data)
-        predictions = self._apply_model(data=data)
-        #print(predictions)
+        if self._multiple_models == False:
+            # inference
+            data = self._create_data_representation(frame=frame)
+            predictions = self._apply_model(data=data)
 
-        return predictions
-        # Check dimensions of predictions and prediction columns
-        #dim = self._check_dimensions(predictions=predictions)
+            # Check dimensions of predictions and prediction columns
+            dim = self._check_dimensions(predictions=predictions)
 
-        # Build Dictionary from predictions
-        #data = self._create_dictionary(dim=dim, predictions=predictions)
-        #print(data)
-        # Submit Dictionary to frame
-        #frame = self._add_to_frame(frame=frame, data=data)
-        #return True
+            # Build Dictionary from predictions
+            data = self._create_dictionary(dim=dim, predictions=predictions)
+
+            # Submit Dictionary to frame
+            frame = self._add_to_frame(frame=frame, data=data)
+            return True
+        
+        elif self._multiple_models == True:
+            data = self._create_data_representation(frame=frame)
+            predictions = self._apply_model(data=data)
+
+            i3_score_container = dataclasses.I3MapStringDouble()
+
+            for _, model_name in enumerate(self.model_name):
+                
+                i3_score_container[model_name] = float(predictions[_][0][0])
+            
+            frame.Put(self._key_name, i3_score_container)
+
+            return True
 
     def _check_dimensions(self, predictions: np.ndarray) -> int:
         if len(predictions.shape) > 1:
@@ -179,12 +205,9 @@ class I3InferenceModule(DeploymentModule):
         features = None
         for i3extractor in self._i3_extractors:
             feature_dict = i3extractor(frame)
-            #print(feature_dict)
             features_pulsemap = np.array(
                 [feature_dict[key] for key in self._features]
             ).T
-            #print(features_pulsemap)
-            #print(type(features_pulsemap))
             if features is None:
                 features = features_pulsemap
             else:
