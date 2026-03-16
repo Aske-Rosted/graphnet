@@ -124,8 +124,8 @@ class DeploymentModule(Logger):
             return output
         elif self.multiple_models == True:
             outputs = []
-            for model in self.models:
-                output = model(data=data)
+            for _, model in enumerate(self.models):
+                output = model(data=data[_])
                 for k in range(len(output)):
                     output[k] = output[k].detach().numpy()
                 outputs.append(output)

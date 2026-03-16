@@ -77,11 +77,19 @@ class I3InferenceModule(DeploymentModule):
         else:
             self._i3_extractors = [pulsemap_extractor]
         
-        # All 
-        if features is None:
+        # All
+        if self.multiple_models == True:
+            self.features_list = []
+            for model in self.models:
+                self.features_list.append(model._graph_definition._input_feature_names)
+        elif features is None:
             features = self.model._graph_definition._input_feature_names
 
-        self._graph_definition = self.model._graph_definition
+        if self.multiple_models == True:
+            self._graph_definitions = [model._graph_definition for model in self.models]
+        else:
+            self._graph_definition = self.model._graph_definition
+        
         self._pulsemap = pulsemap
         self._gcd_file = gcd_file
         self.model_name = model_name
@@ -111,17 +119,26 @@ class I3InferenceModule(DeploymentModule):
             return True
         
         elif self._multiple_models == True:
-            data = self._create_data_representation(frame=frame)
-            predictions = self._apply_model(data=data)
+            for i3extractor in self._i3_extractors:
+                feature_dict = i3extractor(frame)
 
+            features = self._extract_feature_array_from_frame(frame=frame)
+
+            model_input_data = []
+            for _,graph_definition in enumerate(self._graph_definitions):
+                data = graph_definition(
+                    input_features=features[_],
+                    input_feature_names=self.features_list[_],
+                )
+                model_input_data.append(Batch.from_data_list([data]))
+
+            predictions = self._apply_model(data=model_input_data)
             i3_score_container = dataclasses.I3MapStringDouble()
 
-            for _, model_name in enumerate(self.model_name):
-                
-                i3_score_container[model_name] = float(predictions[_][0][0])
+            for _, prediction in enumerate(predictions):
+                i3_score_container[self.model_name[_]] = float(prediction[0][0][0])
             
             frame.Put(self._key_name, i3_score_container)
-
             return True
 
     def _check_dimensions(self, predictions: np.ndarray) -> int:
@@ -162,7 +179,10 @@ class I3InferenceModule(DeploymentModule):
         """Apply model to `Data` and case-handling."""
         if data is not None:
             predictions = self._inference(data)
-            if isinstance(predictions, list):
+            if self.multiple_models == True:
+                # Multiple Predictions Are Acceptable
+                pass
+            elif isinstance(predictions, list):
                 predictions = predictions[0]
                 self.warning(
                     f"{self.__class__.__name__} assumes one Task "
@@ -203,18 +223,37 @@ class I3InferenceModule(DeploymentModule):
             array with pulsemap
         """
         features = None
-        for i3extractor in self._i3_extractors:
-            feature_dict = i3extractor(frame)
-            features_pulsemap = np.array(
-                [feature_dict[key] for key in self._features]
-            ).T
-            if features is None:
-                features = features_pulsemap
-            else:
-                features = np.concatenate(
-                    (features, features_pulsemap), axis=0
-                )
-        return features
+        if self.multiple_models == False:
+            for i3extractor in self._i3_extractors:
+                feature_dict = i3extractor(frame)
+                features_pulsemap = np.array(
+                    [feature_dict[key] for key in self._features]
+                ).T
+                if features is None:
+                    features = features_pulsemap
+                else:
+                    features = np.concatenate(
+                        (features, features_pulsemap), axis=0
+                    )
+            return features
+        if self.multiple_models == True:
+            for i3extractor in self._i3_extractors:
+                feature_dict = i3extractor(frame)
+                features_array = []
+                for feature_list in self.features_list:
+                    features = None
+                    features_pulsemap = np.array(
+                        [feature_dict[key] for key in feature_list]
+                    ).T
+                    if features is None:
+                        features = features_pulsemap
+                    else:
+                        features = np.concatenate(
+                            (features, features_pulsemap), axis=0
+                        )
+                    features_array.append(features)
+            return features_array
+
 
     def _add_to_frame(self, frame: I3Frame, data: Dict[str, Any]) -> I3Frame:
         """Add every field in data to I3Frame.
