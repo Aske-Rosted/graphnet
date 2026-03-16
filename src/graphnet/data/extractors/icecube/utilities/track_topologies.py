@@ -9,20 +9,104 @@ if has_icecube_package():
     from icecube import (  
         icetray,
         dataclasses,
+        dataio,
     )
+
 import pandas as pd
 import numpy as np
-dom_list = pd.read_csv(
-    '/cvmfs/icecube.opensciencegrid.org/users/mnakos/process_training_data/DOM_Positions.csv',
-)
-
-import numpy as np
 import shapely.geometry as geom
+from collections import defaultdict 
 
-MuonGunGCD= '/cvmfs/icecube.opensciencegrid.org/data/GCD/GeoCalibDetectorStatus_2020.Run134142.Pass2_V0.i3.gz'
-detector_boundaries = MuonGun.ExtrudedPolygon.from_file(MuonGunGCD, padding=0)
-detector_boundaries_100 = MuonGun.ExtrudedPolygon.from_file(MuonGunGCD, padding=100)
-detector_boundaries_200 = MuonGun.ExtrudedPolygon.from_file(MuonGunGCD, padding=200)
+DEFAULT_GCD ='/cvmfs/icecube.opensciencegrid.org/data/GCD/GeoCalibDetectorStatus_2020.Run134142.Pass2_V0.i3.gz'
+
+def compute_dom_positions(
+    gcd_file = '/cvmfs/icecube.opensciencegrid.org/data/GCD/GeoCalibDetectorStatus_2020.Run134142.Pass2_V0.i3.gz',
+):
+
+    if gcd_file == None:
+        gcd_file = DEFAULT_GCD
+
+    f = dataio.I3File(gcd_file)
+    geo = f.pop_frame(icetray.I3Frame.Geometry)['I3Geometry'].omgeo
+
+
+    all_doms = defaultdict(list)
+    for omkey, omgeo in geo.items():
+    
+        if (omkey.string <= 78) & (geo[omkey].position.z <= 1000):
+            all_doms['x'].append(geo[omkey].position.x)
+            all_doms['y'].append(geo[omkey].position.y)
+            all_doms['z'].append(geo[omkey].position.z)
+            all_doms['string'].append(omkey.string)
+
+    dom_positions = pd.DataFrame({'x': all_doms['x'], 
+                                'y': all_doms['y'], 
+                                'z': all_doms['z'],
+                                'string': all_doms['string']},)
+        
+    return dom_positions
+
+OUTER_LAYER = [1,2,3,4,5,6,13,21,30,40,50,59,67,74,73,72,78,77,76,75,68,60,51,41,31,22,14,7]
+INNER_LAYER = [8,9,10,11,12,20,29,39,49,58,66,65,64,71,70,69,61,52,42,32,23,15] 
+
+import matplotlib.path as mpltPath
+
+def make_outer_boundary(
+    dom_list,
+):
+    
+    outer_boundary = generate_path(
+        dom_positions = dom_list,
+        string_numbers = OUTER_LAYER,
+        buffer = 0,
+    )
+
+    return outer_boundary
+
+def generate_path(
+    dom_positions,
+    string_numbers = None,
+    buffer = 0,
+):
+    """
+    Generates the Outer Boundaries of the Detector for Staring Tracks
+    """
+
+    if string_numbers == None:
+        string_numbers = OUTER_LAYER
+
+    df_bound = dom_positions[dom_positions['string'].isin(string_numbers)]
+
+    order = {val: idx for idx, val in enumerate(string_numbers)}
+    df_bound['order'] = df_bound['string'].map(order)
+    df_bound = df_bound.sort_values(by='order').drop(columns='order')
+
+    codes = [mpltPath.Path.MOVETO] + [mpltPath.Path.LINETO] * (df_bound[['x', 'y']].to_numpy().shape[0] - 2) + [mpltPath.Path.CLOSEPOLY]
+    boundary = mpltPath.Path(df_bound[['x', 'y']].to_numpy(), codes)
+
+    if buffer > 0:
+        original_polygon = geom.Polygon(df_bound[['x', 'y']].to_numpy())
+
+        # Expand the shape outward by 300 meters
+        expanded_polygon = original_polygon.buffer(buffer, resolution=16)
+
+        # Extract expanded vertices
+        expanded_vertices = np.array(expanded_polygon.exterior.coords)
+
+        expanded_vertices = np.array(expanded_polygon.exterior.coords)
+        codes = [mpltPath.Path.MOVETO] + [mpltPath.Path.LINETO] * (expanded_vertices.shape[0] - 2) + [mpltPath.Path.CLOSEPOLY]
+        boundary = mpltPath.Path(expanded_vertices, codes)
+
+    return boundary
+
+detector_boundaries = None
+detector_boundaries_100 = None
+detector_boundaries_200 = None
+if has_icecube_package():
+    MuonGunGCD= '/cvmfs/icecube.opensciencegrid.org/data/GCD/GeoCalibDetectorStatus_2020.Run134142.Pass2_V0.i3.gz'
+    detector_boundaries = MuonGun.ExtrudedPolygon.from_file(MuonGunGCD, padding=0)
+    detector_boundaries_100 = MuonGun.ExtrudedPolygon.from_file(MuonGunGCD, padding=100)
+    detector_boundaries_200 = MuonGun.ExtrudedPolygon.from_file(MuonGunGCD, padding=200)
 
 
 def compute_lengths(first_pos, second_pos):
@@ -95,53 +179,11 @@ def compute_skimming_event(
     return skimming
 
 
-OUTER_LAYER = [1,2,3,4,5,6,13,21,30,40,50,59,67,74,73,72,78,77,76,75,68,60,51,41,31,22,14,7]
-INNER_LAYER = [8,9,10,11,12,20,29,39,49,58,66,65,64,71,70,69,61,52,42,32,23,15] 
 
-import matplotlib.path as mpltPath
 
-def generate_path(
-    dom_positions = dom_list,
-    string_numbers = None,
-    buffer = 0,
-):
-    """
-    Generates the Outer Boundaries of the Detector for Staring Tracks
-    """
 
-    if string_numbers == None:
-        string_numbers = OUTER_LAYER
-
-    df_bound = dom_positions[dom_positions['string'].isin(string_numbers)]
-
-    order = {val: idx for idx, val in enumerate(string_numbers)}
-    df_bound['order'] = df_bound['string'].map(order)
-    df_bound = df_bound.sort_values(by='order').drop(columns='order')
-
-    codes = [mpltPath.Path.MOVETO] + [mpltPath.Path.LINETO] * (df_bound[['x', 'y']].to_numpy().shape[0] - 2) + [mpltPath.Path.CLOSEPOLY]
-    boundary = mpltPath.Path(df_bound[['x', 'y']].to_numpy(), codes)
-
-    if buffer > 0:
-        original_polygon = geom.Polygon(df_bound[['x', 'y']].to_numpy())
-
-        # Expand the shape outward by 300 meters
-        expanded_polygon = original_polygon.buffer(buffer, resolution=16)
-
-        # Extract expanded vertices
-        expanded_vertices = np.array(expanded_polygon.exterior.coords)
-
-        expanded_vertices = np.array(expanded_polygon.exterior.coords)
-        codes = [mpltPath.Path.MOVETO] + [mpltPath.Path.LINETO] * (expanded_vertices.shape[0] - 2) + [mpltPath.Path.CLOSEPOLY]
-        boundary = mpltPath.Path(expanded_vertices, codes)
-
-    return boundary
     
 
-outer_boundary = generate_path(
-    dom_positions = dom_list,
-    string_numbers = OUTER_LAYER,
-    buffer = 0,
-)
 # Make Boundary Plots using Starting Track List
 
 from graphnet.data.extractors.icecube.utilities.vector_computations import closest_approach_distance_vector
@@ -153,12 +195,19 @@ def get_leading_particle(
     
     primary = frame['PolyplopiaPrimary']
     pdg = frame['PolyplopiaPrimary'].pdg_encoding
-    full_mctree = frame['I3MCTree']
     mctree = frame['I3MCTree_preMuonProp']
+
+    # Handling Neutrino Leading Particles
     if np.abs(pdg) in [12, 14, 16]:
         current = mctree[1]
         while mctree.number_of_children(current) > 0:
             current = mctree.first_child(current)
+
+        primary.pos.x = current.pos.x
+        primary.pos.y = current.pos.y
+        primary.pos.z = current.pos.z
+
+    # Handling Corsika Events
     else:
         current = mctree[frame['PolyplopiaPrimary']]
         highest_energy = -1
@@ -168,16 +217,7 @@ def get_leading_particle(
                 if particle.energy > highest_energy:
                     highest_energy = particle.energy
                     current = particle
-
-    tracklist = frame['MMCTrackList']
-
-    e_initial = 0
-    for track in tracklist:
-        #if full_mctree.is_in_subtree(primary, track.particle) == True: # Cleaning Coincidence Hits
-        if track.Ei > e_initial:
-            e_initial = track.Ei
-            current = track.particle
-
+    
     return primary, current
 
 def indentify_interaction_vertex(
@@ -287,8 +327,8 @@ def is_starting_visible(
 
 def get_topology_metrics(
     frame,
-    dom_list = dom_list,
-    boundary = outer_boundary
+    dom_list,
+    boundary,
 ):
     
     indentify_interaction_vertex(

@@ -20,6 +20,8 @@ sys.path.append(parent_dir)
 from .utilities.track_topologies import (
     compute_skimming_event,
     get_topology_metrics,
+    compute_dom_positions,
+    make_outer_boundary,
 )
 
 if has_icecube_package() or TYPE_CHECKING:
@@ -93,6 +95,8 @@ class I3BundleExtractor(I3Extractor):
             self._borders = borders
         self._mctree = mctree
         self._sim_type = sim_type
+        self._dom_list = compute_dom_positions()
+        self._outer_boundar = make_outer_boundary(self._dom_list)
 
     def __call__(
         self, frame: "icetray.I3Frame", padding_value: Any = -1
@@ -343,6 +347,8 @@ class I3BundleExtractor(I3Extractor):
         if np.abs(frame['PolyplopiaPrimary'].pdg_encoding) in [12, 14, 16]:
             starting_metrics = get_topology_metrics(
                 frame,
+                self._dom_list,
+                self._outer_boundar,
             )
         else:
             # Corsika - No Starting Events

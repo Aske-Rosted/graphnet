@@ -137,14 +137,11 @@ class ChargeFilter(I3Filter):
 
     def __init__(self, min_charge: float = 1e4, pulsemap: str = 'SplitInIcePulses'):
         """Initialize ChargeFilter.
-
-        Args:
-        filter_names: List[str]
-            A list of filter names to check for.
-        filter_any: bool
-            standard: True
-            If True, the frame is kept if any of the filter names are present.
-            If False, the frame is kept if all of the filter names are present.
+        
+        min_charge: float
+            The minimum charge threshold for the event to pass the filter.
+        pulsemap: str
+            The name of the pulsemap to use for calculating the charge.
         """
         self._charge_cut = min_charge
         self._pulsemap = pulsemap
@@ -203,7 +200,6 @@ class ChargeFilter(I3Filter):
 
 
         event_id = frame['I3EventHeader'].event_id
-        print(event_id)
 
         remove_deepcore = reco_pulses[(reco_pulses['string'] < 79) & (reco_pulses['rde'] <= 1.1)]
         total_charge = remove_deepcore['charge'].sum()
@@ -226,37 +222,30 @@ class ChargeFilter(I3Filter):
             return True
 
 class CutZenith(I3Filter):
-    """Passes if Event is Downgoing."""
+    """Passes Events Below the Zenith Cut."""
 
     def __init__(self, max_zenith: float = np.radians(100)):
-        """Initialize ChargeFilter.
+        """Initialize .
 
         Args:
-        filter_names: List[str]
-            A list of filter names to check for.
-        filter_any: bool
-            standard: True
-            If True, the frame is kept if any of the filter names are present.
-            If False, the frame is kept if all of the filter names are present.
+        max_zenith: float
+            The maximum zenith angle for the event to pass the filter.
         """
         self._max_zenith = max_zenith
 
     def _keep_frame(self, frame: "icetray.I3Frame") -> bool:
-        """Check if current frame should be kept.
-
-        Args:
-            frame: I3-frame
-                The I3-frame to check.
+        """
+        If the event's zenith angle is below the maximum threshold, keep it.
         """
 
-        if frame['I3MCWeightDict']['PrimaryNeutrinoZenith'] > self._max_zenith:
+        if frame['PolyplopiaPrimary']['zenith'] > self._max_zenith:
             return False
         
         return True
     
 
 class CoincidenceDominant(I3Filter):
-    """Filters out Corsika Events where the Coinicdent event is Dominant."""
+    """Filters Out Events where the C."""
 
     def __init__(self):
         """Initialize ChargeFilter.
@@ -277,26 +266,22 @@ class CoincidenceDominant(I3Filter):
             frame: I3-frame
                 The I3-frame to check.
         """
-        
-        if frame['I3MCWeightDict']['PrimaryNeutrinoZenith'] < self._max_zenith:
-            return False
+
+        # Not Implemented Yet, But Might Be Useful
         
         return True
     
 
 class ShortenFile(I3Filter):
-    """Passes if the Event ID is less than 30."""
+    """For Debugging: Shortening Tests of Files 
+    that Take Too Long to Process."""
 
     def __init__(self, max_event_id: int = 100):
-        """Initialize ChargeFilter.
+        """Initialize ShortenFile.
 
         Args:
-        filter_names: List[str]
-            A list of filter names to check for.
-        filter_any: bool
-            standard: True
-            If True, the frame is kept if any of the filter names are present.
-            If False, the frame is kept if all of the filter names are present.
+        max_event_id: int
+            The maximum event ID to keep.
         """
         self._max_event_id = max_event_id
 
@@ -311,5 +296,4 @@ class ShortenFile(I3Filter):
         if frame['I3EventHeader'].event_id > self._max_event_id:
             return False
         else:
-            print(frame['I3EventHeader'].event_id)
             return True

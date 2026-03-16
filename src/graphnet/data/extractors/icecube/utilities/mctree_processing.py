@@ -24,8 +24,9 @@ def get_leading_particle(
     
     primary = frame['PolyplopiaPrimary']
     pdg = frame['PolyplopiaPrimary'].pdg_encoding
-    full_mctree = frame['I3MCTree']
     mctree = frame['I3MCTree_preMuonProp']
+
+    # Handling Neutrino Leading Particles
     if np.abs(pdg) in [12, 14, 16]:
         current = mctree[1]
         while mctree.number_of_children(current) > 0:
@@ -34,6 +35,8 @@ def get_leading_particle(
         primary.pos.x = current.pos.x
         primary.pos.y = current.pos.y
         primary.pos.z = current.pos.z
+
+    # Handling Corsika Events
     else:
         current = mctree[frame['PolyplopiaPrimary']]
         highest_energy = -1
@@ -43,15 +46,6 @@ def get_leading_particle(
                 if particle.energy > highest_energy:
                     highest_energy = particle.energy
                     current = particle
-    """
-    tracklist = frame['MMCTrackList']
-
-    e_initial = 0
-    for track in tracklist:
-        if track.Ei > e_initial:
-            e_initial = track.Ei
-            current = track.particle
-    """
     
     return primary, current
 
