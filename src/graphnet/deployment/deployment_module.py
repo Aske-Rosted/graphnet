@@ -4,7 +4,11 @@ from abc import abstractmethod
 from typing import Any, List, Union, Dict
 
 import numpy as np
+<<<<<<< HEAD
 from torch import Tensor, load
+=======
+from torch import Tensor, load, device
+>>>>>>> bundle_reco
 from torch_geometric.data import Data, Batch
 
 from graphnet.models import Model
@@ -22,10 +26,11 @@ class DeploymentModule(Logger):
 
     def __init__(
         self,
-        model_config: Union[ModelConfig, str],
+        model_config: Union[List[ModelConfig], List[str], ModelConfig, str],
         state_dict: Union[Dict[str, Tensor], str],
         device: str = "cpu",
         prediction_columns: Union[List[str], None] = None,
+        multiple_models: bool = False,
     ):
         """Construct DeploymentModule.
 
@@ -37,20 +42,32 @@ class DeploymentModule(Logger):
         """
         super().__init__(name=__name__, class_name=self.__class__.__name__)
         # Set Member Variables
-        self.model = self._load_model(
-            model_config=model_config, state_dict=state_dict
-        )
+        self.multiple_models = multiple_models
+        if multiple_models == False:
+            self.model = self._load_model(
+                model_config=model_config, state_dict=state_dict
+            )
+        elif multiple_models == True:
+            self.models = []
+            for mc, sd in zip(model_config, state_dict):
+                self.models.append(self._load_model(model_config=mc, state_dict=sd))
 
         self.prediction_columns = self._resolve_prediction_columns(
             prediction_columns
         )
+        if multiple_models == False:
+            # Set model to inference mode.
+            self.model.inference()
+            self.model.train(mode=False)
 
-        # Set model to inference mode.
-        self.model.inference()
-        self.model.train(mode=False)
+            # Move model to device
+            self.model.to(device)
 
-        # Move model to device
-        self.model.to(device)
+        elif multiple_models == True:
+            for model in self.models:
+                model.inference()
+                model.train(mode=False)
+                model.to(device)
 
     @abstractmethod
     def __call__(self, input_data: Any) -> Any:
@@ -64,7 +81,7 @@ class DeploymentModule(Logger):
         """Load `Model` from config and insert learned weights."""
         model = Model.from_config(model_config, trust=True)
         if isinstance(state_dict, str) and state_dict.endswith(".ckpt"):
-            ckpt = load(state_dict)
+            ckpt = load(state_dict, map_location=device('cpu'))
             model.load_state_dict(ckpt["state_dict"])
         else:
             model.load_state_dict(state_dict)
@@ -73,14 +90,26 @@ class DeploymentModule(Logger):
     def _resolve_prediction_columns(
         self, prediction_columns: Union[List[str], None]
     ) -> List[str]:
-        if prediction_columns is not None:
-            if isinstance(prediction_columns, str):
-                prediction_columns = [prediction_columns]
+        if self.multiple_models == False:
+            if prediction_columns is not None:
+                if isinstance(prediction_columns, str):
+                    prediction_columns = [prediction_columns]
+                else:
+                    prediction_columns = prediction_columns
             else:
-                prediction_columns = prediction_columns
-        else:
-            prediction_columns = self.model.prediction_labels
-        return prediction_columns
+                prediction_columns = self.model.prediction_labels
+            return prediction_columns
+        elif self.multiple_models == True:
+            resolved_prediction_columns = []
+            for i, model in enumerate(self.models):
+                if prediction_columns is not None:
+                    if isinstance(prediction_columns[i], str):
+                        resolved_prediction_columns.append([prediction_columns[i]])
+                    else:
+                        resolved_prediction_columns.append(prediction_columns[i])
+                else:
+                    resolved_prediction_columns.append(model.prediction_labels)
+            return resolved_prediction_columns
 
     def _inference(self, data: Union[Data, Batch]) -> List[np.ndarray]:
         """Apply model to a single event or batch of events `data`.
@@ -94,9 +123,18 @@ class DeploymentModule(Logger):
             A List of numpy arrays, each representing the output from the
             `Task`s that the model contains.
         """
-        # Perform inference
-        output = self.model(data=data)
-        # Loop over tasks in model and transform to numpy
-        for k in range(len(output)):
-            output[k] = output[k].detach().numpy()
-        return output
+        if self.multiple_models == False:
+            # Perform inference
+            output = self.model(data=data)
+            # Loop over tasks in model and transform to numpy
+            for k in range(len(output)):
+                output[k] = output[k].detach().numpy()
+            return output
+        elif self.multiple_models == True:
+            outputs = []
+            for _, model in enumerate(self.models):
+                output = model(data=data[_])
+                for k in range(len(output)):
+                    output[k] = output[k].detach().numpy()
+                outputs.append(output)
+            return outputs

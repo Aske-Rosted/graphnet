@@ -8,7 +8,43 @@ from .i3featureextractor import (
     I3FeatureExtractorIceCubeUpgrade,
     I3PulseNoiseTruthFlagIceCubeUpgrade,
 )
+
+from .i3featureextractorlegacy import (
+    I3FeatureExtractorLegacyIceCube,
+    I3FeatureExtractorLegacyIceCube86,
+)
+
+from .i3bundleeliminator import (
+    I3BundleEliminator,
+    I3BundleEliminatorIceCube86,
+)
+
+from .i3pulseextractor import (
+    I3PulseExtractor,
+    I3PulseExtractorIceCube86,
+)
+
+from .i3pulseextractornew import (
+    I3PulseExtractorNew,
+    I3PulseExtractorNewIceCube86,
+)
+
+from .i3inferencepulseextractor import (
+    I3InferencePulseExtractor,
+    I3InferencePulseExtractorIceCube86,
+)
+
+from .i3inferencepulseextractornew import (
+    I3InferencePulseExtractorNew,
+    I3InferencePulseExtractorNewIceCube86,
+)
+
+from .i3pulseextractornugen import (
+    I3PulseExtractorNugen,
+    I3PulseExtractorNugenIceCube86,
+)
 from .i3truthextractor import I3TruthExtractor
+from .i3bundleextractor import I3BundleExtractor
 from .i3retroextractor import I3RetroExtractor
 from .i3splinempeextractor import I3SplineMPEICExtractor
 from .i3particleextractor import I3ParticleExtractor

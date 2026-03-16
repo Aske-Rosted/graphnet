@@ -9,6 +9,8 @@ from graphnet.utilities.logging import Logger
 from graphnet.models.data_representation.graphs import (
     NodeDefinition,
     NodesAsPulses,
+    NodesAsPulsesBundle,
+    FirstHitPulses,
     PercentileClusters,
     NodeAsDOMTimeSeries,
     IceMixNodes,
