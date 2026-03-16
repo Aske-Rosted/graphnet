@@ -132,11 +132,11 @@ class I3FilterMask(I3Filter):
             )
             return True
 
-class ChargeFilter(I3Filter):
+class RecomputeChargeFilter(I3Filter):
     """Passes if charge meets charge_cut threshold."""
 
     def __init__(self, min_charge: float = 1e4, pulsemap: str = 'SplitInIcePulses'):
-        """Initialize ChargeFilter.
+        """Initialize RecomputeChargeFilter.
         
         min_charge: float
             The minimum charge threshold for the event to pass the filter.

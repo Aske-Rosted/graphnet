@@ -17,12 +17,12 @@ if has_icecube_package() or TYPE_CHECKING:
 import pandas as pd
 from collections import defaultdict 
 
-class I3FeatureExtractor(I3Extractor):
+class I3FeatureExtractorLegacy(I3Extractor):
     """Base class for extracting specific, reconstructed features."""
 
     def __init__(self, pulsemap: str, quantiles_time: List[Any], quantiles_charge: List[Any], 
                  is_data: bool = False):
-        """Construct I3FeatureExtractor.
+        """Construct I3FeatureExtractorLegacy.
 
         Args:
             pulsemap: Name of the pulse (series) map for which to extract
@@ -39,7 +39,7 @@ class I3FeatureExtractor(I3Extractor):
         # Base class constructor
         super().__init__(pulsemap)
 
-class I3FeatureExtractorIceCube(I3FeatureExtractor):
+class I3FeatureExtractorLegacyIceCube(I3FeatureExtractorLegacy):
     """Class for extracting reconstructed features for IceCube-86."""
 
     def __call__(self, frame: "icetray.I3Frame") -> Dict[str, List[Any]]:
@@ -54,7 +54,7 @@ class I3FeatureExtractorIceCube(I3FeatureExtractor):
                 in pure-python format.
         """
 
-class I3FeatureExtractorIceCube86(I3FeatureExtractor):
+class I3FeatureExtractorLegacyIceCube86(I3FeatureExtractorLegacy):
     """Class for extracting reconstructed features for IceCube-86."""
 
     def __call__(self, frame: "icetray.I3Frame") -> Dict[str, List[Any]]:
@@ -341,102 +341,3 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
             print('no mmctracklist')
             mctree = frame['I3MCTree_preMuonProp']
             return mctree[1]
-
-
-
-
-
-class I3FeatureExtractorIceCubeDeepCore(I3FeatureExtractorIceCube86):
-    """Class for extracting reconstructed features for IceCube-DeepCore."""
-
-
-class I3FeatureExtractorIceCubeUpgrade(I3FeatureExtractorIceCube86):
-    """Class for extracting reconstructed features for IceCube-Upgrade."""
-
-    def __call__(self, frame: "icetray.I3Frame") -> Dict[str, List[Any]]:
-        """Extract reconstructed features from `frame`.
-
-        Args:
-            frame: Physics (P) I3-frame from which to extract reconstructed
-                features.
-
-        Returns:
-            Dictionary of reconstructed features for all pulses in `pulsemap`,
-                in pure-python format.
-        """
-        output: Dict[str, List[Any]] = {
-            "pmt_dir_x": [],
-            "pmt_dir_y": [],
-            "pmt_dir_z": [],
-        }
-
-        # Add features from IceCube86
-        output_icecube86 = super().__call__(frame)
-        output.update(output_icecube86)
-
-        # Get OM data
-        if self._pulsemap in frame:
-            om_keys, data = get_om_keys_and_pulseseries(
-                frame,
-                self._pulsemap,
-                self._calibration,
-            )
-        else:
-            self.warning_once(f"Pulsemap {self._pulsemap} not found in frame.")
-            return output
-
-        for om_key in om_keys:
-            # Common values for each OM
-            pmt_dir_x = self._gcd_dict[om_key].orientation.x
-            pmt_dir_y = self._gcd_dict[om_key].orientation.y
-            pmt_dir_z = self._gcd_dict[om_key].orientation.z
-
-            # Loop over pulses for each OM
-            pulses = data[om_key]
-            for _ in pulses:
-                output["pmt_dir_x"].append(pmt_dir_x)
-                output["pmt_dir_y"].append(pmt_dir_y)
-                output["pmt_dir_z"].append(pmt_dir_z)
-
-        return output
-
-class I3PulseNoiseTruthFlagIceCubeUpgrade(I3FeatureExtractorIceCube86):
-    """Feature extractor class with pulse noise truth flag added."""
-
-    def __call__(self, frame: "icetray.I3Frame") -> Dict[str, List[Any]]:
-        """Extract reconstructed features from `frame`.
-
-        Args:
-            frame: Physics (P) I3-frame from which to extract reconstructed
-                features.
-
-        Returns:
-            Dictionary of reconstructed features for all pulses in `pulsemap`,
-                in pure-python format.
-        """
-        output: Dict[str, List[Any]] = {
-            "truth_flag": [],
-        }
-
-        # Add features from IceCubeUpgrade
-        output_icecube_upgrade = super().__call__(frame)
-        output.update(output_icecube_upgrade)
-
-        # Get OM data
-        if self._pulsemap in frame:
-            om_keys, data = get_om_keys_and_pulseseries(
-                frame,
-                self._pulsemap,
-                self._calibration,
-            )
-        else:
-            self.warning_once(f"Pulsemap {self._pulsemap} not found in frame.")
-            return output
-
-        for om_key in om_keys:
-            # Loop over pulses for each OM
-            pulses = data[om_key]
-            for truth_flag in pulses:
-                output["truth_flag"].append(truth_flag)
-
-        return output

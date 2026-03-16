@@ -3,7 +3,10 @@
 from .i3extractor import I3Extractor
 from .i3featureextractor import (
     I3FeatureExtractor,
+    I3FeatureExtractorIceCube,
     I3FeatureExtractorIceCube86,
+    I3FeatureExtractorLegacyIceCube,
+    I3FeatureExtractorLegacyIceCube86,
     I3FeatureExtractorIceCubeDeepCore,
     I3FeatureExtractorIceCubeUpgrade,
     I3PulseNoiseTruthFlagIceCubeUpgrade,
