@@ -90,7 +90,9 @@ class DataConverter(ABC, Logger):
         self._file_reader.set_extractors(extractors=extractors)
 
     @final
-    def __call__(self, input_file: Union[str, List[str]], folder: bool = True) -> None:
+    def __call__(
+        self, input_file: Union[str, List[str]], folder: bool = True
+    ) -> None:
         """Extract data from files in `input_dir` and save to disk.
 
         Args:
@@ -113,7 +115,7 @@ class DataConverter(ABC, Logger):
                 for file in input_files
             ]
         else:
-            gcd_file = '/cvmfs/icecube.opensciencegrid.org/data/GCD/GeoCalibDetectorStatus_2020.Run134142.Pass2_V0.i3.gz'
+            gcd_file = "/cvmfs/icecube.opensciencegrid.org/data/GCD/GeoCalibDetectorStatus_2020.Run134142.Pass2_V0.i3.gz"
             file_list = []
             for file in input_file:
                 file_list.append(I3FileSet(i3_file=file, gcd_file=gcd_file))

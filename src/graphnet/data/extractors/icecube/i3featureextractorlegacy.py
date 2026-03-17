@@ -15,19 +15,25 @@ if has_icecube_package() or TYPE_CHECKING:
     from icecube import dataclasses
 
 import pandas as pd
-from collections import defaultdict 
+from collections import defaultdict
+
 
 class I3FeatureExtractorLegacy(I3Extractor):
     """Base class for extracting specific, reconstructed features."""
 
-    def __init__(self, pulsemap: str, quantiles_time: List[Any], quantiles_charge: List[Any], 
-                 is_data: bool = False):
+    def __init__(
+        self,
+        pulsemap: str,
+        quantiles_time: List[Any],
+        quantiles_charge: List[Any],
+        is_data: bool = False,
+    ):
         """Construct I3FeatureExtractorLegacy.
 
         Args:
             pulsemap: Name of the pulse (series) map for which to extract
                 reconstructed features.
-            quantiles_time: 
+            quantiles_time:
             quantiles_charge
         """
         # Member variable(s)
@@ -38,6 +44,7 @@ class I3FeatureExtractorLegacy(I3Extractor):
 
         # Base class constructor
         super().__init__(pulsemap)
+
 
 class I3FeatureExtractorLegacyIceCube(I3FeatureExtractorLegacy):
     """Class for extracting reconstructed features for IceCube-86."""
@@ -53,6 +60,7 @@ class I3FeatureExtractorLegacyIceCube(I3FeatureExtractorLegacy):
             Dictionary of reconstructed features for all pulses in `pulsemap`,
                 in pure-python format.
         """
+
 
 class I3FeatureExtractorLegacyIceCube86(I3FeatureExtractorLegacy):
     """Class for extracting reconstructed features for IceCube-86."""
@@ -124,8 +132,8 @@ class I3FeatureExtractorLegacyIceCube86(I3FeatureExtractorLegacy):
 
         event_time = frame["I3EventHeader"].start_time.mod_julian_day_double
 
-        #print(frame["I3EventHeader"].event_id, frame["I3EventHeader"].sub_event_id, "graphnet run")
-        #print(len(om_keys), 'graphnet')
+        # print(frame["I3EventHeader"].event_id, frame["I3EventHeader"].sub_event_id, "graphnet run")
+        # print(len(om_keys), 'graphnet')
 
         if self._is_data == False:
             leading = self._get_leading_particle(frame=frame)
@@ -167,9 +175,9 @@ class I3FeatureExtractorLegacyIceCube86(I3FeatureExtractorLegacy):
 
             # Loop over pulses for each OM
             pulses = data[om_key]
-                #print(pulses)
+            # print(pulses)
 
-            for _,pulse in enumerate(pulses):
+            for _, pulse in enumerate(pulses):
 
                 output["charge"].append(
                     getattr(pulse, "charge", padding_value)
@@ -196,15 +204,21 @@ class I3FeatureExtractorLegacyIceCube86(I3FeatureExtractorLegacy):
                 output["event_time"].append(event_time)
 
                 if self._is_data == False:
-                    output['r'].append(
-                        phys_services.I3Calculator.closest_approach_distance(leading, self._gcd_dict[om_key].position)
+                    output["r"].append(
+                        phys_services.I3Calculator.closest_approach_distance(
+                            leading, self._gcd_dict[om_key].position
                         )
-                    output['residual'].append(
-                        phys_services.I3Calculator.time_residual(leading, self._gcd_dict[om_key].position, getattr(pulse, "time", padding_value)) 
+                    )
+                    output["residual"].append(
+                        phys_services.I3Calculator.time_residual(
+                            leading,
+                            self._gcd_dict[om_key].position,
+                            getattr(pulse, "time", padding_value),
+                        )
                     )
                 else:
-                    output['r'].append(padding_value)
-                    output['residual'].append(padding_value)
+                    output["r"].append(padding_value)
+                    output["residual"].append(padding_value)
 
                 # Pulse flags
                 flags = getattr(pulse, "flags", padding_value)
@@ -216,73 +230,108 @@ class I3FeatureExtractorLegacyIceCube86(I3FeatureExtractorLegacy):
                     output["awtd"].append(self._parse_awtd_flag(pulse))
 
         # Convert Event Info Into Dataframe
-        evt_pulses = pd.DataFrame({"charge": output['charge'],
-                                    "dom_time": output['dom_time'],
-                                    "width": output['width'],
-                                    "dom_x": output['dom_x'],
-                                    "dom_y": output['dom_y'],
-                                    "dom_z": output['dom_z'],
-                                    "pmt_area": output['pmt_area'],
-                                    "rde": output['rde'],
-                                    "is_bright_dom": output['is_bright_dom'],
-                                    "is_bad_dom": output['is_bad_dom'],
-                                    "is_saturated_dom": output['is_saturated_dom'],
-                                    "is_errata_dom": output['is_errata_dom'],
-                                    "event_time": output['event_time'],
-                                    "hlc": output['hlc'],
-                                    "awtd": output['awtd'],
-                                    "string": output['string'],
-                                    "pmt_number": output['pmt_number'],
-                                    "dom_number": output['dom_number'],
-                                    "dom_type": output['dom_type'],
-                                    "r": output['r'],
-                                    "residual": output['residual'],},)
-        
+        evt_pulses = pd.DataFrame(
+            {
+                "charge": output["charge"],
+                "dom_time": output["dom_time"],
+                "width": output["width"],
+                "dom_x": output["dom_x"],
+                "dom_y": output["dom_y"],
+                "dom_z": output["dom_z"],
+                "pmt_area": output["pmt_area"],
+                "rde": output["rde"],
+                "is_bright_dom": output["is_bright_dom"],
+                "is_bad_dom": output["is_bad_dom"],
+                "is_saturated_dom": output["is_saturated_dom"],
+                "is_errata_dom": output["is_errata_dom"],
+                "event_time": output["event_time"],
+                "hlc": output["hlc"],
+                "awtd": output["awtd"],
+                "string": output["string"],
+                "pmt_number": output["pmt_number"],
+                "dom_number": output["dom_number"],
+                "dom_type": output["dom_type"],
+                "r": output["r"],
+                "residual": output["residual"],
+            },
+        )
+
         # Produce Quantile Information of Each DOM
-        t_quantiles = evt_pulses.groupby(["string", "dom_number"])['dom_time'].quantile(self._quantiles_time).unstack().reset_index()
+        t_quantiles = (
+            evt_pulses.groupby(["string", "dom_number"])["dom_time"]
+            .quantile(self._quantiles_time)
+            .unstack()
+            .reset_index()
+        )
         for quant in self._quantiles_time:
-            t_quantiles = t_quantiles.rename(columns={quant: f't{int(1000*quant)}'})
+            t_quantiles = t_quantiles.rename(
+                columns={quant: f"t{int(1000*quant)}"}
+            )
 
-        evt_pulses['qcumsum'] = evt_pulses.groupby(["string", "dom_number"])['charge'].cumsum()	
-        q_quantiles = evt_pulses.groupby(["string", "dom_number"])['qcumsum'].quantile(self._quantiles_charge).unstack().reset_index()
-        evt_pulses.drop(columns=['qcumsum'], inplace=True)
+        evt_pulses["qcumsum"] = evt_pulses.groupby(["string", "dom_number"])[
+            "charge"
+        ].cumsum()
+        q_quantiles = (
+            evt_pulses.groupby(["string", "dom_number"])["qcumsum"]
+            .quantile(self._quantiles_charge)
+            .unstack()
+            .reset_index()
+        )
+        evt_pulses.drop(columns=["qcumsum"], inplace=True)
         for quant in self._quantiles_charge:
-            q_quantiles = q_quantiles.rename(columns={quant: f'q{int(1000*quant)}'})	
-        q_total = evt_pulses.groupby(["string", "dom_number"], as_index=False)['charge'].sum()
+            q_quantiles = q_quantiles.rename(
+                columns={quant: f"q{int(1000*quant)}"}
+            )
+        q_total = evt_pulses.groupby(["string", "dom_number"], as_index=False)[
+            "charge"
+        ].sum()
         # Extrac the Minimum Pulse Time of Each Dom
-        min_times = evt_pulses.loc[evt_pulses.groupby(["string", "dom_number"], as_index=True)['dom_time'].idxmin()]
+        min_times = evt_pulses.loc[
+            evt_pulses.groupby(["string", "dom_number"], as_index=True)[
+                "dom_time"
+            ].idxmin()
+        ]
 
-        min_times = min_times.merge(t_quantiles, on = ["string", "dom_number"])
-        min_times = min_times.merge(q_quantiles, on = ["string", "dom_number"])
+        min_times = min_times.merge(t_quantiles, on=["string", "dom_number"])
+        min_times = min_times.merge(q_quantiles, on=["string", "dom_number"])
 
-        min_times['adjusted_time'] = min_times["dom_time"] - min_times["dom_time"].min()
- 
-        total_pulses = evt_pulses.groupby(["string", "dom_number"], as_index=False)['charge'].size()
+        min_times["adjusted_time"] = (
+            min_times["dom_time"] - min_times["dom_time"].min()
+        )
 
-        min_times['dom_qtot'] = q_total['charge']
-        min_times['dom_qtot_exc'] = q_total['charge']
-        min_times['total_pulses'] = total_pulses['size']
+        total_pulses = evt_pulses.groupby(
+            ["string", "dom_number"], as_index=False
+        )["charge"].size()
 
-        bright_doms = min_times['dom_qtot']/frame['Homogenized_QTot_New'].value >= .4
+        min_times["dom_qtot"] = q_total["charge"]
+        min_times["dom_qtot_exc"] = q_total["charge"]
+        min_times["total_pulses"] = total_pulses["size"]
 
-        min_times['bright_dom'] = bright_doms.to_numpy(dtype=float)
+        bright_doms = (
+            min_times["dom_qtot"] / frame["Homogenized_QTot_New"].value >= 0.4
+        )
 
-        bad_doms = (min_times['is_errata_dom'] == 1) | (min_times['is_saturated_dom'] == 1)
-        t_name_keys = [f't{int(1000*quant)}' for quant in self._quantiles_time]
-        q_name_keys = [f'q{int(1000*quant)}' for quant in self._quantiles_charge]
+        min_times["bright_dom"] = bright_doms.to_numpy(dtype=float)
+
+        bad_doms = (min_times["is_errata_dom"] == 1) | (
+            min_times["is_saturated_dom"] == 1
+        )
+        t_name_keys = [f"t{int(1000*quant)}" for quant in self._quantiles_time]
+        q_name_keys = [
+            f"q{int(1000*quant)}" for quant in self._quantiles_charge
+        ]
 
         for t_name in t_name_keys:
             min_times[t_name] = min_times[t_name] - min_times["dom_time"].min()
 
         # Remove This
-        #min_times.loc[bad_doms, t_name_keys] = -100
-        #min_times.loc[bad_doms, q_name_keys] = -100
-        min_times.loc[bad_doms, 'dom_qtot_exc'] = -100
+        # min_times.loc[bad_doms, t_name_keys] = -100
+        # min_times.loc[bad_doms, q_name_keys] = -100
+        min_times.loc[bad_doms, "dom_qtot_exc"] = -100
 
-
-        #print(min_times)
-        output = min_times.to_dict(orient='list')
-        #print(min_times)
+        # print(min_times)
+        output = min_times.to_dict(orient="list")
+        # print(min_times)
         return output
 
     def _get_relative_dom_efficiency(
@@ -323,11 +372,12 @@ class I3FeatureExtractorLegacyIceCube86(I3FeatureExtractorLegacy):
 
     # Error Getting this for a certain set
     def _get_leading_particle(
-            self, frame: "icetray.I3Frame",
-        ):
+        self,
+        frame: "icetray.I3Frame",
+    ):
 
         try:
-            tracklist = frame['MMCTrackList']
+            tracklist = frame["MMCTrackList"]
 
             max_energy = -1
             max_particle = tracklist[0]
@@ -338,6 +388,6 @@ class I3FeatureExtractorLegacyIceCube86(I3FeatureExtractorLegacy):
 
             return max_particle.particle
         except:
-            print('no mmctracklist')
-            mctree = frame['I3MCTree_preMuonProp']
+            print("no mmctracklist")
+            mctree = frame["I3MCTree_preMuonProp"]
             return mctree[1]

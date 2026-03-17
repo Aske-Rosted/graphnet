@@ -7,6 +7,7 @@ import os
 from graphnet.models.detector.detector import Detector
 from graphnet.constants import ICECUBE_GEOMETRY_TABLE_DIR
 
+
 class IceCubeBundle(Detector):
     """`Detector` class for IceCube-Bundle Rejection."""
 
@@ -40,7 +41,6 @@ class IceCubeBundle(Detector):
             "is_errata_dom": self._dom_cond,
         }
 
-
         return feature_map
 
     def _dom_xyz(self, x: torch.tensor) -> torch.tensor:
@@ -48,10 +48,10 @@ class IceCubeBundle(Detector):
 
     def _dom_time(self, x: torch.tensor) -> torch.tensor:
         return (x - 1.0e04) / 3.0e4
-    
+
     def _adjusted_time(self, x: torch.tensor) -> torch.tensor:
         return x / 3.0e4
-    
+
     def _percentile_time(self, x: torch.tensor) -> torch.tensor:
         cond = x != -100
         x[cond] = x[cond] / 3.0e4
@@ -68,9 +68,10 @@ class IceCubeBundle(Detector):
 
     def _pmt_area(self, x: torch.tensor) -> torch.tensor:
         return x / 0.05
-    
+
     def _dom_cond(self, x: torch.tensor) -> torch.tensor:
         return x
+
 
 class IceCubeBundleNew(Detector):
     """`Detector` class for IceCube-Bundle Rejection."""
@@ -103,7 +104,6 @@ class IceCubeBundleNew(Detector):
             "t_from_leading": self._identity,
         }
 
-
         return feature_map
 
     def _dom_xyz(self, x: torch.tensor) -> torch.tensor:
@@ -111,13 +111,13 @@ class IceCubeBundleNew(Detector):
 
     def _dom_time(self, x: torch.tensor) -> torch.tensor:
         return (x - 1.0e04) / 3.0e4
-    
+
     def _adjusted_time(self, x: torch.tensor) -> torch.tensor:
         return x / 3.0e4
-    
+
     def _qcumsum(self, x: torch.tensor) -> torch.tensor:
         return x / 25
-    
+
     def _charge(self, x: torch.tensor) -> torch.tensor:
 
         return torch.log10(x + 1)
@@ -127,10 +127,11 @@ class IceCubeBundleNew(Detector):
 
     def _pmt_area(self, x: torch.tensor) -> torch.tensor:
         return x / 0.05
-    
+
     def _dom_cond(self, x: torch.tensor) -> torch.tensor:
         return x
-    
+
+
 class IceCubeBundleAdvanced(Detector):
     """`Detector` class for IceCube-Bundle Rejection."""
 
@@ -163,17 +164,48 @@ class IceCubeBundleAdvanced(Detector):
             "errata_total_time": self._charge,
         }
 
-        charge_after_t_threholds = [5,10,15,20,25,30,35,40,45,50,60,70,80,90,100]
-        time_charge_percentiles = [1,3,6,10,15,25,50,80]
-        extra_features = [f'charge_after_{t}' for t in charge_after_t_threholds]
-        extra_features_excl = [f'charge_after_{t}_excl' for t in charge_after_t_threholds]
-        extra_features_percentiles = [f'time_charge_{p}' for p in time_charge_percentiles]
-        extra_features_percentiles_excl = [f'time_charge_{p}_excl' for p in time_charge_percentiles]
+        charge_after_t_threholds = [
+            5,
+            10,
+            15,
+            20,
+            25,
+            30,
+            35,
+            40,
+            45,
+            50,
+            60,
+            70,
+            80,
+            90,
+            100,
+        ]
+        time_charge_percentiles = [1, 3, 6, 10, 15, 25, 50, 80]
+        extra_features = [
+            f"charge_after_{t}" for t in charge_after_t_threholds
+        ]
+        extra_features_excl = [
+            f"charge_after_{t}_excl" for t in charge_after_t_threholds
+        ]
+        extra_features_percentiles = [
+            f"time_charge_{p}" for p in time_charge_percentiles
+        ]
+        extra_features_percentiles_excl = [
+            f"time_charge_{p}_excl" for p in time_charge_percentiles
+        ]
 
         dict_extra_features = {feat: self._charge for feat in extra_features}
-        dict_extra_features_excl = {feat: self._charge for feat in extra_features_excl}
-        dict_extra_features_percentiles = {feat: self._adjusted_time for feat in extra_features_percentiles}
-        dict_extra_features_percentiles_excl = {feat: self._adjusted_time for feat in extra_features_percentiles_excl}
+        dict_extra_features_excl = {
+            feat: self._charge for feat in extra_features_excl
+        }
+        dict_extra_features_percentiles = {
+            feat: self._adjusted_time for feat in extra_features_percentiles
+        }
+        dict_extra_features_percentiles_excl = {
+            feat: self._adjusted_time
+            for feat in extra_features_percentiles_excl
+        }
 
         feature_map.update(dict_extra_features)
         feature_map.update(dict_extra_features_excl)
@@ -187,13 +219,13 @@ class IceCubeBundleAdvanced(Detector):
 
     def _dom_time(self, x: torch.tensor) -> torch.tensor:
         return (x - 1.0e04) / 3.0e4
-    
+
     def _adjusted_time(self, x: torch.tensor) -> torch.tensor:
         return x / 3.0e4
-    
+
     def _qcumsum(self, x: torch.tensor) -> torch.tensor:
         return x / 25
-    
+
     def _charge(self, x: torch.tensor) -> torch.tensor:
 
         return torch.log10(x + 1)
@@ -203,9 +235,10 @@ class IceCubeBundleAdvanced(Detector):
 
     def _pmt_area(self, x: torch.tensor) -> torch.tensor:
         return x / 0.05
-    
+
     def _dom_cond(self, x: torch.tensor) -> torch.tensor:
         return x
+
 
 class IceCube86(Detector):
     """`Detector` class for IceCube-86."""
@@ -219,7 +252,7 @@ class IceCube86(Detector):
 
     def feature_map(self) -> Dict[str, Callable]:
         """Map standardization functions to each dimension of input data."""
-        #feature_map = {
+        # feature_map = {
         #    "dom_x": self._dom_xyz,
         #    "dom_y": self._dom_xyz,
         #    "dom_z": self._dom_xyz,
@@ -228,9 +261,9 @@ class IceCube86(Detector):
         #    "rde": self._rde,
         #    "pmt_area": self._pmt_area,
         #    "hlc": self._identity,
-        #}
+        # }
 
-        #feature_map = {
+        # feature_map = {
         #    "dom_x": self._dom_xyz,
         #    "dom_y": self._dom_xyz,
         #    "dom_z": self._dom_xyz,
@@ -238,7 +271,7 @@ class IceCube86(Detector):
         #    "dom_qtot": self._charge,
         #    "rde": self._rde,
         #    "pmt_area": self._pmt_area,
-        #}
+        # }
         feature_map = {
             "dom_x": self._dom_xyz,
             "dom_y": self._dom_xyz,
@@ -248,7 +281,6 @@ class IceCube86(Detector):
             "rde": self._rde,
             "pmt_area": self._pmt_area,
         }
-
 
         return feature_map
 

@@ -7,13 +7,15 @@ from typing import List
 from graphnet.utilities.imports import has_icecube_package
 
 import numpy as np
+
 if has_icecube_package():
     from icecube import icetray
     from icecube import dataio
     from icecube import dataclasses
     from icecube import simclasses
-from collections import defaultdict 
+from collections import defaultdict
 import pandas as pd
+
 
 class I3Filter(Logger):
     """A generic filter for I3-frames."""
@@ -176,18 +178,22 @@ class TableFilter(I3Filter):
 
     def _keep_frame(self, frame: "icetray.I3Frame") -> bool:
         """Check that the frame has a table.
+
         Args:
             frame: I3-frame
                 The I3-frame to check.
         """
         return frame.Has(self._table_name)
-    
+
+
 class RecomputeChargeFilter(I3Filter):
     """Passes if charge meets charge_cut threshold."""
 
-    def __init__(self, min_charge: float = 1e4, pulsemap: str = 'SplitInIcePulses'):
+    def __init__(
+        self, min_charge: float = 1e4, pulsemap: str = "SplitInIcePulses"
+    ):
         """Initialize RecomputeChargeFilter.
-        
+
         min_charge: float
             The minimum charge threshold for the event to pass the filter.
         pulsemap: str
@@ -196,9 +202,9 @@ class RecomputeChargeFilter(I3Filter):
         self._charge_cut = min_charge
         self._pulsemap = pulsemap
 
-        gcd_file = '/cvmfs/icecube.opensciencegrid.org/data/GCD/GeoCalibDetectorStatus_2020.Run134142.Pass2_V0.i3.gz'
+        gcd_file = "/cvmfs/icecube.opensciencegrid.org/data/GCD/GeoCalibDetectorStatus_2020.Run134142.Pass2_V0.i3.gz"
         f = dataio.I3File(gcd_file)
-        self._cal = f.pop_frame(icetray.I3Frame.Calibration)['I3Calibration']
+        self._cal = f.pop_frame(icetray.I3Frame.Calibration)["I3Calibration"]
 
     def _keep_frame(self, frame: "icetray.I3Frame") -> bool:
         """Check if current frame should be kept.
@@ -210,18 +216,18 @@ class RecomputeChargeFilter(I3Filter):
         oms = defaultdict(list)
 
         try:
-            data = frame['SplitInIcePulses'].apply(frame)
+            data = frame["SplitInIcePulses"].apply(frame)
         except:
             # no splitinicepulses
             return False
-        
+
         try:
-            mctree = frame['I3MCTree']
+            mctree = frame["I3MCTree"]
         except:
             # mctree issue
-            print('mctree issue')
+            print("mctree issue")
             return False
-        
+
         om_keys = data.keys()
 
         for om_key in om_keys:
@@ -230,46 +236,53 @@ class RecomputeChargeFilter(I3Filter):
 
             rde = self._cal.dom_cal[om_key].relative_dom_eff
 
-            for _,pulse in enumerate(pulses):
+            for _, pulse in enumerate(pulses):
 
-                oms['time'].append(pulse.time)
-                oms['charge'].append(pulse.charge)
-                oms['string'].append(om_key.string)
-                oms['dom'].append(om_key.om)
-                oms['rde'].append(rde)
+                oms["time"].append(pulse.time)
+                oms["charge"].append(pulse.charge)
+                oms["string"].append(om_key.string)
+                oms["dom"].append(om_key.om)
+                oms["rde"].append(rde)
 
         reco_pulses = pd.DataFrame(
             {
-            "string":oms['string'], 
-            "dom":oms['dom'],
-            't':oms["time"], 
-            'charge':oms['charge'],
-            'rde':oms['rde'],
+                "string": oms["string"],
+                "dom": oms["dom"],
+                "t": oms["time"],
+                "charge": oms["charge"],
+                "rde": oms["rde"],
             },
         )
 
+        event_id = frame["I3EventHeader"].event_id
 
-        event_id = frame['I3EventHeader'].event_id
+        remove_deepcore = reco_pulses[
+            (reco_pulses["string"] < 79) & (reco_pulses["rde"] <= 1.1)
+        ]
+        total_charge = remove_deepcore["charge"].sum()
 
-        remove_deepcore = reco_pulses[(reco_pulses['string'] < 79) & (reco_pulses['rde'] <= 1.1)]
-        total_charge = remove_deepcore['charge'].sum()
+        q_total = remove_deepcore.groupby(["string", "dom"], as_index=False)[
+            "charge"
+        ].sum()
 
-        q_total = remove_deepcore.groupby(["string", "dom"], as_index=False)['charge'].sum()
-
-        q_total_bubble_cut = q_total[q_total['charge'] < total_charge/2]
+        q_total_bubble_cut = q_total[q_total["charge"] < total_charge / 2]
 
         try:
-            frame['HQTOT'] = dataclasses.I3Double(q_total_bubble_cut.charge.sum())
+            frame["HQTOT"] = dataclasses.I3Double(
+                q_total_bubble_cut.charge.sum()
+            )
         except:
-            del frame['HQTOT']
+            del frame["HQTOT"]
 
-            frame['HQTOT'] = dataclasses.I3Double(q_total_bubble_cut.charge.sum())
+            frame["HQTOT"] = dataclasses.I3Double(
+                q_total_bubble_cut.charge.sum()
+            )
 
-
-        if frame['HQTOT'].value < self._charge_cut:
+        if frame["HQTOT"].value < self._charge_cut:
             return False
         else:
             return True
+
 
 class CutZenith(I3Filter):
     """Passes Events Below the Zenith Cut."""
@@ -284,15 +297,14 @@ class CutZenith(I3Filter):
         self._max_zenith = max_zenith
 
     def _keep_frame(self, frame: "icetray.I3Frame") -> bool:
-        """
-        If the event's zenith angle is below the maximum threshold, keep it.
-        """
+        """If the event's zenith angle is below the maximum threshold, keep
+        it."""
 
-        if frame['PolyplopiaPrimary']['zenith'] > self._max_zenith:
+        if frame["PolyplopiaPrimary"]["zenith"] > self._max_zenith:
             return False
-        
+
         return True
-    
+
 
 class ChargeFilter(I3Filter):
     """A filter that checks the recorded charge and requires a lower limit.
@@ -335,12 +347,12 @@ class ChargeFilter(I3Filter):
         return False
 
         # Not Implemented Yet, But Might Be Useful
-        
+
         return True
-    
+
 
 class ShortenFile(I3Filter):
-    """For Debugging: Shortening Tests of Files 
+    """For Debugging: Shortening Tests of Files
     that Take Too Long to Process."""
 
     def __init__(self, max_event_id: int = 100):
@@ -360,7 +372,7 @@ class ShortenFile(I3Filter):
                 The I3-frame to check.
         """
 
-        if frame['I3EventHeader'].event_id > self._max_event_id:
+        if frame["I3EventHeader"].event_id > self._max_event_id:
             return False
         else:
             return True

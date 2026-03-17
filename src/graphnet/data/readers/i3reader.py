@@ -6,7 +6,7 @@ from graphnet.utilities.imports import has_icecube_package
 from graphnet.data.extractors.icecube.utilities.i3_filters import (
     I3Filter,
     NullSplitI3Filter,
-    #ChargeFilter,
+    # ChargeFilter,
     RecomputeChargeFilter,
 )
 from graphnet.data.extractors.icecube import I3Extractor
@@ -87,7 +87,7 @@ class I3Reader(GraphNeTFileReader):
             )
 
         # Open I3 file
-        if file_path.i3_file[:6] == 'gsiftp':
+        if file_path.i3_file[:6] == "gsiftp":
             fsf = I3FileStagerFile.GridFTPStager()
             local_infile = fsf.GetReadablePath(file_path.i3_file)
             i3_file_io = dataio.I3File(str(local_infile), "r")

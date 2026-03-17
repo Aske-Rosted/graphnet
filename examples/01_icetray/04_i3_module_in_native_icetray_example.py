@@ -71,7 +71,7 @@ def apply_to_files(
             ],
             filename=output_folder + "/" + i3_file.split("/")[-1],
         )
-        
+
         # Called in Tray.Execute (Running the Model)
         tray.Execute()
         tray.Finish()
@@ -108,7 +108,6 @@ def main() -> None:
         prediction_columns=["energy"],
         model_name="graphnet_deployment_example",
     )
-
 
     # Apply module to files in IceTray
     apply_to_files(

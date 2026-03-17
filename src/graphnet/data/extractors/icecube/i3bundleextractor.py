@@ -10,11 +10,11 @@ from .utilities.frames import (
     frame_is_noise,
 )
 from graphnet.utilities.imports import has_icecube_package
-from .utilities.mctree_processing import (
-    make_shower_and_stochasticity_info
-)
-parent_dir = '/data/user/mnakos/EHE_Globalfit'
+from .utilities.mctree_processing import make_shower_and_stochasticity_info
+
+parent_dir = "/data/user/mnakos/EHE_Globalfit"
 import sys
+
 sys.path.append(parent_dir)
 
 from .utilities.track_topologies import (
@@ -104,17 +104,16 @@ class I3BundleExtractor(I3Extractor):
         """Extract truth-level information."""
         is_mc = frame_is_montecarlo(frame, self._mctree)
         is_noise = False
-        #is_noise = frame_is_noise(frame, self._mctree)
-        #sim_type = self._find_data_type(is_mc, self._i3_file)
+        # is_noise = frame_is_noise(frame, self._mctree)
+        # sim_type = self._find_data_type(is_mc, self._i3_file)
         sim_type = self._sim_type
-
         """
         Primary: Primary Corsika/Neutrino
         Leading: Highest Energy Charged Particle
         Charge: Highest Charge Deposited Charged Particle (Corsika)
         -> For NuGen, same as leading
         """
-     
+
         output = {
             "azimuth": padding_value,
             "zenith": padding_value,
@@ -125,15 +124,15 @@ class I3BundleExtractor(I3Extractor):
             "SubrunID": frame["I3EventHeader"].sub_run_id,
             "EventID": frame["I3EventHeader"].event_id,
             "SubEventID": frame["I3EventHeader"].sub_event_id,
-            'true_starting': padding_value,  # True Starting Vertex Inside Detector Volume
-            'closest_approach_x': padding_value,  # Closest Approach X Coordinate
-            'closest_approach_y': padding_value,  # Closest Approach Y Coordinate
-            'closest_approach_z': padding_value,  # Closest Approach Z Coordinate
-            'topology_primary_high': padding_value, 
-            'topology_primary_low': padding_value,
-            'topology_leading_high': padding_value,
-            'topology_leading_low': padding_value,
-            "charge": frame['HQTOT'].value,
+            "true_starting": padding_value,  # True Starting Vertex Inside Detector Volume
+            "closest_approach_x": padding_value,  # Closest Approach X Coordinate
+            "closest_approach_y": padding_value,  # Closest Approach Y Coordinate
+            "closest_approach_z": padding_value,  # Closest Approach Z Coordinate
+            "topology_primary_high": padding_value,
+            "topology_primary_low": padding_value,
+            "topology_leading_high": padding_value,
+            "topology_leading_low": padding_value,
+            "charge": frame["HQTOT"].value,
             "fraction_coincidence": padding_value,
             "muon_multiplicity": padding_value,
             "muon_multiplicity_cylinder": padding_value,
@@ -145,18 +144,18 @@ class I3BundleExtractor(I3Extractor):
             "primary_rms3_energy": padding_value,
             "primary_rms_MCPE": padding_value,
             "primary_rms3_MCPE": padding_value,
-            'primary_most_lateral_deposit': padding_value,
+            "primary_most_lateral_deposit": padding_value,
             "leading_rms_energy": padding_value,
             "leading_rms3_energy": padding_value,
             "leading_rms_MCPE": padding_value,
             "leading_rms3_MCPE": padding_value,
-            'leading_most_lateral_deposit': padding_value,
-            #"primary_stochasticity_std_energy": padding_value,
-            #"primary_stochasticity_pomean_energy": padding_value,
-            #"primary_stochasticity_pomedian_energy": padding_value,
-            #"primary_stochasticity_std_MCPE": padding_value,
-            #"primary_stochasticity_pomean_MCPE": padding_value,
-            #"primary_stochasticity_pomedian_MCPE": padding_value,
+            "leading_most_lateral_deposit": padding_value,
+            # "primary_stochasticity_std_energy": padding_value,
+            # "primary_stochasticity_pomean_energy": padding_value,
+            # "primary_stochasticity_pomedian_energy": padding_value,
+            # "primary_stochasticity_std_MCPE": padding_value,
+            # "primary_stochasticity_pomean_MCPE": padding_value,
+            # "primary_stochasticity_pomedian_MCPE": padding_value,
             "leading_stochasticity_std_energy": padding_value,
             "leading_stochasticity_pomean_energy": padding_value,
             "leading_stochasticity_pomedian_energy": padding_value,
@@ -168,11 +167,11 @@ class I3BundleExtractor(I3Extractor):
             "length_in_detector": padding_value,
             "length_in_detector_100": padding_value,
             "length_in_detector_200": padding_value,
-            'hitstrings': frame['NumberStrings'].value,
-            'hitdoms': frame['NumberDOMs'].value,
-            'hitstringsHLC': frame['NumberStringsHLC'].value,
-            'hitdomsHLC': frame['NumberDOMsHLC'].value,
-            #"flat_spectrum_weight": self._generation_spectrum_correction(frame),
+            "hitstrings": frame["NumberStrings"].value,
+            "hitdoms": frame["NumberDOMs"].value,
+            "hitstringsHLC": frame["NumberStringsHLC"].value,
+            "hitdomsHLC": frame["NumberDOMsHLC"].value,
+            # "flat_spectrum_weight": self._generation_spectrum_correction(frame),
         }
 
         # Only InIceSplit P frames contain ML appropriate I3RecoPulseSeriesMap etc.
@@ -183,7 +182,6 @@ class I3BundleExtractor(I3Extractor):
             "Final",
         ]:
             return output
-        
 
         """
         Gather Basic Event Information
@@ -201,16 +199,13 @@ class I3BundleExtractor(I3Extractor):
                 "primary_energy": primary_particle.energy,
                 "azimuth": primary.dir.azimuth,
                 "zenith": primary.dir.zenith,
-                #"azi_leading": leading.dir.azimuth, # Azimuth of the Highest Energy Charged Lepton in Event
-                #"zen_leading": leading.dir.zenith, # Zenith of the Highest Energy Charged Lepton in Event
+                # "azi_leading": leading.dir.azimuth, # Azimuth of the Highest Energy Charged Lepton in Event
+                # "zen_leading": leading.dir.zenith, # Zenith of the Highest Energy Charged Lepton in Event
                 "pid": primary_particle.pdg_encoding,
                 "interaction_type": interaction_type,
             }
         )
-
-        """
-        Gather Starting Event Information
-        """
+        """Gather Starting Event Information."""
         topology_info = self._event_topologies(
             frame,
         )
@@ -218,10 +213,7 @@ class I3BundleExtractor(I3Extractor):
         output.update(
             topology_info,
         )
-
-        """
-        Gather Muon Multiplicity Information
-        """
+        """Gather Muon Multiplicity Information."""
         try:
             muon_multiplicity_dict = self._get_muon_multiplicity(
                 frame,
@@ -235,52 +227,87 @@ class I3BundleExtractor(I3Extractor):
         """
         Gather Muon Stochasticity and Lateral Spread Information
         """
-       
+
         self._get_lateral_and_stochasticity_info(
             frame,
         )
 
         output.update(
             {
-                "primary_rms_energy": frame['PrimaryShowerProfile_energy']['lateral_rms'],
-                "primary_rms3_energy": frame['PrimaryShowerProfile_energy']['lateral_rms3'],
-                "primary_rms_MCPE": frame['PrimaryShowerProfile_MCPEs']['lateral_rms'],
-                "primary_rms3_MCPE": frame['PrimaryShowerProfile_MCPEs']['lateral_rms3'],
-                'primary_most_lateral_deposit': frame['PrimaryShowerProfile_MCPEs']['most_lateral_deposit'],
-                "leading_rms_energy": frame['LeadingShowerProfile_energy']['lateral_rms'],
-                "leading_rms3_energy": frame['LeadingShowerProfile_energy']['lateral_rms3'],
-                "leading_rms_MCPE": frame['LeadingShowerProfile_MCPEs']['lateral_rms'],
-                "leading_rms3_MCPE": frame['LeadingShowerProfile_MCPEs']['lateral_rms3'],
-                'leading_most_lateral_deposit': frame['LeadingShowerProfile_MCPEs']['most_lateral_deposit'],
-                #"primary_stochasticity_std_energy": frame['PrimaryShowerProfile_energy']['stochasticity_std'],
-                #"primary_stochasticity_pomean_energy": frame['PrimaryShowerProfile_energy']['stochasticity_ratio_above_mean'],
-                #"primary_stochasticity_pomedian_energy": frame['PrimaryShowerProfile_energy']['stochasticity_ratio_above_median'],
-                #"primary_stochasticity_std_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_std'],
-                #"primary_stochasticity_pomean_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_ratio_above_mean'],
-                #"primary_stochasticity_pomedian_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_ratio_above_median'],
-                "leading_stochasticity_std_energy": frame['LeadingShowerProfile_energy']['stochasticity_std'],
-                "leading_stochasticity_pomean_energy": frame['LeadingShowerProfile_energy']['stochasticity_ratio_above_mean'],
-                "leading_stochasticity_pomedian_energy": frame['LeadingShowerProfile_energy']['stochasticity_ratio_above_median'],
-                "leading_stochasticity_std_MCPE": frame['LeadingShowerProfile_MCPEs']['stochasticity_std'],
-                "leading_stochasticity_pomean_MCPE": frame['LeadingShowerProfile_MCPEs']['stochasticity_ratio_above_mean'],
-                "leading_stochasticity_pomedian_MCPE": frame['LeadingShowerProfile_MCPEs']['stochasticity_ratio_above_median'],
-                "primary_length_deposited": frame['ShowerLengthDeposited']['primary_length_deposited'],
-                "leading_length_deposited": frame['ShowerLengthDeposited']['leading_length_deposited'],
-                "fraction_coincidence": frame['fraction_coincidence'].value,
+                "primary_rms_energy": frame["PrimaryShowerProfile_energy"][
+                    "lateral_rms"
+                ],
+                "primary_rms3_energy": frame["PrimaryShowerProfile_energy"][
+                    "lateral_rms3"
+                ],
+                "primary_rms_MCPE": frame["PrimaryShowerProfile_MCPEs"][
+                    "lateral_rms"
+                ],
+                "primary_rms3_MCPE": frame["PrimaryShowerProfile_MCPEs"][
+                    "lateral_rms3"
+                ],
+                "primary_most_lateral_deposit": frame[
+                    "PrimaryShowerProfile_MCPEs"
+                ]["most_lateral_deposit"],
+                "leading_rms_energy": frame["LeadingShowerProfile_energy"][
+                    "lateral_rms"
+                ],
+                "leading_rms3_energy": frame["LeadingShowerProfile_energy"][
+                    "lateral_rms3"
+                ],
+                "leading_rms_MCPE": frame["LeadingShowerProfile_MCPEs"][
+                    "lateral_rms"
+                ],
+                "leading_rms3_MCPE": frame["LeadingShowerProfile_MCPEs"][
+                    "lateral_rms3"
+                ],
+                "leading_most_lateral_deposit": frame[
+                    "LeadingShowerProfile_MCPEs"
+                ]["most_lateral_deposit"],
+                # "primary_stochasticity_std_energy": frame['PrimaryShowerProfile_energy']['stochasticity_std'],
+                # "primary_stochasticity_pomean_energy": frame['PrimaryShowerProfile_energy']['stochasticity_ratio_above_mean'],
+                # "primary_stochasticity_pomedian_energy": frame['PrimaryShowerProfile_energy']['stochasticity_ratio_above_median'],
+                # "primary_stochasticity_std_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_std'],
+                # "primary_stochasticity_pomean_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_ratio_above_mean'],
+                # "primary_stochasticity_pomedian_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_ratio_above_median'],
+                "leading_stochasticity_std_energy": frame[
+                    "LeadingShowerProfile_energy"
+                ]["stochasticity_std"],
+                "leading_stochasticity_pomean_energy": frame[
+                    "LeadingShowerProfile_energy"
+                ]["stochasticity_ratio_above_mean"],
+                "leading_stochasticity_pomedian_energy": frame[
+                    "LeadingShowerProfile_energy"
+                ]["stochasticity_ratio_above_median"],
+                "leading_stochasticity_std_MCPE": frame[
+                    "LeadingShowerProfile_MCPEs"
+                ]["stochasticity_std"],
+                "leading_stochasticity_pomean_MCPE": frame[
+                    "LeadingShowerProfile_MCPEs"
+                ]["stochasticity_ratio_above_mean"],
+                "leading_stochasticity_pomedian_MCPE": frame[
+                    "LeadingShowerProfile_MCPEs"
+                ]["stochasticity_ratio_above_median"],
+                "primary_length_deposited": frame["ShowerLengthDeposited"][
+                    "primary_length_deposited"
+                ],
+                "leading_length_deposited": frame["ShowerLengthDeposited"][
+                    "leading_length_deposited"
+                ],
+                "fraction_coincidence": frame["fraction_coincidence"].value,
             }
         )
 
         return output
 
-
     def _get_leading_particle(
         self,
         frame,
     ):
-        primary = frame['PolyplopiaPrimary']
-        pdg = frame['PolyplopiaPrimary'].pdg_encoding
-        full_mctree = frame['I3MCTree']
-        mctree = frame['I3MCTree_preMuonProp']
+        primary = frame["PolyplopiaPrimary"]
+        pdg = frame["PolyplopiaPrimary"].pdg_encoding
+        full_mctree = frame["I3MCTree"]
+        mctree = frame["I3MCTree_preMuonProp"]
         if np.abs(pdg) in [12, 14, 16]:
             current = mctree[1]
             while mctree.number_of_children(current) > 0:
@@ -294,45 +321,48 @@ class I3BundleExtractor(I3Extractor):
                 primary.pos.y = current.pos.y
                 primary.pos.z = current.pos.z
         else:
-            current = mctree[frame['PolyplopiaPrimary']]
+            current = mctree[frame["PolyplopiaPrimary"]]
             highest_energy = -1
             bundle_particles = mctree.get_daughters(current)
             for particle in bundle_particles:
-                if (particle.type_string in ['MuPlus', 'MuMinus'] and particle.location_type_string == 'InIce'):
+                if (
+                    particle.type_string in ["MuPlus", "MuMinus"]
+                    and particle.location_type_string == "InIce"
+                ):
                     if particle.energy > highest_energy:
                         highest_energy = particle.energy
                         current = particle
 
-        tracklist = frame['MMCTrackList']
+        tracklist = frame["MMCTrackList"]
 
         e_initial = 0
         for track in tracklist:
-            #if full_mctree.is_in_subtree(primary, track.particle) == True: # Cleaning Coincidence Hits
+            # if full_mctree.is_in_subtree(primary, track.particle) == True: # Cleaning Coincidence Hits
             if track.Ei > e_initial:
                 e_initial = track.Ei
                 current = track.particle
-        
+
         return primary, current
-    
+
     def _get_basic_event_information(
         self,
         frame,
     ):
-        primary_particle = frame['PolyplopiaPrimary']
+        primary_particle = frame["PolyplopiaPrimary"]
 
-        if np.abs(primary_particle.pdg_encoding) in [12,14,16]:
+        if np.abs(primary_particle.pdg_encoding) in [12, 14, 16]:
             # Particle Is a Neutrino
-            interaction_type = frame['I3MCWeightDict']['InteractionType']
+            interaction_type = frame["I3MCWeightDict"]["InteractionType"]
         else:
             # No Relevant Interaction Type
             interaction_type = -1
-        
+
         return primary_particle, interaction_type
 
     def _event_topologies(
         self,
         frame,
-        threshold='low',
+        threshold="low",
     ):
         """
         Topology Definition
@@ -344,7 +374,7 @@ class I3BundleExtractor(I3Extractor):
         Starting Skimming: 42 (Throughoing, Meets Visible Starting Condition)
 
         """
-        if np.abs(frame['PolyplopiaPrimary'].pdg_encoding) in [12, 14, 16]:
+        if np.abs(frame["PolyplopiaPrimary"].pdg_encoding) in [12, 14, 16]:
             starting_metrics = get_topology_metrics(
                 frame,
                 self._dom_list,
@@ -352,7 +382,7 @@ class I3BundleExtractor(I3Extractor):
             )
         else:
             # Corsika - No Starting Events
-            starting_metrics = [0,0,0,0,0]
+            starting_metrics = [0, 0, 0, 0, 0]
 
         starting_metrics = np.asarray(starting_metrics, dtype=bool)
         # Skimming Event
@@ -362,17 +392,31 @@ class I3BundleExtractor(I3Extractor):
         )
 
         dict_topology = {
-            'true_starting': int(starting_metrics[0]),  # True Starting Vertex Inside Detector Volume
-            'topology_primary_high': self._label_topologies(starting_metrics[0], starting_metrics[1], is_skimming_event),
-            'topology_primary_low': self._label_topologies(starting_metrics[0], starting_metrics[2], is_skimming_event),
-            'topology_leading_high': self._label_topologies(starting_metrics[0], starting_metrics[2], is_skimming_event),
-            'topology_leading_low': self._label_topologies(starting_metrics[0], starting_metrics[3], is_skimming_event),
-            'length_in_detector': frame['TrackLength_Inside_Detector'].value,
-            'length_in_detector_100': frame['TrackLength_Near_Detector_100'].value,
-            'length_in_detector_200': frame['TrackLength_Near_Detector_200'].value,
-            'closest_approach_x': frame['ClosestApproachPosition'].x,
-            'closest_approach_y': frame['ClosestApproachPosition'].y,
-            'closest_approach_z': frame['ClosestApproachPosition'].z,
+            "true_starting": int(
+                starting_metrics[0]
+            ),  # True Starting Vertex Inside Detector Volume
+            "topology_primary_high": self._label_topologies(
+                starting_metrics[0], starting_metrics[1], is_skimming_event
+            ),
+            "topology_primary_low": self._label_topologies(
+                starting_metrics[0], starting_metrics[2], is_skimming_event
+            ),
+            "topology_leading_high": self._label_topologies(
+                starting_metrics[0], starting_metrics[2], is_skimming_event
+            ),
+            "topology_leading_low": self._label_topologies(
+                starting_metrics[0], starting_metrics[3], is_skimming_event
+            ),
+            "length_in_detector": frame["TrackLength_Inside_Detector"].value,
+            "length_in_detector_100": frame[
+                "TrackLength_Near_Detector_100"
+            ].value,
+            "length_in_detector_200": frame[
+                "TrackLength_Near_Detector_200"
+            ].value,
+            "closest_approach_x": frame["ClosestApproachPosition"].x,
+            "closest_approach_y": frame["ClosestApproachPosition"].y,
+            "closest_approach_z": frame["ClosestApproachPosition"].z,
         }
 
         return dict_topology
@@ -383,7 +427,7 @@ class I3BundleExtractor(I3Extractor):
         starting_visible,
         is_skimming,
     ):
-        
+
         if starting_inside & (starting_visible == False):
             topology = 1
         elif starting_inside & (starting_visible == True):
@@ -392,9 +436,17 @@ class I3BundleExtractor(I3Extractor):
             topology = 2
         elif starting_visible & is_skimming:
             topology = 42
-        elif (starting_inside == False) & (starting_visible == False) & (is_skimming == False):
+        elif (
+            (starting_inside == False)
+            & (starting_visible == False)
+            & (is_skimming == False)
+        ):
             topology = 3
-        elif (starting_inside == False) & (starting_visible == False) & (is_skimming == True):
+        elif (
+            (starting_inside == False)
+            & (starting_visible == False)
+            & (is_skimming == True)
+        ):
             topology = 43
 
         return topology
@@ -402,15 +454,10 @@ class I3BundleExtractor(I3Extractor):
     def _get_muon_multiplicity(
         self,
         frame,
-        pdg,   
+        pdg,
     ):
-        """
-        Muon Multiplicity Information
-        NuMu -> 1
-        NuTau -> 1
-        NuE -> 1
-        Corsika -> Count Muons
-        """
+        """Muon Multiplicity Information NuMu -> 1 NuTau -> 1 NuE -> 1 Corsika
+        -> Count Muons."""
 
         if np.abs(pdg) in [12, 14, 16]:
             muon_multiplicity = 1
@@ -420,18 +467,30 @@ class I3BundleExtractor(I3Extractor):
             deposited_muon_multiplicity_residual_energy = 0
             deposited_muon_multiplicity_residual_charge = 0
         else:
-            muon_multiplicity = frame['MultiplicityInfo']['muon_multiplicity_surface']
-            muon_multiplicity_cylinder = frame['MultiplicityInfo']['muon_multiplicity_cylinder']
-            deposited_muon_multiplicity = frame['MultiplicityInfo']['deposited_muon_multiplicity']
-            deposited_muon_multiplicity_residual_primary = frame['MultiplicityInfo']['primary_residual_multiplicity']
-            deposited_muon_multiplicity_residual_energy = frame['MultiplicityInfo']['leading_residual_multiplicity']
-            deposited_muon_multiplicity_residual_charge = frame['MultiplicityInfo']['charge_residual_multiplicity']
+            muon_multiplicity = frame["MultiplicityInfo"][
+                "muon_multiplicity_surface"
+            ]
+            muon_multiplicity_cylinder = frame["MultiplicityInfo"][
+                "muon_multiplicity_cylinder"
+            ]
+            deposited_muon_multiplicity = frame["MultiplicityInfo"][
+                "deposited_muon_multiplicity"
+            ]
+            deposited_muon_multiplicity_residual_primary = frame[
+                "MultiplicityInfo"
+            ]["primary_residual_multiplicity"]
+            deposited_muon_multiplicity_residual_energy = frame[
+                "MultiplicityInfo"
+            ]["leading_residual_multiplicity"]
+            deposited_muon_multiplicity_residual_charge = frame[
+                "MultiplicityInfo"
+            ]["charge_residual_multiplicity"]
 
         muon_mult = {
-            "muon_multiplicity": muon_multiplicity,                                         
-            "muon_multiplicity_cylinder": muon_multiplicity_cylinder,                         
-            "deposited_muon_multiplicity": deposited_muon_multiplicity,                       
-            "deposited_muon_multiplicity_residual_primary": deposited_muon_multiplicity_residual_primary,     
+            "muon_multiplicity": muon_multiplicity,
+            "muon_multiplicity_cylinder": muon_multiplicity_cylinder,
+            "deposited_muon_multiplicity": deposited_muon_multiplicity,
+            "deposited_muon_multiplicity_residual_primary": deposited_muon_multiplicity_residual_primary,
             "deposited_muon_multiplicity_residual_energy": deposited_muon_multiplicity_residual_energy,
             "deposited_muon_multiplicity_residual_charge": deposited_muon_multiplicity_residual_charge,
         }
@@ -442,28 +501,29 @@ class I3BundleExtractor(I3Extractor):
         self,
         frame,
     ):
-        
+
         make_shower_and_stochasticity_info(frame)
 
     def _generation_spectrum_correction(
         self,
         frame,
     ):
-        
-        pdg_encoding = frame['PolyplopiaPrimary'].pdg_encoding
+
+        pdg_encoding = frame["PolyplopiaPrimary"].pdg_encoding
 
         if np.abs(pdg_encoding) in [12, 14, 16]:
             # Neutrino
-            power_law_index = np.abs(frame['I3MCWeightDict']['PowerLawIndex'])
-            primary_energy = frame['I3MCWeightDict']['PrimaryNeutrinoEnergy']
-            min_energy = 10**frame['I3MCWeightDict']['MinEnergyLog']
+            power_law_index = np.abs(frame["I3MCWeightDict"]["PowerLawIndex"])
+            primary_energy = frame["I3MCWeightDict"]["PrimaryNeutrinoEnergy"]
+            min_energy = 10 ** frame["I3MCWeightDict"]["MinEnergyLog"]
         else:
-            power_law_index = np.abs(frame['CorsikaWeightMap']['PrimarySpectralIndex'])
-            primary_energy = frame['CorsikaWeightMap']['PrimaryEnergy']
-            min_energy = frame['CorsikaWeightMap']['EnergyPrimaryMin']
+            power_law_index = np.abs(
+                frame["CorsikaWeightMap"]["PrimarySpectralIndex"]
+            )
+            primary_energy = frame["CorsikaWeightMap"]["PrimaryEnergy"]
+            min_energy = frame["CorsikaWeightMap"]["EnergyPrimaryMin"]
 
-        return 1/((primary_energy/min_energy)**(1-power_law_index))
-
+        return 1 / ((primary_energy / min_energy) ** (1 - power_law_index))
 
     # Utility methods
     def _find_data_type(self, mc: bool, input_file: str) -> str:
@@ -484,7 +544,7 @@ class I3BundleExtractor(I3Extractor):
             sim_type = "muongun"
         elif "corsika" in input_file:
             sim_type = "corsika"
-        #elif "genie" in input_file or "nu" in input_file.lower():
+        # elif "genie" in input_file or "nu" in input_file.lower():
         #    sim_type = "genie"
         elif "noise" in input_file:
             sim_type = "noise"
