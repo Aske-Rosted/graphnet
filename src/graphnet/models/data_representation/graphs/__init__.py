@@ -15,6 +15,8 @@ from .graphs import (
 from .nodes import (
     NodeDefinition,
     NodesAsPulses,
+    NodesAsPulsesBundle,
+    FirstHitPulses,
     NodeAsDOMTimeSeries,
     PercentileClusters,
     IceMixNodes,

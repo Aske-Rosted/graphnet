@@ -8,6 +8,8 @@ and their features.
 from .nodes import (
     NodeDefinition,
     NodesAsPulses,
+    NodesAsPulsesBundle,
+    FirstHitPulses,
     PercentileClusters,
     NodeAsDOMTimeSeries,
     IceMixNodes,

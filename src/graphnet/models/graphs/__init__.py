@@ -16,6 +16,8 @@ from graphnet.models.data_representation import (
 from graphnet.models.data_representation.graphs import (
     NodeDefinition,
     NodesAsPulses,
+    NodesAsPulsesBundle,
+    FirstHitPulses,
     PercentileClusters,
     NodeAsDOMTimeSeries,
     IceMixNodes,
