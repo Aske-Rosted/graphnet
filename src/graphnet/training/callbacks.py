@@ -11,6 +11,9 @@ from tqdm.std import Bar
 from pytorch_lightning import LightningModule, Trainer
 from pytorch_lightning.callbacks import TQDMProgressBar, EarlyStopping
 from pytorch_lightning.utilities import rank_zero_only
+from pytorch_lightning.utilities.memory import garbage_collection_cuda
+from pytorch_lightning.callbacks.callback import Callback
+
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 
@@ -247,3 +250,17 @@ class GraphnetEarlyStopping(EarlyStopping):
         graphnet_model.load_state_dict(
             os.path.join(self.save_dir, "best_model.pth")
         )
+
+
+class GarbageCollectionCallback(Callback):
+    """Callback to perform garbage collection on GPU after each training
+    epoch."""
+
+    def on_validation_start(self, trainer, pl_module):
+        if pl_module.device.type == "cuda":
+            garbage_collection_cuda()
+
+    def on_validation_end(self, trainer, pl_module):
+        # remove validation artifacts from GPU memory
+        if pl_module.device.type == "cuda":
+            garbage_collection_cuda()

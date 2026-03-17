@@ -72,10 +72,19 @@ class SQLiteDataset(Dataset):
                     f"{self._index_column} = {index} and {selection}"
                 )
 
-            result = self._conn.execute(
-                f"SELECT {columns} FROM {table} WHERE "
-                f"{combined_selections}"
-            ).fetchall()
+            if isinstance(table, list):
+                SELECT_QUERY = f"SELECT {columns} FROM"
+                JOIN_TABLES = " JOIN ".join(table)
+                USING_CLAUSE = f"USING({self._index_column})"
+                WHERE_CLAUSE = f"WHERE {combined_selections}"
+                FULL_QUERY = f"{SELECT_QUERY} {JOIN_TABLES} {USING_CLAUSE} {WHERE_CLAUSE}"
+                result = self._conn.execute(FULL_QUERY).fetchall()
+            else:
+                result = self._conn.execute(
+                    f"SELECT {columns} FROM {table} WHERE "
+                    f"{combined_selections}"
+                ).fetchall()
+
         except sqlite3.OperationalError as e:
             if "no such column" in str(e):
                 raise ColumnMissingException(str(e))
@@ -151,3 +160,18 @@ class SQLiteDataset(Dataset):
                 self._all_connections_established = False
                 self._conn = None
         return self
+
+    def _join_tables(self, tables, columns):
+        """Join tables in the SQLite database."""
+        # Check(s)
+        if not isinstance(tables, list):
+            raise TypeError("Input must be a list of table names.")
+        if len(tables) == 0:
+            raise ValueError(
+                "Input list must contain at least one table name."
+            )
+        tables = ", ".join(tables)
+        self._conn.execute("DROP VIEW IF EXISTS combined_table")
+        self._conn.execute(
+            f"CREATE VIEW combined_table AS SELECT {columns} FROM {tables} OUTER JOIN {tables} ON({self._index_column})"
+        )

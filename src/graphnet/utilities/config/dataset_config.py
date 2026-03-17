@@ -40,7 +40,7 @@ class DatasetConfig(BaseConfig):
     truth: List[str]
     node_truth: Optional[List[str]] = None
     index_column: str = "event_no"
-    truth_table: str = "truth"
+    truth_table: Union[str, List[str]] = "truth"
     node_truth_table: Optional[str] = None
     string_selection: Optional[List[int]] = None
     selection: Optional[
@@ -62,6 +62,7 @@ class DatasetConfig(BaseConfig):
 
     data_representation: Any = None
     labels: Optional[Dict[str, Any]] = None
+    use_super_selection: bool = False
 
     def __init__(self, **data: Any) -> None:
         """Construct `DataConfig`.

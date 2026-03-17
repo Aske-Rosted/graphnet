@@ -293,6 +293,19 @@ class VonMisesFisherLoss(LossFunction):
     prediction vectors need to be prepared.
     """
 
+    def __init__(
+        self, kappa_switch: float = 100.0, contamination: float = 0.0
+    ) -> None:
+        """Construct VonMisesFisherLoss.
+
+        Args:
+            kappa_switch: The value of `kappa` at which the exact and approximate
+                calculation of $log C_{m}(k)$ switch.
+        """
+        super().__init__()
+        self._kappa_switch = kappa_switch
+        self._contamination = contamination
+
     @classmethod
     def log_cmk_exact(
         cls, m: int, kappa: Tensor
@@ -308,14 +321,13 @@ class VonMisesFisherLoss(LossFunction):
 
         [https://arxiv.org/abs/1812.04616] Sec. 8.2 with additional minus sign.
         """
-        v = m / 2.0 - 0.5
-        a = torch.sqrt((v + 1) ** 2 + kappa**2)
-        b = v - 1
-        return -a + b * torch.log(b + a)
+        nu = m / 2.0 - 1  # the order of the Bessel function
+        a = torch.sqrt((nu) ** 2 + kappa**2)
+        return -a + nu * torch.log(nu + a)
 
     @classmethod
     def log_cmk(
-        cls, m: int, kappa: Tensor, kappa_switch: float = 100.0
+        cls, m: int, kappa: Tensor, kappa_switch: float
     ) -> Tensor:  # pylint: disable=invalid-name
         """Calculate $log C_{m}(k)$ term in von Mises-Fisher loss.
 
@@ -324,15 +336,22 @@ class VonMisesFisherLoss(LossFunction):
         this method automatically switches between the two at `kappa_switch`,
         ensuring continuity at this point.
         """
-        kappa_switch = torch.tensor([kappa_switch]).to(kappa.device)
-        mask_exact = kappa < kappa_switch
 
-        # Ensure continuity at `kappa_switch`
-        offset = cls.log_cmk_approx(m, kappa_switch) - cls.log_cmk_exact(
-            m, kappa_switch
-        )
-        ret = cls.log_cmk_approx(m, kappa) - offset
-        ret[mask_exact] = cls.log_cmk_exact(m, kappa[mask_exact])
+        kappa_switch = torch.tensor([kappa_switch]).to(kappa.device)
+
+        if kappa_switch > 0:
+
+            mask_exact = kappa < kappa_switch
+
+            # Ensure continuity at `kappa_switch`
+            offset = cls.log_cmk_approx(m, kappa_switch) - cls.log_cmk_exact(
+                m, kappa_switch
+            )
+            ret = cls.log_cmk_approx(m, kappa) - offset
+            ret[mask_exact] = cls.log_cmk_exact(m, kappa[mask_exact])
+        else:
+            # If kappa_switch is 0, we always use the approximation
+            ret = cls.log_cmk_approx(m, kappa)
         return ret
 
     def _evaluate(self, prediction: Tensor, target: Tensor) -> Tensor:
@@ -357,8 +376,32 @@ class VonMisesFisherLoss(LossFunction):
         m = target.size()[1]
         k = torch.norm(prediction, dim=1)
         dotprod = torch.sum(prediction * target, dim=1)
-        elements = -self.log_cmk(m, k) - dotprod
+
+        elements = -self.log_cmk(m, k, self._kappa_switch) - dotprod
+        if self._contamination > 0.0:
+            # Add contamination term
+            uniform_log_prob = self._log_uniform_sphere_torch(
+                m
+            ) * torch.ones_like(elements)
+            elements = torch.logsumexp(
+                torch.stack(
+                    [
+                        np.log(1 - self._contamination) + elements,
+                        np.log(self._contamination) + uniform_log_prob,
+                    ],
+                    dim=0,
+                ),
+                dim=0,
+            )
         return elements
+
+    def _log_uniform_sphere_torch(self, m):
+        # m: integer >= 1 (ambient dimension)
+        return -(
+            torch.log(torch.tensor(2.0))
+            + (m / 2.0) * torch.log(torch.tensor(torch.pi))
+            - torch.lgamma(torch.tensor(m / 2.0))
+        )
 
     @abstractmethod
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
@@ -431,6 +474,10 @@ class EuclideanDistanceLoss(LossFunction):
 
 class VonMisesFisher3DLoss(VonMisesFisherLoss):
     """Von Mises-Fisher loss function vectors in the 3D plane."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Construct VonMisesFisher3DLoss."""
+        super().__init__(*args, **kwargs)
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Calculate von Mises-Fisher loss for a direction in the 3D.
@@ -543,3 +590,382 @@ class RMSEVonMisesFisher3DLoss(EnsembleLoss):
             loss_factors=[1, vmfs_factor],
             prediction_keys=[[0, 1, 2], [0, 1, 2, 3]],
         )
+
+
+class RegressionAsMulticlassification(LossFunction):
+    """Regression as multiclassification loss function.
+
+    This loss function is used to train a regression model as a
+    multiclassification model. The target is a continuous value, which is
+    binned into discrete classes. The model output is a probability
+    distribution over the classes.
+    """
+
+    def __init__(
+        self,
+        target_ranges: List[float],
+        n_bins: int,
+        single_target: bool = False,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        """Construct RegressionAsMulticlassification.
+
+        Args:
+            target_ranges: List of ranges for each target.
+            n_bins: Number of bins for each target.
+            single_target: If True there is only a single
+                correct bin, meaning that the prediction
+                can be normalized to 1. If True, the
+                prediction will be normalized to 1.
+        """
+        # Base class constructor
+        super().__init__(*args, **kwargs)
+
+        # Member variables
+        self._target_ranges = target_ranges
+        self._target_bin_sizes = n_bins
+        self._single_target = single_target
+        # Create the binning of the ranges
+
+    def _forward(self, prediction, target):
+
+        non_batch_dims = np.arange(len(target))[1:]
+        # digitize the target
+        digitized_target = []
+        for i in range(len(target)):
+            digitized_target.append(
+                np.digitize(target[i], self._target_ranges)
+            )
+        # Create empty matrix in the shape of batch_size x n_bins
+        matrix_dim = (
+            np.ones((len(self._target_ranges)), dtype=int)
+            * self._target_bin_sizes
+        )
+        # Create the batched matrix
+        matrix = np.zeros((prediction.shape[0], *matrix_dim), dtype=int)
+        # add the batch dimension to the digitized target
+        digitized_target = np.stack(
+            [np.arange(prediction.shape[0])] + digitized_target, axis=0
+        )
+
+        matrix[tuple(digitized_target)] += 1
+        matrix = torch.tensor(matrix).float().to(prediction.device)
+
+        if self._single_target:
+            prediction = prediction / torch.sum(
+                prediction, dim=non_batch_dims, keepdim=True
+            )
+
+        loss = binary_cross_entropy(
+            prediction.float(), matrix.float(), reduction="none"
+        )
+        loss = torch.sum(loss, dim=non_batch_dims)
+        return loss
+
+
+# class CauchyLoss(LossFunction):
+#     """Cauchy loss function."""
+#     def __init__(self, alpha : int = 0.1, **kwargs: Any) -> None:
+#         self._alpha = alpha
+#         super().__init__(**kwargs)
+
+#     def _forward(self, prediction: Tensor, target: Tensor, alpha: Optional[Tensor] = None) -> Tensor:
+#         """Implement loss calculation."""
+#         # Check(s)
+#         if alpha is not None:
+#             alpha = self._alpha
+
+#         assert prediction.dim() == 2
+#         if target.dim() != prediction.dim():
+#             target = target.squeeze(1)
+#         assert prediction.size() == target.size()
+#         elements = torch.sum(alpha**2/2*(torch.log(1 + ((abs(prediction - target))/alpha)**2)), dim=-1)
+#         return elements
+
+
+class CauchyLoss(LossFunction):
+    """Cauchy loss function with heterocedastic uncertainty."""
+
+    def __init__(
+        self,
+        alpha: float = 1.0,
+        frac: float = 1,
+        cold_start: int = -1,
+        phase_in_steps: int = 10000,
+        **kwargs: Any,
+    ) -> None:
+        """Construct CauchyLoss.
+
+        Args:
+            alpha: A fixed alpha value used for the Cauchy loss.
+                Defaults to 1.0.
+                frac: A fraction of the loss that is calculated using the uncertainty
+                1 means that the loss is fully heteroscedastic, 0 means that the loss is fully
+                homoscedastic.
+        """
+        # send to device
+        self._alpha = alpha
+        self._frac = frac
+        self._cfrac = frac
+        self._cold_start = cold_start
+        self._phase_in_steps = phase_in_steps
+        self._phase_in_count = 0
+
+        super().__init__(**kwargs)
+
+    def determine_frac(self, epoch: int) -> None:
+        """Determine the fraction of the loss that is calculated using the
+        uncertainty.
+
+        Args:
+            epoch: The current epoch number.
+        """
+        assert (
+            self._frac > 0
+        ), "frac must be greater than 0 in order to phase in the uncertainty."
+
+        if epoch < self._cold_start:
+            self._cfrac = 1e-4
+        elif self._cfrac < self._frac:
+            self._phase_in_count += 1
+            self._cfrac = self._cfrac * (
+                self._phase_in_count / self._phase_in_steps
+            )
+
+    def homoscedastic(self, prediction, target) -> bool:
+        """Calculate the homoscedastic loss."""
+        elements = (1 - self._frac) * torch.mean(
+            torch.log1p(((abs(prediction - target)) / self._alpha) ** 2)
+            + np.log(self._alpha),
+            dim=-1,
+        )
+        # offset to ensure positive loss values excact for the homoscedastic case
+        # elements -= (1-self._frac) * np.log(self._alpha)
+        # assert torch.all(elements >= 0), f"Loss values should be positive: but found {elements}: predictions{prediction}  target{target}"
+        return elements
+
+    def heteroscedastic(self, prediction, target, uncertainty) -> Tensor:
+        """Calculate the heteroscedastic loss."""
+        elements = self._frac * torch.mean(
+            torch.log1p(((abs(prediction - target)) / uncertainty) ** 2)
+            + torch.log(uncertainty),
+            dim=-1,
+        )
+        # offset to ensure positive loss values in the heteroscedastic case we use the minimum value that the uncertainty can take
+        # elements -= self._frac * np.log(1e-6)  # This is the minimum value that the uncertainty can take
+        # assert torch.all(elements >= 0), f"Loss values should be positive: but found {elements}: predictions{prediction}  target{target}"
+        return elements
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        """Implement loss calculation."""
+        # Check(s)
+
+        if self._cold_start >= 0:
+            self.determine_frac(self.current_epoch)
+
+        assert prediction.dim() == 2
+        if target.dim() != prediction.dim():
+            target = target.squeeze(1)
+
+        # Extract the uncertainty from the last column of the prediction
+        uncertainty = prediction[:, target.size(1) :]
+        prediction = prediction[:, : target.size(1)]
+
+        assert (
+            prediction.size() == target.size()
+        ), f"Prediction size {prediction.size()} and target size {target.size()} do not match."
+
+        if (uncertainty.shape[1] > 0) & (self._cfrac == 0.0):
+            self.warning_once(
+                "uncertainty is provided, but frac is set to 0. The uncertainty will be ignored."
+            )
+        # Ensure that uncertainty is non-negative
+        if uncertainty.shape[1] > 0:
+            uncertainty = torch.clamp(uncertainty, min=1e-6)
+
+        if self._cfrac == 0:
+            # If the loss is fully homoscedastic, we use the fixed alpha value
+            elements = self.homoscedastic(prediction, target)
+        elif self._cfrac == 1:
+            # If the loss is fully heteroscedastic, we use the uncertainty
+            elements = self.heteroscedastic(prediction, target, uncertainty)
+        else:
+            # If the loss is a mix of homoscedastic and heteroscedastic, we use both
+            elements = self.homoscedastic(
+                prediction, target
+            ) + self.heteroscedastic(prediction, target, uncertainty)
+        return elements
+
+
+class CauchyVonMisesFisher3DLoss(EnsembleLoss):
+    """Combine the VonMisesFisher3DLoss with CauchyLoss."""
+
+    def __init__(
+        self,
+        vmfs_factor: float = 0.05,
+        alpha=0.1,
+        kappa_switch=0,
+        contamination=0.0,
+    ) -> None:
+        """VonMisesFisher3DLoss with a Cauchy penality term.
+
+            The VonMisesFisher3DLoss will be weighted with `vmfs_factor`.
+
+        Args:
+            vmfs_factor: A factor applied to the VonMisesFisher3DLoss term.
+            Defaults ot 0.05.
+        """
+
+        loss_function = CauchyLoss(alpha=alpha, frac=0.0)
+        prediction_keys = [[0, 1, 2], [0, 1, 2, 3]]
+        super().__init__(
+            loss_functions=[
+                loss_function,
+                VonMisesFisher3DLoss(
+                    kappa_switch=kappa_switch, contamination=contamination
+                ),
+            ],
+            loss_factors=[(1 - vmfs_factor), vmfs_factor],
+            prediction_keys=prediction_keys,
+        )
+
+
+class GaussianLoss(LossFunction):
+    """Gaussian loss function.
+
+    This loss function is used to train a regression model with assuming
+    Gaussian uncertainty.
+    """
+
+    def __init__(self, std: float = 0.1, **kwargs: Any) -> None:
+        """Construct GaussianCauchyLoss."""
+        self._std = std
+        super().__init__(**kwargs)
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        """Implement loss calculation."""
+        # Check(s)
+        assert prediction.dim() == 2
+        if target.dim() != prediction.dim():
+            target = target.squeeze(1)
+        assert prediction.size() == target.size()
+        loss = nn.GaussianNLLLoss(reduction="none")
+        # Calculate the loss
+        # The std is assumed to be constant, so we can use it directly
+        # in the loss function.
+        # The loss
+
+        elements = loss(prediction, target, self._std)
+        return elements
+
+
+class HeterocedasticGaussianLoss(LossFunction):
+    """Heteroscedastic Gaussian loss function.
+
+    This loss function is used to train a regression model with heteroscedastic
+    uncertainty. The model output is a mean and a standard deviation, which are
+    used to calculate the loss.
+    """
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        """Implement loss calculation."""
+        # Check(s)
+        assert prediction.dim() == 2
+        if target.dim() != prediction.dim():
+            target = target.squeeze(1)
+        assert all(prediction.size() == (target.size() * np.array([1, 2])))
+
+        # Extract the mean and standard deviation from the prediction
+
+        # It is important that you task does not allow for negative standard deviations
+        std = prediction[:, target.size(1) :]
+        prediction = prediction[:, : target.size(1)]
+        # Calculate the loss
+        loss = nn.GaussianNLLLoss(reduction="none")
+        elements = loss(prediction, target, std)
+        elements = torch.sum(elements, dim=-1)
+        return elements
+
+
+class GaussianVonMisesFisher3DLoss(EnsembleLoss):
+    """Combine the VonMisesFisher3DLoss with CauchyLoss."""
+
+    def __init__(
+        self, vmfs_factor: float = 0.05, alpha=0.1, heteroscedastic=False
+    ) -> None:
+        """VonMisesFisher3DLoss with a Cauchy penality term.
+
+            The VonMisesFisher3DLoss will be weighted with `vmfs_factor`.
+
+        Args:
+            vmfs_factor: A factor applied to the VonMisesFisher3DLoss term.
+            Defaults ot 0.05.
+        """
+        if heteroscedastic:
+            if alpha != 0.1:
+                self.warning(
+                    "Heteroscedastic Gaussian loss does not use the alpha parameter, "
+                    "it is only used for the Gaussian loss. "
+                    "The alpha parameter will be ignored."
+                )
+            loss_function = HeterocedasticGaussianLoss()
+            prediction_keys = [[0, 1, 2, 3, 4, 5], [0, 1, 2, -1]]
+        else:
+            loss_function = GaussianLoss(std=alpha)
+            prediction_keys = [[0, 1, 2], [0, 1, 2, 3]]
+        super().__init__(
+            loss_functions=[loss_function, VonMisesFisher3DLoss()],
+            loss_factors=[1, vmfs_factor],
+            prediction_keys=prediction_keys,
+        )
+
+
+class BetaNLLLoss(LossFunction):
+    """Beta Negative Log Likelihood Loss.
+
+    This loss function is used to train a regression model with Beta
+    distribution uncertainty. The model output is a mean and a standard
+    deviation, which are used to calculate the loss.
+    """
+
+    def __init__(self, eps=1e-5, **kwargs: Any) -> None:
+        """Construct BetaNLLLoss."""
+        self._eps = eps  # Small value to avoid division by zero
+        super().__init__(**kwargs)
+
+    def _beta_nll_loss(
+        self, target: Tensor, alpha: Tensor, beta: Tensor
+    ) -> Tensor:
+        """Calculate the Beta Negative Log Likelihood Loss."""
+        # clamp target to [0, 1] +/- self._eps
+        target = target.clamp(min=0 + self._eps, max=1 - self._eps)
+        alpha = alpha + self._eps  # Ensure alpha is positive
+        beta = beta + self._eps  # Ensure beta is positive
+        # Calculate the Beta NLL loss
+        log_norm = (
+            torch.lgamma(alpha + beta)
+            - torch.lgamma(alpha)
+            - torch.lgamma(beta)
+        )
+        log_lik = (alpha - 1) * torch.log(target) + (beta - 1) * torch.log(
+            1 - target
+        )
+        elements = -log_lik + log_norm
+        return elements
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        """Implement loss calculation."""
+        # Check(s)
+        assert prediction.dim() == 2
+        if target.dim() != prediction.dim():
+            target = target.squeeze(1)
+        # task should have 4 outputs: alpha, beta, and two additional outputs
+        # which are the from alpha and beta calculated prediction and variance
+        assert all(prediction.size() == (target.size() * np.array([1, 4])))
+
+        # Extract the mean and standard deviation from the prediction
+        alpha = prediction[:, [0]]
+        beta = prediction[:, [1]]
+        # Calculate the loss
+        return self._beta_nll_loss(target, alpha, beta)

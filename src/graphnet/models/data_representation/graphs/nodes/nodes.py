@@ -16,6 +16,8 @@ from graphnet.models.data_representation.graphs.utils import (
 )
 from copy import deepcopy
 
+from time import time
+
 import numpy as np
 
 
@@ -309,7 +311,201 @@ class NodeAsDOMTimeSeries(NodeDefinition):
         new_node_col[0] = 1
         x = np.column_stack([x, new_node_col])
 
-        return torch.tensor(x)
+        return Data(x=torch.tensor(x))
+
+
+class NodeAsDOMSummary(NodeDefinition):
+    """Represent each node as a DOM with summary features."""
+
+    def __init__(
+        self,
+        input_feature_names: List[str] = [
+            "dom_x",
+            "dom_y",
+            "dom_z",
+            "dom_time",
+            "charge",
+        ],
+        id_columns: List[str] = ["dom_x", "dom_y", "dom_z"],
+        time_column: str = "dom_time",
+        charge_column: str = "charge",
+        percentiles: List[int] = [
+            0.5,
+            1.0,
+            2.5,
+            5.0,
+            10.0,
+            25,
+            50.0,
+            75.0,
+            100.0,
+        ],
+        summaries: List[str] = [
+            "sum",
+            "mean",
+            "std",
+            "count",
+            "time_percentile",
+            "charge_percentile",
+            "time_charge_threshold",
+        ],
+        closest_to_time: Optional[List[float]] = None,
+    ) -> None:
+        """Construct `NodeAsDOMSummary`.
+
+        Args:
+            input_feature_names: List of column names for input features.
+            id_columns: List of columns that uniquely identify a DOM.
+            time_column: Name of time column.
+            charge_column: Name of charge column.
+            percentiles: List of percentiles to calculate.
+            summaries: List of summaries to calculate.
+        """
+        self._input_feature_names = input_feature_names
+
+        self._id_index = [
+            self._input_feature_names.index(key) for key in id_columns
+        ]
+        self._charge_index = self._input_feature_names.index(charge_column)
+        self._time_index = self._input_feature_names.index(time_column)
+        self._time_column = time_column
+        self._charge_column = charge_column
+        self._percentiles = percentiles
+        self._summaries = summaries
+        self._closest_to_time = closest_to_time
+        assert all(
+            [
+                summary
+                in [
+                    "sum",
+                    "mean",
+                    "std",
+                    "count",
+                    "time_percentile",
+                    "charge_percentile",
+                    "time_charge_threshold",
+                ]
+                for summary in self._summaries
+            ]
+        ), f"One or more of the summaries is not recognized. The following summaries are recognized: ['sum','mean','std','count','time_percentile','charge_percentile','time_charge_threshold']"
+        super().__init__(input_feature_names=self._input_feature_names)
+
+    def _construct_nodes(self, x: torch.Tensor) -> Data:
+        cluster_class = cluster_and_pad(
+            x=x.numpy(), cluster_columns=self._id_index
+        )
+        # add first activations of everything except the id_index columns
+        # which are already added
+        cluster_class.add_first(
+            columns=[
+                i
+                for i in range(len(self._input_feature_names))
+                if i not in self._id_index
+            ]
+        )
+
+        charge_scale_indices = [self._charge_index]
+        time_scale_indices = [self._time_index]
+
+        if "sum" in self._summaries:
+            cluster_class.add_sum_charge(charge_index=self._charge_index)
+            charge_scale_indices.append(len(cluster_class.clustered_x[0]) - 1)
+        else:
+            cluster_class._calculate_charge_sum(
+                charge_index=self._charge_index
+            )
+
+        cluster_class._calculate_charge_weights(
+            charge_index=self._charge_index
+        )
+
+        if "mean" in self._summaries:
+            # calculate the weighted time mean
+            cluster_class.add_mean(
+                columns=[self._time_index],
+                weights=cluster_class._charge_weights,
+            )
+            time_scale_indices.append(len(cluster_class.clustered_x[0]) - 1)
+
+        if "std" in self._summaries:
+            # calculate the weighted time std
+            cluster_class.add_std(
+                columns=[self._time_index],
+                weights=cluster_class._charge_weights,
+            )
+            time_scale_indices.append(len(cluster_class.clustered_x[0]) - 1)
+
+        if "count" in self._summaries:
+            cluster_class.add_counts()
+
+        if "time_percentile" in self._summaries:
+            cluster_class.add_percentile_summary(
+                summarization_indices=[self._time_index],
+                percentiles=self._percentiles,
+            )
+            time_scale_indices = time_scale_indices + list(
+                range(
+                    len(cluster_class.clustered_x[0]) - len(self._percentiles),
+                    len(cluster_class.clustered_x[0]),
+                )
+            )
+        if "charge_percentile" in self._summaries:
+            cluster_class.add_percentile_summary(
+                summarization_indices=[self._charge_index],
+                percentiles=self._percentiles,
+            )
+            charge_scale_indices = charge_scale_indices + list(
+                range(
+                    len(cluster_class.clustered_x[0]) - len(self._percentiles),
+                    len(cluster_class.clustered_x[0]),
+                )
+            )
+
+        if "time_charge_threshold" in self._summaries:
+            cluster_class.add_charge_threshold_summary(
+                summarization_indices=[self._time_index],
+                charge_index=self._charge_index,
+                percentiles=self._percentiles,
+            )
+            time_scale_indices = time_scale_indices + list(
+                range(
+                    len(cluster_class.clustered_x[0]) - len(self._percentiles),
+                    len(cluster_class.clustered_x[0]),
+                )
+            )
+
+        array = cluster_class.clustered_x
+
+        # log10 scale the charge columns
+        array[:, charge_scale_indices] = np.log10(
+            array[:, charge_scale_indices]
+        )
+        # scale the time columns
+        array[:, time_scale_indices] = (
+            array[:, time_scale_indices] - 1e4
+        ) / 3e4
+        return Data(x=torch.tensor(array))
+
+    def _define_output_feature_names(self, input_feature_names):
+        new_feature_names = deepcopy(input_feature_names)
+        if "sum" in self._summaries:
+            new_feature_names.append("sum_charge")
+        if "mean" in self._summaries:
+            new_feature_names.append("mean_time")
+        if "std" in self._summaries:
+            new_feature_names.append("std_time")
+        if "count" in self._summaries:
+            new_feature_names.append("counts")
+        if "time_percentile" in self._summaries:
+            for pct in self._percentiles:
+                new_feature_names.append(f"time_pct{pct}")
+        if "charge_percentile" in self._summaries:
+            for pct in self._percentiles:
+                new_feature_names.append(f"charge_pct{pct}")
+        if "time_charge_threshold" in self._summaries:
+            for pct in self._percentiles:
+                new_feature_names.append(f"time_charge_threshold_{pct}")
+        return new_feature_names
 
 
 class IceMixNodes(NodeDefinition):
@@ -509,6 +705,7 @@ class ClusterSummaryFeatures(NodeDefinition):
         charge_label: str = "charge",
         time_label: str = "dom_time",
         total_charge: bool = True,
+        total_charge_fraction: bool = False,
         charge_after_t: List[int] = [10, 50, 100],
         time_of_first_hit: bool = True,
         time_spread: bool = True,
@@ -518,6 +715,11 @@ class ClusterSummaryFeatures(NodeDefinition):
         time_standardization: float = 1e-3,
         order_in_time: bool = True,
         add_counts: bool = False,
+        charge_weighted: bool = False,
+        node_limit: Optional[int] = None,
+        node_limit_index: Optional[int] = None,
+        node_limit_seed: Optional[int] = None,
+        node_limit_ascending: bool = False,
     ) -> None:
         """Construct `ClusterSummaryFeatures`.
 
@@ -527,6 +729,8 @@ class ClusterSummaryFeatures(NodeDefinition):
             charge_label: Name of the charge column.
             time_label: Name of the time column.
             total_charge: If True, calculates total charge as feature.
+            total_charge_fraction: If True, calculates total charge fraction
+                (cluster charge / event charge) as feature.
             charge_after_t: List of times at which the accumulated charge
                 is calculated as a feature.
             time_of_first_hit: If True, time of first hit is added
@@ -548,6 +752,12 @@ class ClusterSummaryFeatures(NodeDefinition):
                     incorrect results otherwise.
             add_counts: If True, number of log10(event counts per clusters)
                 is added as a feature.
+            charge_weights: If True, the mean and std of the charge
+                distribution is added as a feature.
+            node_limit: If set, limits the number of nodes to this number.
+            node_limit_index: Index of the feature to sort on when limiting
+                the number of nodes.
+            node_limit_seed: Seed for random node limiting.
 
         NOTE: Make sure that either the input data is not already standardized
         or that the `charge_standardization` and `time_standardization`
@@ -566,13 +776,18 @@ class ClusterSummaryFeatures(NodeDefinition):
 
         # feature member variables
         self._total_charge = total_charge
+        self._total_charge_fraction = total_charge_fraction
         self._charge_after_t = charge_after_t
         self._time_of_first_hit = time_of_first_hit
         self._time_spread = time_spread
         self._time_std = time_std
         self._time_after_charge_pct = time_after_charge_pct
         self._add_counts = add_counts
-
+        self._charge_weighted = charge_weighted
+        self._node_limit = node_limit
+        self._node_limit_index = node_limit_index
+        self._node_limit_seed = node_limit_seed
+        self._node_limit_ascending = node_limit_ascending
         # Base class constructor
         super().__init__(input_feature_names=input_feature_names)
         if self._order_in_time is False:
@@ -590,6 +805,8 @@ class ClusterSummaryFeatures(NodeDefinition):
         new_feature_names = deepcopy(self._cluster_on)
         if self._total_charge:
             new_feature_names.append("total_charge")
+        if self._total_charge_fraction:
+            new_feature_names.append("total_charge_fraction")
         for t in self._charge_after_t:
             new_feature_names.append(f"charge_after_{t}ns")
         if self._time_of_first_hit:
@@ -608,6 +825,9 @@ class ClusterSummaryFeatures(NodeDefinition):
         """Construct nodes from raw node features ´x´."""
         # Cast to Numpy
         x = x.numpy()
+        # Shift time to start at 0
+        if self._time_idx is not None:
+            x[:, self._time_idx] -= np.min(x[:, self._time_idx])
         # Construct clusters with percentile-summarized features
         cluster_class = cluster_and_pad(
             x=x,
@@ -623,6 +843,16 @@ class ClusterSummaryFeatures(NodeDefinition):
         # add total charge
         if self._total_charge:
             cluster_class.add_sum_charge(charge_index=self._charge_idx)
+            cluster_class.clustered_x[:, -1] = self._standardize_features(
+                cluster_class.clustered_x[:, -1],
+                self._charge_standardization,
+            )
+
+        if self._total_charge_fraction:
+            event_total_charge = np.nansum(x[:, self._charge_idx])
+            cluster_class.add_sum_charge(
+                charge_index=self._charge_idx, total_charge=event_total_charge
+            )
             cluster_class.clustered_x[:, -1] = self._standardize_features(
                 cluster_class.clustered_x[:, -1],
                 self._charge_standardization,
@@ -668,6 +898,11 @@ class ClusterSummaryFeatures(NodeDefinition):
         if self._time_std:
             cluster_class.add_std(
                 columns=[self._time_idx],
+                weights=(
+                    cluster_class._charge_weights
+                    if self._charge_weighted
+                    else 1
+                ),
             )
             cluster_class.clustered_x[:, -1] = self._standardize_features(
                 cluster_class.clustered_x[:, -1],
@@ -695,6 +930,15 @@ class ClusterSummaryFeatures(NodeDefinition):
 
         if self._add_counts:
             cluster_class.add_counts()
+
+        if self._node_limit is not None:
+            cluster_class.limit_number_of_clusters(
+                max_clusters=self._node_limit,
+                sort_index=self._node_limit_index,
+                ascending=self._node_limit_ascending,
+                seed=self._node_limit_seed,
+            )  # the user is responsible for knowing which index to sort by
+
         return torch.tensor(cluster_class.clustered_x)
 
     def set_indices(self, feature_names: List[str]) -> None:

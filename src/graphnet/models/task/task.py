@@ -111,12 +111,14 @@ class Task(Model):
         self._loss_weight = loss_weight
 
         self._transform_prediction_training: Callable[[Tensor], Tensor] = (
-            lambda x: x
+            self.identity_transform
         )
         self._transform_prediction_inference: Callable[[Tensor], Tensor] = (
-            lambda x: x
+            self.identity_transform
         )
-        self._transform_target: Callable[[Tensor], Tensor] = lambda x: x
+        self._transform_target: Callable[[Tensor], Tensor] = (
+            self.identity_transform
+        )
         self._validate_and_set_transforms(
             transform_prediction_and_target,
             transform_target,
@@ -222,6 +224,12 @@ class Task(Model):
             if transform_inference is not None:
                 self._transform_prediction_inference = transform_inference
 
+    def identity_transform(
+        self, x: Union[Tensor, Data]
+    ) -> Union[Tensor, Data]:
+        """Identity transform."""
+        return x
+
 
 class LearnedTask(Task):
     """Task class with a learned mapping.
@@ -296,6 +304,7 @@ class StandardLearnedTask(LearnedTask):
     def __init__(
         self,
         hidden_size: int,
+        freeze: bool = False,
         **task_kwargs: Any,
     ):
         """Construct `StandardLearnedTask`.
@@ -304,9 +313,14 @@ class StandardLearnedTask(LearnedTask):
             hidden_size: The number of columns in the output of
                          the last latent layer of `Model` using this Task.
                          Available through `Model.nb_outputs`
+            freeze: If `True`, calculates no gradients for the learned mapping.
         """
         # Base class constructor
         super().__init__(hidden_size=hidden_size, **task_kwargs)
+        self._freeze = freeze
+        if self._freeze:
+            for param in self.parameters():
+                param.requires_grad = False
 
     @property
     @abstractmethod
@@ -332,10 +346,19 @@ class StandardLearnedTask(LearnedTask):
             weights = data[self._loss_weight]
         else:
             weights = None
-        loss = (
-            self._loss_function(pred, target, weights=weights)
-            + self._regularisation_loss
-        )
+
+        if self._freeze:
+            # no need to calculate gradients for the learned mapping
+            with torch.no_grad():
+                loss = (
+                    self._loss_function(pred, target, weights=weights)
+                    + self._regularisation_loss
+                )
+        else:
+            loss = (
+                self._loss_function(pred, target, weights=weights)
+                + self._regularisation_loss
+            )
         return loss
 
 
@@ -385,6 +408,42 @@ class IdentityTask(StandardLearnedTask):
     def _forward(self, x: Union[Tensor, Data]) -> Tensor:  # type: ignore
         # Leave it as is.
         return x
+
+
+class IdentityTaskWithUncertainty(IdentityTask):
+    """Identity task with uncertainty.
+
+    This task returns the input as is, but also returns an uncertainty value
+    for each target.
+    """
+
+    def __init__(
+        self,
+        nb_outputs: int,
+        nb_errors: int,
+        target_labels: Union[List[str], Any],
+        beta: float = 0.1,
+        threshold: float = 20.0,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        """Construct IdentityWithUncertainty."""
+        super().__init__(nb_outputs, target_labels, *args, **kwargs)
+        self._default_prediction_labels = [
+            f"{label}_pred" for label in self._default_target_labels
+        ] + [f"{label}_uncertainty" for label in self._default_target_labels]
+
+        self._beta = beta
+        self._threshold = threshold
+        self._nb_errors = nb_errors
+
+    def _forward(self, x: Union[Tensor, Data]) -> Tensor:  # type: ignore
+        sigma = torch.nn.functional.softplus(
+            x[:, -self._nb_errors :],
+            beta=self._beta,
+            threshold=self._threshold,
+        )
+        return torch.hstack([x[:, : -self._nb_errors], sigma])
 
 
 class StandardFlowTask(Task):

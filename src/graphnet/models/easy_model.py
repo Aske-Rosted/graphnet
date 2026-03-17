@@ -18,6 +18,7 @@ from pytorch_lightning.loggers import Logger as LightningLogger
 from graphnet.training.callbacks import ProgressBar
 from graphnet.models.model import Model
 from graphnet.models.task import StandardLearnedTask
+from graphnet.models.task.multitask_utils import LossWeightBalancing
 
 
 class EasySyntax(Model):
@@ -214,9 +215,24 @@ class EasySyntax(Model):
 
     def configure_optimizers(self) -> Dict[str, Any]:
         """Configure the model's optimizer(s)."""
-        optimizer = self._optimizer_class(
-            self.parameters(), **self._optimizer_kwargs
-        )
+        if hasattr(self, "loss_weight_balancing"):
+            self.info("Using Loss Weight Balancing for multi-task learning.")
+            # seperate the parameters of the loss weight balancing from the rest
+            loss_weight_params = list(self.loss_weight_balancing.noise_params)
+            other_params = list(
+                set(self.parameters()) - set(loss_weight_params)
+            )
+            param_groups = [
+                {"params": other_params, **self._optimizer_kwargs},
+                {"params": loss_weight_params, **self._optimizer_kwargs},
+            ]
+            # scale the lr down by two orders of magnitude for the loss weight balancing parameters
+            param_groups[-1]["lr"] = param_groups[-1].get("lr", 0.001) * 1e-2
+            optimizer = self._optimizer_class(param_groups)
+        else:
+            optimizer = self._optimizer_class(
+                self.parameters(), **self._optimizer_kwargs
+            )
         config = {
             "optimizer": optimizer,
         }
@@ -259,18 +275,19 @@ class EasySyntax(Model):
         self, val_batch: Union[Data, List[Data]], batch_idx: int
     ) -> Tensor:
         """Perform validation step."""
-        if isinstance(val_batch, Data):
-            val_batch = [val_batch]
-        loss = self.shared_step(val_batch, batch_idx)
-        self.log(
-            "val_loss",
-            loss,
-            batch_size=self._get_batch_size(val_batch),
-            prog_bar=True,
-            on_epoch=True,
-            on_step=False,
-            sync_dist=True,
-        )
+        with torch.no_grad():
+            if isinstance(val_batch, Data):
+                val_batch = [val_batch]
+            loss = self.shared_step(val_batch, batch_idx)
+            self.log(
+                "val_loss",
+                loss,
+                batch_size=self._get_batch_size(val_batch),
+                prog_bar=True,
+                on_epoch=True,
+                on_step=False,
+                sync_dist=True,
+            )
         return loss
 
     def inference(self) -> None:

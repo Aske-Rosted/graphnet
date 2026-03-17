@@ -316,7 +316,7 @@ class cluster_and_pad:
                 self._cluster_names, location, names
             )
 
-    def _calculate_charge_sum(self, charge_index: int) -> np.ndarray:
+    def _calculate_charge_sum(self, charge_index: int) -> None:
         """Calculate the sum of the charge."""
         assert not hasattr(
             self, "_charge_sum"
@@ -326,16 +326,14 @@ class cluster_and_pad:
             self._padded_x[:, :, charge_index], axis=1
         )
 
-    def _calculate_charge_weights(self, charge_index: int) -> np.ndarray:
+    def _calculate_charge_weights(self, charge_index: int) -> None:
         """Calculate the weights of the charge."""
         assert not hasattr(
             self, "_charge_weights"
         ), "Charge weights have already been calculated, \
             re-calculation is not allowed"
-        assert hasattr(
-            self, "_charge_sum"
-        ), "Charge sum has not been calculated, \
-            please run calculate_charge_sum"
+        if not hasattr(self, "_charge_sum"):
+            self._calculate_charge_sum(charge_index)
         self._charge_weights = (
             self._padded_x[:, :, charge_index]
             / self._charge_sum[:, np.newaxis]
@@ -392,9 +390,12 @@ class cluster_and_pad:
             _cluster_names: The names are added at the end of the tensor
                             or inserted at the specified location
         """
-        # calculate cumsum of charge
+        # convert the charge to the cumulative sum of the charge divided
+        # by the total charge
         if not hasattr(self, "_charge_sum"):
             self._calculate_charge_sum(charge_index)
+        if not hasattr(self, "_charge_weights"):
+            self._calculate_charge_weights(charge_index)
 
         charge_cumsum = (
             self._padded_x[:, :, charge_index].cumsum(axis=1)
@@ -478,15 +479,22 @@ class cluster_and_pad:
             self._add_column_names(new_name, location)
 
     def add_sum_charge(
-        self, charge_index: int, location: Optional[int] = None
+        self,
+        charge_index: int,
+        location: Optional[int] = None,
+        total_charge: Optional[float] = None,
     ) -> np.ndarray:
         """Add the sum of the charge to the summarization features."""
         if not hasattr(self, "_charge_sum"):
             self._calculate_charge_sum(charge_index)
+        if total_charge is not None:
+            self._charge_sum = self._charge_sum / total_charge
         self._add_column(self._charge_sum, location)
         # update the cluster names
         if self._input_names is not None:
             new_name = [self._input_names[charge_index] + "_sum"]
+            if total_charge is not None:
+                new_name = [self._input_names[charge_index] + "_sum_fraction"]
             self._add_column_names(new_name, location)
 
     def add_std(
@@ -504,10 +512,20 @@ class cluster_and_pad:
                       clustered tensor defaults to adding at the end
             weights: Optional weights to be applied to the standard deviation
         """
-        self._add_column(
-            np.nanstd(self._padded_x[:, :, columns] * weights, axis=1),
-            location,
-        )
+        if isinstance(weights, int):
+            self._add_column(
+                np.nanstd(self._padded_x[:, :, columns] * weights, axis=1),
+                location,
+            )
+        else:
+            self._add_column(
+                np.nanstd(
+                    self._padded_x[:, :, columns] * weights[:, :, np.newaxis],
+                    axis=1,
+                ),
+                location,
+            )
+
         if self._input_names is not None:
             new_names = [self._input_names[i] + "_std" for i in columns]
             self._add_column_names(new_names, location)
@@ -520,12 +538,27 @@ class cluster_and_pad:
     ) -> np.ndarray:
         """Add the mean of the column."""
         self._add_column(
-            np.nanmean(self._padded_x[:, :, columns] * weights, axis=1),
+            np.nanmean(
+                self._padded_x[:, :, columns] * weights[:, :, np.newaxis],
+                axis=1,
+            ),
             location,
         )
         # update the cluster names
         if self._input_names is not None:
             new_names = [self._input_names[i] + "_mean" for i in columns]
+            self._add_column_names(new_names, location)
+
+    def add_first(
+        self,
+        columns: List[int],
+        location: Optional[int] = None,
+    ) -> np.ndarray:
+        """Add the first value of the column."""
+        self._add_column(self._padded_x[:, 0, columns], location)
+        # update the cluster names
+        if self._input_names is not None:
+            new_names = [self._input_names[i] + "_first" for i in columns]
             self._add_column_names(new_names, location)
 
     def add_time_first_pulse(
@@ -654,6 +687,175 @@ class cluster_and_pad:
                 self._calculate_charge_weights(charge_index)
             self._calculate_reference_time(time_index)
         return self._reference_time
+
+    def add_time_first_pulse(
+        self,
+        time_index: int,
+        location: Optional[int] = None,
+    ) -> np.ndarray:
+        """Add the time of the first pulse.
+
+        Args:
+            time_index: Index of the time column in the padded tensor
+            location: Location to insert the time of the first pulse in the
+                    clustered tensor defaults to adding at the end
+        Altered:
+            clustered_x: The time of the first pulse is added at the end of
+                         the tensor or inserted at the specified location
+            _cluster_names: The names are added at the end of the tensor
+                            or inserted at the specified location
+        """
+        if not hasattr(self, "_time_first_pulse"):
+            self._calculate_time_first_pulse(time_index)
+
+        # Add the time of the first pulse to the clustered tensor
+        self._add_column(self._time_first_pulse, location)
+
+        # update the cluster names
+        if self._input_names is not None:
+            new_name = [self._input_names[time_index] + "_first_pulse"]
+            self._add_column_names(new_name, location)
+
+    def add_spread(
+        self, columns: List[int], location: Optional[int] = None
+    ) -> np.ndarray:
+        """Add the spread (max-min) of the columns."""
+        self._add_column(
+            np.nanmax(self._padded_x[:, :, columns], axis=1)
+            - np.nanmin(self._padded_x[:, :, columns], axis=1),
+            location,
+        )
+        # update the cluster names
+        if self._input_names is not None:
+            new_names = [self._input_names[i] + "_spread" for i in columns]
+            self._add_column_names(new_names, location)
+
+    def add_accumulated_value_after_t(
+        self,
+        time_index: int,
+        summarization_indices: List[int],
+        times: List[int],
+        location: Optional[int] = None,
+    ) -> np.ndarray:
+        """Add the cumulative sum of values after certain time.
+
+        NOTE: the time is counted from the first pulse of the sensor.
+        Make sure that the data is also sorted by time and be aware of
+        the standardization of the time column.
+
+        Args:
+            time_index: Index of the time column in the padded tensor
+            summarization_indices: List of column indices that defines
+                features that will be summarized with percentiles.
+            times: List of times after which the accumulated value
+                is calculated
+            location: Location to insert the accumulated values in the
+                      clustered tensor defaults to adding at the end
+        Altered:
+            clustered_x: The accumulated values are added at the end of
+                         the tensor or inserted at the specified location
+            _cluster_names: The names are added at the end of the tensor
+                            or inserted at the specified location
+        """
+        # Calculate the time of the first pulse if not already done
+        if not hasattr(self, "_time_first_pulse"):
+            self._calculate_time_first_pulse(time_index)
+
+        # Create array with threshold times
+        tmp_times = (
+            np.tile(
+                np.array(times),
+                (len(self._time_first_pulse[:, np.newaxis]), 1),
+            )
+            + self._time_first_pulse[:, np.newaxis]
+        )
+
+        # Create a mask for the times
+        mask = (
+            self._padded_x[:, :, time_index][:, np.newaxis, :]
+            >= tmp_times[:, :, np.newaxis]
+        )
+
+        selections = np.argmax(
+            mask,
+            axis=2,
+        )
+        selections += (np.arange(len(self._counts)) * self._padded_x.shape[1])[
+            :, np.newaxis
+        ]
+        selections = (
+            self._padded_x[:, :, summarization_indices]
+            .cumsum(axis=1)
+            .reshape(-1, len(summarization_indices))[selections]
+        )
+        selections = selections.transpose(0, 2, 1).reshape(
+            len(self.clustered_x), -1
+        )
+
+        # Add the selections to the clustered tensor
+        self._add_column(selections, location)
+
+        # update the cluster names
+        if self._input_names is not None:
+            new_names = [
+                self._input_names[i] + "_accumulated_after_" + str(t)
+                for i in summarization_indices
+                for t in times
+            ]
+            self._add_column_names(new_names, location)
+
+    def reference_time(self, charge_index: int, time_index: int) -> float:
+        """Return and set the charge weighted median of hit times."""
+        if not hasattr(self, "_reference_time"):
+            assert charge_index is not None, "Charge index must be provided"
+            if not hasattr(self, "_charge_weights"):
+                if not hasattr(self, "_charge_sum"):
+                    self._calculate_charge_sum(charge_index)
+                self._calculate_charge_weights(charge_index)
+            self._calculate_reference_time(time_index)
+        return self._reference_time
+
+    def limit_number_of_clusters(
+        self,
+        max_clusters: int,
+        sort_index: Optional[int] = None,
+        ascending: bool = False,
+        seed: Optional[int] = None,
+    ) -> None:
+        """Limit the number of clusters to max_clusters.
+
+        Args:
+            max_clusters: Maximum number of clusters to keep.
+            sort_index: Index of the column to sort the clusters by before
+                        limiting. If None, random selection is applied.
+            inverted: If True, sort in descending order.
+            seed: Random seed for reproducibility when random selection is used.
+        Altered:
+            clustered_x: Limited to max_clusters.
+            _padded_x: Limited to max_clusters.
+            _counts: Limited to max_clusters.
+        """
+        if self.clustered_x.shape[0] <= max_clusters:
+            return  # No need to limit clusters
+
+        if sort_index is None:
+            # apply random selection
+            if seed is not None:
+                np.random.seed(seed)
+            sorted_indices = np.random.permutation(self.clustered_x.shape[0])
+        else:
+            sorted_indices = np.argsort(self.clustered_x[:, sort_index])
+
+        if not ascending:
+            sorted_indices = sorted_indices[::-1]
+
+        # select the top max_clusters indices but keep the original order
+        selected_indices = sorted_indices[:max_clusters]
+        selected_indices = np.sort(selected_indices)
+        self.clustered_x = self.clustered_x[selected_indices]
+        self._padded_x = self._padded_x[selected_indices]
+        self._counts = self._counts[selected_indices]
+        return
 
 
 def ice_transparency(

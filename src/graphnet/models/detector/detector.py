@@ -52,6 +52,13 @@ class Detector(Model):
                 )
                 raise e
             self._geometry_table = pd.read_parquet(self.geometry_table_path)
+            # Issues with float precision in the geometry table
+            self._geometry_table = self._geometry_table.rename(
+                index=lambda x: round(x, 2)
+            )
+            self._geometry_table[self.sensor_position_names] = (
+                self._geometry_table[self.sensor_position_names].round(2)
+            )
         return self._geometry_table
 
     @property

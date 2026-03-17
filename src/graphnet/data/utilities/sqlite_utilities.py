@@ -206,3 +206,179 @@ def create_table_and_save_to_sql(
             integer_primary_key=integer_primary_key,
         )
     save_to_sql(df, table_name=table_name, database_path=database_path)
+
+
+def get_first_pulse_times(
+    database_path: str,
+    pulses_table_name: str = "SRTInIcePulses",
+    time_column: str = "dom_time",
+    index_column: str = "event_no",
+) -> pd.DataFrame:
+    """Get the first pulse time for each event.
+
+    Args:
+        database_path: Path to the database.
+        pulses_table_name: Name of the pulses table.
+        time_column: Name of the time column in the pulses table.
+        index_column: Name of the index column in the pulses table.
+
+    Returns:
+        DataFrame with two columns: `event_no` and `first_pulse_time`.
+    """
+    query = (
+        f"SELECT {index_column}, MIN({time_column}) AS first_pulse_time "
+        f"FROM {pulses_table_name} "
+        f"GROUP BY {index_column};"
+    )
+    return query_database(database_path, query)
+
+
+def add_first_pulse_time_to_truth(
+    database_path: str,
+    truth_table_name: str = "truth",
+    pulses_table_name: str = "SRTInIcePulses",
+    time_column: str = "dom_time",
+    index_column: str = "event_no",
+) -> None:
+    """Add the first pulse time to the truth table.
+
+    Args:
+        database_path: Path to the database.
+        truth_table_name: Name of the truth table.
+        pulses_table_name: Name of the pulses table.
+        time_column: Name of the time column in the pulses table.
+        index_column: Name of the index column in both tables.
+    """
+
+    # Get first pulse times
+    df = get_first_pulse_times(
+        database_path=database_path,
+        pulses_table_name=pulses_table_name,
+        time_column=time_column,
+        index_column=index_column,
+    )
+    print(f"Finished getting first pulse times for {len(df)} events.")
+    # Create temporary table for first pulse times
+    temp_table_name = "temp_first_pulse_times"
+
+    query = f"DROP TABLE IF EXISTS {temp_table_name};"
+    run_sql_code(database_path, query)
+
+    create_table(
+        columns=["event_no", "first_pulse_time"],
+        table_name=temp_table_name,
+        database_path=database_path,
+        index_column=index_column,
+        default_type="FLOAT",
+        integer_primary_key=True,
+    )
+    print(f"Created temporary table {temp_table_name} for first pulse times.")
+    # Save first pulse times to temporary table
+    save_to_sql(
+        df=df,
+        table_name=temp_table_name,
+        database_path=database_path,
+    )
+
+    # Create the column and update it in the truth table remove if already exists
+    query = (
+        f"ALTER TABLE {truth_table_name} "
+        f"ADD COLUMN first_pulse_time FLOAT;"
+    )
+    print(f"Adding column 'first_pulse_time' to {truth_table_name}.")
+
+    run_sql_code(database_path, query)
+    query = (
+        f"UPDATE {truth_table_name} "
+        f"SET first_pulse_time = (SELECT first_pulse_time "
+        f"FROM {temp_table_name} "
+        f"WHERE {temp_table_name}.{index_column} = {truth_table_name}.{index_column});"
+    )
+
+    run_sql_code(database_path, query)
+    print(
+        f"Updated {truth_table_name} with first pulse times from {temp_table_name}."
+    )
+    # Drop the temporary table
+    query = f"DROP TABLE IF EXISTS {temp_table_name};"
+    print(f"Dropping temporary table {temp_table_name}.")
+    run_sql_code(database_path, query)
+
+
+def add_starting(
+    database_path: str,
+    truth_table_name: str = "truth",
+    containment_column: str = "containment_type",
+    index_column: str = "event_no",
+) -> None:
+    """Add the starting to the truth table.
+
+    Args:
+        database_path: Path to the database.
+        truth_table_name: Name of the truth table.
+        index_column: Name of the index column in both tables.
+    """
+
+    # mapping from containment enum to starting
+    map_dict = {
+        1: 0,  # no intersect: not starting
+        2: 0,  # through-going: not starting
+        3: 1,  # contained: starting
+        4: 1,  # tau-to-mu: starting
+        5: 1,  # uncontained-starting: starting
+        6: 0,  # stopping: not starting
+        7: 0,  # decayed: not starting
+        8: 0,  # through-going bundle: not starting
+        9: 0,  # stopping bundle: not starting
+        10: 1,  # partial-contained: starting
+    }
+
+    containment_type_query = (
+        f"SELECT {index_column}, {containment_column} "
+        f"FROM {truth_table_name};"
+    )
+
+    containment_df = query_database(database_path, containment_type_query)
+
+    # convert containment type to starting using map_dict
+    containment_df["starting"] = (
+        containment_df[containment_column].astype(int).map(map_dict)
+    )
+
+    temp_table_name = "temp_starting"
+    query = f"DROP TABLE IF EXISTS {temp_table_name};"
+    run_sql_code(database_path, query)
+
+    create_table(
+        columns=[index_column, "starting"],
+        table_name=temp_table_name,
+        database_path=database_path,
+        index_column=index_column,
+        default_type="INTEGER",
+        integer_primary_key=True,
+    )
+
+    print(f"Created temporary table {temp_table_name} for starting.")
+    # Save starting to temporary table
+    save_to_sql(
+        df=containment_df[[index_column, "starting"]],
+        table_name=temp_table_name,
+        database_path=database_path,
+    )
+    # Create the column and update it in the truth table remove if already exists
+    query = f"ALTER TABLE {truth_table_name} " f"ADD COLUMN starting INTEGER;"
+    print(f"Adding column 'starting' to {truth_table_name}.")
+    run_sql_code(database_path, query)
+    query = (
+        f"UPDATE {truth_table_name} "
+        f"SET starting = (SELECT starting "
+        f"FROM {temp_table_name} "
+        f"WHERE {temp_table_name}.{index_column} = {truth_table_name}.{index_column});"
+    )
+
+    run_sql_code(database_path, query)
+    print(f"Updated {truth_table_name} with starting from {temp_table_name}.")
+    # Drop the temporary table
+    query = f"DROP TABLE IF EXISTS {temp_table_name};"
+    print(f"Dropping temporary table {temp_table_name}.")
+    run_sql_code(database_path, query)

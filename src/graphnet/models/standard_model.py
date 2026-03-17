@@ -14,6 +14,7 @@ from graphnet.models.data_representation import (
     GraphDefinition,
     DataRepresentation,
 )
+from graphnet.models.task.multitask_utils import LossWeightBalancing
 
 
 class StandardModel(EasySyntax):
@@ -32,11 +33,14 @@ class StandardModel(EasySyntax):
         graph_definition: Optional[GraphDefinition] = None,
         backbone: Optional[Model] = None,
         gnn: Optional[GNN] = None,
+        split: Optional[List[List]] = None,
         optimizer_class: Type[torch.optim.Optimizer] = Adam,
         optimizer_kwargs: Optional[Dict] = None,
         scheduler_class: Optional[type] = None,
         scheduler_kwargs: Optional[Dict] = None,
         scheduler_config: Optional[Dict] = None,
+        learned_multitask_weights: int = -1,
+        verbose_loss: bool = False,
     ) -> None:
         """Construct `StandardModel`."""
         # Base class constructor
@@ -89,6 +93,19 @@ class StandardModel(EasySyntax):
         # Member variable(s)
         self._data_representation = data_representation
         self.backbone = backbone
+        self._split = split
+        assert (
+            sum(self._split[0]) == self.backbone.nb_outputs
+        ), "Split dimensions do not match backbone output dimension check your configuration"
+
+        if learned_multitask_weights != -1:
+            assert isinstance(tasks, list)
+            # init the module for learned task weights
+            self.loss_weight_balancing = LossWeightBalancing(
+                tasks, late_activation=learned_multitask_weights
+            )
+        else:
+            self.loss_weight_balancing = None
 
     def compute_loss(
         self, preds: Tensor, data: List[Data], verbose: bool = False
@@ -103,11 +120,31 @@ class StandardModel(EasySyntax):
                 data_merged[task._loss_weight] = torch.cat(
                     [d[task._loss_weight] for d in data], dim=0
                 )
+        # check that there are no nans or infs in the prediction
 
         losses = [
             task.compute_loss(pred, data_merged)
             for task, pred in zip(self._tasks, preds)
         ]
+
+        if self.loss_weight_balancing is not None:
+            losses = self.loss_weight_balancing(losses)
+
+        if self.training == False:
+            # during validation we would like to inspect the individual losses for each task, so we log them separately
+
+            for i, loss in enumerate(losses):
+                self.log(
+                    "i_loss" + "_" + str(i),
+                    loss,
+                    prog_bar=False,
+                    logger=True,
+                    on_step=False,
+                    on_epoch=True,
+                    batch_size=len(preds[0]),
+                    sync_dist=True,
+                )
+
         if verbose:
             self.info(f"{losses}")
         assert all(
@@ -126,8 +163,14 @@ class StandardModel(EasySyntax):
             x = self.backbone(d)
             x_list.append(x)
         x = torch.cat(x_list, dim=0)
-
-        preds = [task(x) for task in self._tasks]
+        if self._split is not None:
+            x = x.split(self._split[0], dim=-1)
+            preds = [
+                task(x[self._split[1][i]])
+                for i, task in enumerate(self._tasks)
+            ]
+        else:
+            preds = [task(x) for task in self._tasks]
         return preds
 
     def shared_step(self, batch: List[Data], batch_idx: int) -> Tensor:

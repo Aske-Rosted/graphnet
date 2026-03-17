@@ -38,7 +38,7 @@ class DeploymentModule(Logger):
         super().__init__(name=__name__, class_name=self.__class__.__name__)
         # Set Member Variables
         self.model = self._load_model(
-            model_config=model_config, state_dict=state_dict
+            model_config=model_config, state_dict=state_dict, device=device
         )
 
         self.prediction_columns = self._resolve_prediction_columns(
@@ -60,11 +60,12 @@ class DeploymentModule(Logger):
         self,
         model_config: Union[ModelConfig, str],
         state_dict: Union[Dict[str, Tensor], str],
+        device: str = "cpu",
     ) -> Model:
         """Load `Model` from config and insert learned weights."""
-        model = Model.from_config(model_config, trust=True)
+        model = Model.from_config(model_config, trust=True).to(device)
         if isinstance(state_dict, str) and state_dict.endswith(".ckpt"):
-            ckpt = load(state_dict)
+            ckpt = load(state_dict, map_location=device)
             model.load_state_dict(ckpt["state_dict"])
         else:
             model.load_state_dict(state_dict)
@@ -98,5 +99,5 @@ class DeploymentModule(Logger):
         output = self.model(data=data)
         # Loop over tasks in model and transform to numpy
         for k in range(len(output)):
-            output[k] = output[k].detach().numpy()
+            output[k] = output[k].detach().cpu().numpy()
         return output

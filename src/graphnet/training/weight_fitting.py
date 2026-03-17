@@ -168,10 +168,17 @@ class Uniform(WeightFitter):
         # the corresponding bin
         ix = np.digitize(truth[self._variable], bins=self._bins) - 1
         sample_weights = bin_weights[ix]
+        sample_weights[ix == -1] = (
+            0  # If a value is outside the bins, set its weight to 0
+        )
         sample_weights = sample_weights / sample_weights.mean()
 
         truth[self._weight_name] = sample_weights
         return truth.sort_values("event_no").reset_index(drop=True)
+
+    def _gather_stats(self, truth: pd.DataFrame) -> pd.DataFrame:
+        """Gather statistics about multiple databases in order to fit
+        weights."""
 
     def _generate_weight_name(self) -> str:
         return self._variable + "_uniform_weight"

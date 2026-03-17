@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, List, Union
 import torch.utils.data
 from torch_geometric.data import Batch, Data
 
-from graphnet.data.dataset import Dataset
+from graphnet.data.dataset import Dataset, EnsembleDataset
 from graphnet.utilities.config import DatasetConfig
 
 
@@ -81,5 +81,5 @@ class DataLoader(torch.utils.data.DataLoader):
                 "need to specify `shuffle` as an argument."
             )
             dataset = Dataset.from_config(config)
-            assert isinstance(dataset, Dataset)
+            assert isinstance(dataset, Union[Dataset, EnsembleDataset])
             return cls(dataset, **kwargs)

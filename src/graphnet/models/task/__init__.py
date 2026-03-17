@@ -6,3 +6,4 @@ from .task import (
     StandardLearnedTask,
     StandardFlowTask,
 )
+from .multitask_utils import LossWeightBalancing

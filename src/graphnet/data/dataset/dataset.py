@@ -169,9 +169,15 @@ class Dataset(
 
         if isinstance(cfg["path"], list):
             sources = []
+            msg = f"Constructing {len(cfg['path'])} datasets, with selection: {source.selection}"
+            msg_bool = True
             for path in cfg["path"]:
                 cfg["path"] = path
-                sources.append(source._dataset_class(**cfg))
+                sources.append(source._dataset_class(**cfg, verbose=False))
+                if msg_bool:
+                    sources[-1].info(msg)
+                    msg_bool = False
+
             source = EnsembleDataset(sources)
             return source
         else:
@@ -259,6 +265,8 @@ class Dataset(
         loss_weight_default_value: Optional[float] = None,
         seed: Optional[int] = None,
         labels: Optional[Dict[str, Any]] = None,
+        use_super_selection: bool = False,
+        verbose: bool = True,
     ):
         """Construct Dataset.
 
@@ -311,6 +319,11 @@ class Dataset(
                 NOTE: DEPRECATED Use `data_representation` instead.
                 # DEPRECATION: REMOVE AT 2.0 LAUNCH
                 # See https://github.com/graphnet-team/graphnet/issues/647
+            use_super_selection: If True, the string selection is handled by
+                the query function of the dataset class, rather than
+                pd.DataFrame.query. Defaults to False and should
+                only be used with sqlite.
+            verbose: Whether to print the selection info
         """
         # Base class constructor
         super().__init__(name=__name__, class_name=self.__class__.__name__)
@@ -354,6 +367,7 @@ class Dataset(
         self._data_representation = deepcopy(data_representation)
         self._labels = labels
         self._string_column = data_representation._detector.string_index_name
+        self._use_super_selection = use_super_selection
 
         if node_truth is not None:
             assert isinstance(node_truth_table, str)
@@ -404,6 +418,7 @@ class Dataset(
             self,
             index_column=index_column,
             seed=seed,
+            use_super_selection=self._use_super_selection,
         )
 
         if self._labels is not None:
@@ -419,7 +434,8 @@ class Dataset(
             self._indices = self._get_all_indices()
         elif isinstance(selection, str):
             self._indices = self._resolve_string_selection_to_indices(
-                selection
+                selection,
+                verbose=verbose,
             )
         else:
             self._indices = selection
@@ -528,7 +544,7 @@ class Dataset(
 
     # Internal method(s)
     def _resolve_string_selection_to_indices(
-        self, selection: str
+        self, selection: str, verbose: bool = True
     ) -> List[int]:
         """Resolve selection as string to list of indices.
 
@@ -537,7 +553,9 @@ class Dataset(
         fixed number of events to randomly sample, e.g., ``` "10000 random
         events ~ event_no % 5 > 0" "20% random events ~ event_no % 5 > 0" ```
         """
-        return self._string_selection_resolver.resolve(selection)
+        return self._string_selection_resolver.resolve(
+            selection, verbose=verbose
+        )
 
     def _remove_missing_columns(self) -> None:
         """Remove columns that are not present in the input file.
@@ -585,7 +603,7 @@ class Dataset(
     def _check_missing_columns(
         self,
         columns: List[str],
-        table: str,
+        table: Union[str, List[str]],
     ) -> List[str]:
         """Return a list missing columns in `table`."""
         for column in columns:
@@ -594,13 +612,26 @@ class Dataset(
                     table=table, columns=[column], sequential_index=0
                 )
             except ColumnMissingException:
-                if table not in self._missing_variables:
-                    self._missing_variables[table] = []
-                self._missing_variables[table].append(column)
+                if isinstance(table, str):
+                    if table not in self._missing_variables:
+                        self._missing_variables[table] = []
+                    self._missing_variables[table].append(column)
+                elif isinstance(table, list):
+                    for t in table:
+                        if t not in self._missing_variables:
+                            self._missing_variables[t] = []
+                        self._missing_variables[t].append(column)
             except IndexError:
                 self.warning(f"Dataset contains no entries for {column}")
-
-        return self._missing_variables.get(table, [])
+        if isinstance(table, str):
+            missing_variables = self._missing_variables.get(table, [])
+        elif isinstance(table, list):
+            missing_variables = [
+                value
+                for key, value in self._missing_variables.items()
+                if key in table
+            ]
+        return missing_variables
 
     def _query(
         self, sequential_index: int
@@ -677,10 +708,13 @@ class Dataset(
         """
         # Convert truth to dict
         if len(truth.shape) == 1:
-            truth = truth.reshape(1, -1)
-        truth_dict = {
-            key: truth[:, index] for index, key in enumerate(self._truth)
-        }
+            truth_dict = {
+                key: truth[0][index] for index, key in enumerate(self._truth)
+            }
+        else:
+            truth_dict = {
+                key: truth[:, index] for index, key in enumerate(self._truth)
+            }
 
         # Define custom labels
         labels_dict = self._get_labels(truth_dict)
