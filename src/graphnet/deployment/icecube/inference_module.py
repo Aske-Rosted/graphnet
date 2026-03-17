@@ -41,9 +41,7 @@ class I3InferenceModule(DeploymentModule):
 
     def __init__(
         self,
-        pulsemap_extractor: Union[
-            List[I3PulseExtractor], I3PulseExtractor
-        ],
+        pulsemap_extractor: Union[List[I3PulseExtractor], I3PulseExtractor],
         model_config: Union[List[ModelConfig], List[str], ModelConfig, str],
         state_dict: Union[List[str], str],
         model_name: Union[List[str], str],
@@ -66,7 +64,7 @@ class I3InferenceModule(DeploymentModule):
             pulsemap_extractor: The extractor used to extract the pulsemap.
             model_config: The ModelConfig (or path to it) that summarizes the
                             model used for inference.
-                          
+
             state_dict: Path to state_dict containing the learned weights.
             model_name: The name used for the model. Will help define the
                         named entry in the I3Frame. E.g. "dynedge".
@@ -98,23 +96,29 @@ class I3InferenceModule(DeploymentModule):
             self._i3_extractors = pulsemap_extractor
         else:
             self._i3_extractors = [pulsemap_extractor]
-        
+
         # All
         if self.multiple_models == True:
             self.features_list = []
             for model in self.models:
-                self.features_list.append(model._graph_definition._input_feature_names)
+                self.features_list.append(
+                    model._graph_definition._input_feature_names
+                )
         elif features is None:
             features = self.model._graph_definition._input_feature_names
 
         if self.multiple_models == True:
-            self._graph_definitions = [model._graph_definition for model in self.models]
-            self._graph_definitions = [graph_definition.to(device) for graph_definition in self._graph_definitions]
+            self._graph_definitions = [
+                model._graph_definition for model in self.models
+            ]
+            self._graph_definitions = [
+                graph_definition.to(device)
+                for graph_definition in self._graph_definitions
+            ]
         else:
             self._graph_definition = self.model._graph_definition
             self._graph_definition.to(device)
-        
-        
+
         self._pulsemap = pulsemap
         self._gcd_file = gcd_file
         self.model_name = model_name
@@ -171,7 +175,7 @@ class I3InferenceModule(DeploymentModule):
                     data_repr_time = data_repr_end - data_repr_start
                     inference_start = time()
                 model_input_data = []
-                for _,graph_definition in enumerate(self._graph_definitions):
+                for _, graph_definition in enumerate(self._graph_definitions):
                     data = graph_definition(
                         input_features=features[_],
                         input_feature_names=self.features_list[_],
@@ -239,7 +243,6 @@ class I3InferenceModule(DeploymentModule):
             self.warning("Memory watch triggered. Trying to return to device.")
             self.model.to(self._device)
         return True
-    
 
     def _check_dimensions(self, predictions: np.ndarray) -> int:
         if len(predictions.shape) > 1:
@@ -357,7 +360,6 @@ class I3InferenceModule(DeploymentModule):
                         )
                     features_array.append(features)
             return features_array
-
 
     def _add_to_frame(self, frame: I3Frame, data: Dict[str, Any]) -> None:
         """Add every field in data to I3Frame.

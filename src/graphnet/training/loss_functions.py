@@ -85,6 +85,7 @@ class MSELoss(LossFunction):
         elements = torch.mean((prediction - target) ** 2, dim=-1)
         return elements
 
+
 class RMSEAdjustedLoss(LossFunction):
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
@@ -92,7 +93,9 @@ class RMSEAdjustedLoss(LossFunction):
         assert prediction.dim() == 2
         assert prediction.size() == target.size()
 
-        elements = torch.mean((prediction - target) ** 2/((1+target) ** (.5)), dim=-1)
+        elements = torch.mean(
+            (prediction - target) ** 2 / ((1 + target) ** (0.5)), dim=-1
+        )
         return elements
 
 
@@ -106,13 +109,15 @@ class RMSELoss(MSELoss):
         elements = torch.sqrt(elements)
         return elements
 
+
 class PoissonLoss(LossFunction):
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
-        
-        loss_func = nn.PoissonNLLLoss(log_input=False, reduction='none')
+
+        loss_func = nn.PoissonNLLLoss(log_input=False, reduction="none")
         test = loss_func(prediction.float(), target.float())
         return test
+
 
 class LogCoshLoss(LossFunction):
     """Log-cosh loss function.
@@ -175,7 +180,9 @@ class CrossEntropyLoss(LossFunction):
                 f"Class options of type {type(self._options)} not supported"
             )
 
-        self._loss = nn.CrossEntropyLoss(weight=torch.Tensor([ratio, 1]), reduction="none")
+        self._loss = nn.CrossEntropyLoss(
+            weight=torch.Tensor([ratio, 1]), reduction="none"
+        )
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Transform outputs to angle and prepare prediction."""
@@ -218,7 +225,8 @@ class CrossEntropyLoss(LossFunction):
         )
 
         return self._loss(prediction.float(), target_one_hot.float())
-    
+
+
 class FocalCrossEntropyLoss(LossFunction):
     """Compute cross-entropy loss for classification tasks.
 
@@ -262,7 +270,9 @@ class FocalCrossEntropyLoss(LossFunction):
                 f"Class options of type {type(self._options)} not supported"
             )
 
-        self._loss = nn.CrossEntropyLoss(weight=torch.Tensor([ratio, 1]), reduction="none")
+        self._loss = nn.CrossEntropyLoss(
+            weight=torch.Tensor([ratio, 1]), reduction="none"
+        )
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Transform outputs to angle and prepare prediction."""
@@ -306,10 +316,12 @@ class FocalCrossEntropyLoss(LossFunction):
 
         cross_loss = self._loss(prediction.float(), target_one_hot.float())
 
-        a_t = self._alpha*target_one_hot.float() + (1-self._alpha)*(1-target_one_hot.float())
-        #p_t = prediction.float()*target + (1-prediction.float())*(1-target_one_hot.float())
+        a_t = self._alpha * target_one_hot.float() + (1 - self._alpha) * (
+            1 - target_one_hot.float()
+        )
+        # p_t = prediction.float()*target + (1-prediction.float())*(1-target_one_hot.float())
         p_t = torch.exp(-cross_loss)
-        return (1-p_t)**self._gamma*cross_loss
+        return (1 - p_t) ** self._gamma * cross_loss
 
 
 class BinaryCrossEntropyLoss(LossFunction):
@@ -323,7 +335,8 @@ class BinaryCrossEntropyLoss(LossFunction):
         return binary_cross_entropy(
             prediction.float(), target.float(), reduction="none"
         )
-    
+
+
 class FocalBinaryCrossEntropyLoss(LossFunction):
     """Compute binary cross entropy loss.
 
@@ -349,11 +362,13 @@ class FocalBinaryCrossEntropyLoss(LossFunction):
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         binary_loss = binary_cross_entropy(
-            prediction.float(), target.float(), reduction="none", 
+            prediction.float(),
+            target.float(),
+            reduction="none",
         )
-        a_t = self._alpha*target + (1-self._alpha)*(1-target)
-        p_t = prediction*target + (1-prediction)*(1-target)
-        return a_t*(1-p_t)**self._gamma*binary_loss
+        a_t = self._alpha * target + (1 - self._alpha) * (1 - target)
+        p_t = prediction * target + (1 - prediction) * (1 - target)
+        return a_t * (1 - p_t) ** self._gamma * binary_loss
 
 
 class LogCMK(torch.autograd.Function):

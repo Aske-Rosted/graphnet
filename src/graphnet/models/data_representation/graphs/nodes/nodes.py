@@ -989,6 +989,7 @@ class ClusterSummaryFeatures(NodeDefinition):
                 f"but got {self._time_standardization}"
             )
 
+
 class FirstHitPulses(NodeDefinition):
 
     def __init__(
@@ -1015,7 +1016,7 @@ class FirstHitPulses(NodeDefinition):
                 "dom_hit",
             ]
 
-        self.n_features = len(input_feature_names)-1
+        self.n_features = len(input_feature_names) - 1
         self._dom_hit_name = dom_hit_name
         self.all_features = input_feature_names
         self.feature_indexes = {
@@ -1026,9 +1027,10 @@ class FirstHitPulses(NodeDefinition):
         self, input_feature_names: List[str]
     ) -> List[str]:
         return input_feature_names[:-1]
-    
+
     def _get_ids(self, x: torch.Tensor) -> torch.Tensor:
-        """Get the ids of the pulses that are not in the saturation and calibration errata windows."""
+        """Get the ids of the pulses that are not in the saturation and
+        calibration errata windows."""
         ids = torch.logical_not(
             x[:, self.feature_indexes["dom_hit"]],
         )
@@ -1036,7 +1038,7 @@ class FirstHitPulses(NodeDefinition):
         return ids
 
     def _construct_nodes(self, x: torch.Tensor) -> Tuple[Data, List[str]]:
-        
+
         ids = self._get_ids(x)
         graph = torch.zeros([len(ids), self.n_features])
 
@@ -1045,17 +1047,17 @@ class FirstHitPulses(NodeDefinition):
             graph[:, idx] = x[ids, self.feature_indexes[feature]]
 
         return graph
-    
+
 
 class NodesAsPulsesBundle(NodeDefinition):
-    
+
     def __init__(
         self,
         input_feature_names: Optional[List[str]] = None,
         time_name: str = "adjusted_time",
         time_column: str = "time",
     ) -> None:
-     
+
         super().__init__(input_feature_names=input_feature_names)
 
         # time
@@ -1068,7 +1070,7 @@ class NodesAsPulsesBundle(NodeDefinition):
                 "dom_qtot",
             ]
 
-        self.n_features = len(input_feature_names)-1
+        self.n_features = len(input_feature_names) - 1
         self._time_name = time_name
         self._time_column = time_column
         self.all_features = input_feature_names
@@ -1076,7 +1078,11 @@ class NodesAsPulsesBundle(NodeDefinition):
             feat: self.all_features.index(feat) for feat in input_feature_names
         }
 
-        self.important_features = [feat for feat in input_feature_names if feat.startswith('charge_after_')]
+        self.important_features = [
+            feat
+            for feat in input_feature_names
+            if feat.startswith("charge_after_")
+        ]
 
     def _define_output_feature_names(
         self, input_feature_names: List[str]
@@ -1086,16 +1092,23 @@ class NodesAsPulsesBundle(NodeDefinition):
     def _construct_nodes(self, x: torch.Tensor) -> Tuple[Data, List[str]]:
 
         # Reduce Output Size By Only Keeping Relevant Features
-        graph = torch.zeros([len(x[:, self.feature_indexes[self._time_name]]), self.n_features])
+        graph = torch.zeros(
+            [len(x[:, self.feature_indexes[self._time_name]]), self.n_features]
+        )
 
         # Modify Percentile_Based_Information
         final_features = self.all_features[: self.n_features]
         for idx, feature in enumerate(final_features):
             if feature in self.important_features:
-                graph[:, self.feature_indexes[feature]] = (x[:, self.feature_indexes[feature]] - 
-                                                (x[:, self.feature_indexes[self._time_name]] + 
-                                                x[:, self.feature_indexes[self._time_column]]))
+                graph[:, self.feature_indexes[feature]] = x[
+                    :, self.feature_indexes[feature]
+                ] - (
+                    x[:, self.feature_indexes[self._time_name]]
+                    + x[:, self.feature_indexes[self._time_column]]
+                )
             else:
-                graph[:, self.feature_indexes[feature]] = x[:, self.feature_indexes[feature]]
+                graph[:, self.feature_indexes[feature]] = x[
+                    :, self.feature_indexes[feature]
+                ]
 
         return graph

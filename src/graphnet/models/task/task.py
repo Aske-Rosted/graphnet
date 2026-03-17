@@ -130,7 +130,7 @@ class Task(Model):
     def _transform_prediction(
         self, prediction: Union[Tensor, Data]
     ) -> Union[Tensor, Data]:
-        
+
         if self._inference:
             return self._transform_prediction_inference(prediction)
         else:
