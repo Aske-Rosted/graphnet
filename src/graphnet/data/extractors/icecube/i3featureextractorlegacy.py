@@ -1,4 +1,6 @@
+#!/usr/bin/env python
 """I3Extractor class(es) for extracting specific, reconstructed features."""
+
 
 from typing import TYPE_CHECKING, Any, Dict, List
 from .i3extractor import I3Extractor
@@ -9,27 +11,50 @@ from graphnet.utilities.imports import has_icecube_package
 
 if has_icecube_package() or TYPE_CHECKING:
     from icecube import icetray  # pyright: reportMissingImports=false
+    from icecube import phys_services
+    from icecube import dataclasses
 
+import pandas as pd
+from collections import defaultdict 
 
-class I3FeatureExtractor(I3Extractor):
+class I3FeatureExtractorLegacy(I3Extractor):
     """Base class for extracting specific, reconstructed features."""
 
-    def __init__(self, pulsemap: str, exclude: list = [None]):
-        """Construct I3FeatureExtractor.
+    def __init__(self, pulsemap: str, quantiles_time: List[Any], quantiles_charge: List[Any], 
+                 is_data: bool = False):
+        """Construct I3FeatureExtractorLegacy.
 
         Args:
             pulsemap: Name of the pulse (series) map for which to extract
                 reconstructed features.
-            exclude: List of keys to exclude from the extracted data.
+            quantiles_time: 
+            quantiles_charge
         """
         # Member variable(s)
         self._pulsemap = pulsemap
+        self._quantiles_time = quantiles_time
+        self._quantiles_charge = quantiles_charge
+        self._is_data = is_data
 
         # Base class constructor
-        super().__init__(pulsemap, exclude=exclude)
+        super().__init__(pulsemap)
 
+class I3FeatureExtractorLegacyIceCube(I3FeatureExtractorLegacy):
+    """Class for extracting reconstructed features for IceCube-86."""
 
-class I3FeatureExtractorIceCube86(I3FeatureExtractor):
+    def __call__(self, frame: "icetray.I3Frame") -> Dict[str, List[Any]]:
+        """Extract reconstructed features from `frame`.
+
+        Args:
+            frame: Physics (P) I3-frame from which to extract reconstructed
+                features.
+
+        Returns:
+            Dictionary of reconstructed features for all pulses in `pulsemap`,
+                in pure-python format.
+        """
+
+class I3FeatureExtractorLegacyIceCube86(I3FeatureExtractorLegacy):
     """Class for extracting reconstructed features for IceCube-86."""
 
     def __call__(self, frame: "icetray.I3Frame") -> Dict[str, List[Any]]:
@@ -47,7 +72,9 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
         output: Dict[str, List[Any]] = {
             "charge": [],
             "dom_time": [],
+            "adjusted_time": [],
             "width": [],
+            "dom_qtot": [],
             "dom_x": [],
             "dom_y": [],
             "dom_z": [],
@@ -64,6 +91,8 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
             "pmt_number": [],
             "dom_number": [],
             "dom_type": [],
+            "r": [],
+            "residual": [],
         }
         # Get OM data
         if self._pulsemap in frame:
@@ -95,6 +124,11 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
 
         event_time = frame["I3EventHeader"].start_time.mod_julian_day_double
 
+        #print(frame["I3EventHeader"].event_id, frame["I3EventHeader"].sub_event_id, "graphnet run")
+        #print(len(om_keys), 'graphnet')
+
+        if self._is_data == False:
+            leading = self._get_leading_particle(frame=frame)
         for om_key in om_keys:
             # Common values for each OM
             x = self._gcd_dict[om_key].position.x
@@ -133,7 +167,10 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
 
             # Loop over pulses for each OM
             pulses = data[om_key]
-            for pulse in pulses:
+                #print(pulses)
+
+            for _,pulse in enumerate(pulses):
+
                 output["charge"].append(
                     getattr(pulse, "charge", padding_value)
                 )
@@ -158,6 +195,17 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
                 output["is_errata_dom"].append(is_errata_dom)
                 output["event_time"].append(event_time)
 
+                if self._is_data == False:
+                    output['r'].append(
+                        phys_services.I3Calculator.closest_approach_distance(leading, self._gcd_dict[om_key].position)
+                        )
+                    output['residual'].append(
+                        phys_services.I3Calculator.time_residual(leading, self._gcd_dict[om_key].position, getattr(pulse, "time", padding_value)) 
+                    )
+                else:
+                    output['r'].append(padding_value)
+                    output['residual'].append(padding_value)
+
                 # Pulse flags
                 flags = getattr(pulse, "flags", padding_value)
                 if flags == padding_value:
@@ -167,6 +215,74 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
                     output["hlc"].append((pulse.flags >> 0) & 0x1)  # bit 0
                     output["awtd"].append(self._parse_awtd_flag(pulse))
 
+        # Convert Event Info Into Dataframe
+        evt_pulses = pd.DataFrame({"charge": output['charge'],
+                                    "dom_time": output['dom_time'],
+                                    "width": output['width'],
+                                    "dom_x": output['dom_x'],
+                                    "dom_y": output['dom_y'],
+                                    "dom_z": output['dom_z'],
+                                    "pmt_area": output['pmt_area'],
+                                    "rde": output['rde'],
+                                    "is_bright_dom": output['is_bright_dom'],
+                                    "is_bad_dom": output['is_bad_dom'],
+                                    "is_saturated_dom": output['is_saturated_dom'],
+                                    "is_errata_dom": output['is_errata_dom'],
+                                    "event_time": output['event_time'],
+                                    "hlc": output['hlc'],
+                                    "awtd": output['awtd'],
+                                    "string": output['string'],
+                                    "pmt_number": output['pmt_number'],
+                                    "dom_number": output['dom_number'],
+                                    "dom_type": output['dom_type'],
+                                    "r": output['r'],
+                                    "residual": output['residual'],},)
+        
+        # Produce Quantile Information of Each DOM
+        t_quantiles = evt_pulses.groupby(["string", "dom_number"])['dom_time'].quantile(self._quantiles_time).unstack().reset_index()
+        for quant in self._quantiles_time:
+            t_quantiles = t_quantiles.rename(columns={quant: f't{int(1000*quant)}'})
+
+        evt_pulses['qcumsum'] = evt_pulses.groupby(["string", "dom_number"])['charge'].cumsum()	
+        q_quantiles = evt_pulses.groupby(["string", "dom_number"])['qcumsum'].quantile(self._quantiles_charge).unstack().reset_index()
+        evt_pulses.drop(columns=['qcumsum'], inplace=True)
+        for quant in self._quantiles_charge:
+            q_quantiles = q_quantiles.rename(columns={quant: f'q{int(1000*quant)}'})	
+        q_total = evt_pulses.groupby(["string", "dom_number"], as_index=False)['charge'].sum()
+        # Extrac the Minimum Pulse Time of Each Dom
+        min_times = evt_pulses.loc[evt_pulses.groupby(["string", "dom_number"], as_index=True)['dom_time'].idxmin()]
+
+        min_times = min_times.merge(t_quantiles, on = ["string", "dom_number"])
+        min_times = min_times.merge(q_quantiles, on = ["string", "dom_number"])
+
+        min_times['adjusted_time'] = min_times["dom_time"] - min_times["dom_time"].min()
+ 
+        total_pulses = evt_pulses.groupby(["string", "dom_number"], as_index=False)['charge'].size()
+
+        min_times['dom_qtot'] = q_total['charge']
+        min_times['dom_qtot_exc'] = q_total['charge']
+        min_times['total_pulses'] = total_pulses['size']
+
+        bright_doms = min_times['dom_qtot']/frame['Homogenized_QTot_New'].value >= .4
+
+        min_times['bright_dom'] = bright_doms.to_numpy(dtype=float)
+
+        bad_doms = (min_times['is_errata_dom'] == 1) | (min_times['is_saturated_dom'] == 1)
+        t_name_keys = [f't{int(1000*quant)}' for quant in self._quantiles_time]
+        q_name_keys = [f'q{int(1000*quant)}' for quant in self._quantiles_charge]
+
+        for t_name in t_name_keys:
+            min_times[t_name] = min_times[t_name] - min_times["dom_time"].min()
+
+        # Remove This
+        #min_times.loc[bad_doms, t_name_keys] = -100
+        #min_times.loc[bad_doms, q_name_keys] = -100
+        min_times.loc[bad_doms, 'dom_qtot_exc'] = -100
+
+
+        #print(min_times)
+        output = min_times.to_dict(orient='list')
+        #print(min_times)
         return output
 
     def _get_relative_dom_efficiency(
@@ -205,99 +321,23 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
         # includes ATWD (and probably also FADC)
         return pulse.width < (fadc_min_width_ns * icetray.I3Units.ns)
 
+    # Error Getting this for a certain set
+    def _get_leading_particle(
+            self, frame: "icetray.I3Frame",
+        ):
 
-class I3FeatureExtractorIceCubeDeepCore(I3FeatureExtractorIceCube86):
-    """Class for extracting reconstructed features for IceCube-DeepCore."""
+        try:
+            tracklist = frame['MMCTrackList']
 
+            max_energy = -1
+            max_particle = tracklist[0]
+            for particle in tracklist:
+                if particle.Ei > max_energy:
+                    max_energy = particle.Ei
+                    max_particle = particle
 
-class I3FeatureExtractorIceCubeUpgrade(I3FeatureExtractorIceCube86):
-    """Class for extracting reconstructed features for IceCube-Upgrade."""
-
-    def __call__(self, frame: "icetray.I3Frame") -> Dict[str, List[Any]]:
-        """Extract reconstructed features from `frame`.
-
-        Args:
-            frame: Physics (P) I3-frame from which to extract reconstructed
-                features.
-
-        Returns:
-            Dictionary of reconstructed features for all pulses in `pulsemap`,
-                in pure-python format.
-        """
-        output: Dict[str, List[Any]] = {
-            "pmt_dir_x": [],
-            "pmt_dir_y": [],
-            "pmt_dir_z": [],
-        }
-
-        # Add features from IceCube86
-        output_icecube86 = super().__call__(frame)
-        output.update(output_icecube86)
-
-        # Get OM data
-        if self._pulsemap in frame:
-            om_keys, data = get_om_keys_and_pulseseries(
-                frame,
-                self._pulsemap,
-                self._calibration,
-            )
-        else:
-            self.warning_once(f"Pulsemap {self._pulsemap} not found in frame.")
-            return output
-
-        for om_key in om_keys:
-            # Common values for each OM
-            pmt_dir_x = self._gcd_dict[om_key].orientation.x
-            pmt_dir_y = self._gcd_dict[om_key].orientation.y
-            pmt_dir_z = self._gcd_dict[om_key].orientation.z
-
-            # Loop over pulses for each OM
-            pulses = data[om_key]
-            for _ in pulses:
-                output["pmt_dir_x"].append(pmt_dir_x)
-                output["pmt_dir_y"].append(pmt_dir_y)
-                output["pmt_dir_z"].append(pmt_dir_z)
-
-        return output
-
-
-class I3PulseNoiseTruthFlagIceCubeUpgrade(I3FeatureExtractorIceCube86):
-    """Feature extractor class with pulse noise truth flag added."""
-
-    def __call__(self, frame: "icetray.I3Frame") -> Dict[str, List[Any]]:
-        """Extract reconstructed features from `frame`.
-
-        Args:
-            frame: Physics (P) I3-frame from which to extract reconstructed
-                features.
-
-        Returns:
-            Dictionary of reconstructed features for all pulses in `pulsemap`,
-                in pure-python format.
-        """
-        output: Dict[str, List[Any]] = {
-            "truth_flag": [],
-        }
-
-        # Add features from IceCubeUpgrade
-        output_icecube_upgrade = super().__call__(frame)
-        output.update(output_icecube_upgrade)
-
-        # Get OM data
-        if self._pulsemap in frame:
-            om_keys, data = get_om_keys_and_pulseseries(
-                frame,
-                self._pulsemap,
-                self._calibration,
-            )
-        else:
-            self.warning_once(f"Pulsemap {self._pulsemap} not found in frame.")
-            return output
-
-        for om_key in om_keys:
-            # Loop over pulses for each OM
-            pulses = data[om_key]
-            for truth_flag in pulses:
-                output["truth_flag"].append(truth_flag)
-
-        return output
+            return max_particle.particle
+        except:
+            print('no mmctracklist')
+            mctree = frame['I3MCTree_preMuonProp']
+            return mctree[1]

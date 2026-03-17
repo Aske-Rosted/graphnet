@@ -58,7 +58,9 @@ def apply_to_files(
             FilenameList=[gcd_file, i3_file],
         )
         for i3_module in modules:
+            print(i3_module)
             tray.AddModule(i3_module)
+
         tray.Add(
             "I3Writer",
             Streams=[
@@ -69,6 +71,8 @@ def apply_to_files(
             ],
             filename=output_folder + "/" + i3_file.split("/")[-1],
         )
+        
+        # Called in Tray.Execute (Running the Model)
         tray.Execute()
         tray.Finish()
     return
@@ -80,6 +84,7 @@ def main() -> None:
     pulsemap = "SplitInIcePulses"
     # Constants
     features = FEATURES.UPGRADE
+    print(features)
     input_folders = [f"{TEST_DATA_DIR}/i3/upgrade_genie_step4_140028_000998"]
     base_path = f"{PRETRAINED_MODEL_DIR}/icecube/upgrade/QUESO"
     model_name = "total_neutrino_energy"
@@ -103,6 +108,7 @@ def main() -> None:
         prediction_columns=["energy"],
         model_name="graphnet_deployment_example",
     )
+
 
     # Apply module to files in IceTray
     apply_to_files(

@@ -18,13 +18,16 @@ from time import time
 
 from graphnet.utilities.config import ModelConfig
 from graphnet.deployment import DeploymentModule
-from graphnet.data.extractors.icecube import I3FeatureExtractor
+from graphnet.data.extractors.icecube import I3PulseExtractor
 from graphnet.utilities.imports import has_icecube_package
 
 if has_icecube_package() or TYPE_CHECKING:
     from icecube.icetray import (
         I3Frame,
     )  # pyright: reportMissingImports=false
+    from icecube import (
+        dataclasses,
+    )
     from icecube.dataclasses import (
         I3Double,
         I3Particle,
@@ -39,16 +42,18 @@ class I3InferenceModule(DeploymentModule):
     def __init__(
         self,
         pulsemap_extractor: Union[
-            List[I3FeatureExtractor], I3FeatureExtractor
+            List[I3PulseExtractor], I3PulseExtractor
         ],
-        model_config: Union[ModelConfig, str],
-        state_dict: str,
-        model_name: str,
+        model_config: Union[List[ModelConfig], List[str], ModelConfig, str],
+        state_dict: Union[List[str], str],
+        model_name: Union[List[str], str],
         num_threads: int = 1,
         gcd_file: Optional[str] = None,
         features: Optional[List[str]] = None,
         prediction_columns: Optional[Union[List[str], None]] = None,
         pulsemap: Optional[str] = None,
+        multiple_models: bool = False,
+        key_name: Optional[str] = None,
         requirements: Optional[callable] = None,
         device: Optional[str] = "cpu",
         batch_size: Optional[int] = 1,
@@ -61,6 +66,7 @@ class I3InferenceModule(DeploymentModule):
             pulsemap_extractor: The extractor used to extract the pulsemap.
             model_config: The ModelConfig (or path to it) that summarizes the
                             model used for inference.
+                          
             state_dict: Path to state_dict containing the learned weights.
             model_name: The name used for the model. Will help define the
                         named entry in the I3Frame. E.g. "dynedge".
@@ -70,12 +76,16 @@ class I3InferenceModule(DeploymentModule):
                                Will help define the named entry in the I3Frame.
                                 E.g. ['energy_reco']. Optional.
             pulsemap: the pulsmap that the model is expecting as input.
+            multiple_models: process multiple models with the same feature set at once.
+            key_name: The name used for the key in the I3Frame. Will help define the
+                     named entry in the I3Frame. E.g. "dynedge_predictions".
         """
         super().__init__(
             model_config=model_config,
             state_dict=state_dict,
             prediction_columns=prediction_columns,
             device=device,
+            multiple_models=multiple_models,
         )
         # Checks
         if gcd_file is not None:
@@ -88,10 +98,23 @@ class I3InferenceModule(DeploymentModule):
             self._i3_extractors = pulsemap_extractor
         else:
             self._i3_extractors = [pulsemap_extractor]
-        if features is None:
+        
+        # All
+        if self.multiple_models == True:
+            self.features_list = []
+            for model in self.models:
+                self.features_list.append(model._graph_definition._input_feature_names)
+        elif features is None:
             features = self.model._graph_definition._input_feature_names
-        self._graph_definition = self.model._graph_definition
-        self._graph_definition.to(device)
+
+        if self.multiple_models == True:
+            self._graph_definitions = [model._graph_definition for model in self.models]
+            self._graph_definitions = [graph_definition.to(device) for graph_definition in self._graph_definitions]
+        else:
+            self._graph_definition = self.model._graph_definition
+            self._graph_definition.to(device)
+        
+        
         self._pulsemap = pulsemap
         self._gcd_file = gcd_file
         self.model_name = model_name
@@ -102,6 +125,8 @@ class I3InferenceModule(DeploymentModule):
         self._skip = skip
         self._num_threads = num_threads
         self._inference_speed_check = inference_speed_check
+        self._multiple_models = multiple_models
+        self._key_name = key_name
         # Set GCD file for pulsemap extractor
         if gcd_file is not None:
             for i3_extractor in self._i3_extractors:
@@ -111,7 +136,6 @@ class I3InferenceModule(DeploymentModule):
         """Write predictions from model to frame."""
         # Check requirements
         torch.set_num_threads(self._num_threads)
-
         if not self._requirements is None:
             if not self._check_requirements(frame=frame):
                 if self._skip:
@@ -126,20 +150,36 @@ class I3InferenceModule(DeploymentModule):
                 self._add_to_frame(frame=frame, data=data)
                 return True
         # inference
-
         memory_watch = False
         if self._inference_speed_check is True:
             # create log file if it does not exist
             data_repr_start = time()
         try:
-            data = self._create_data_representation(frame=frame).to(
-                self._device
-            )
-            if self._inference_speed_check is True:
-                data_repr_end = time()
-                data_repr_time = data_repr_end - data_repr_start
-                inference_start = time()
-            predictions = self._apply_model(data=data)
+            if not self.multiple_models:
+                data = self._create_data_representation(frame=frame).to(
+                    self._device
+                )
+                if self._inference_speed_check is True:
+                    data_repr_end = time()
+                    data_repr_time = data_repr_end - data_repr_start
+                    inference_start = time()
+                predictions = self._apply_model(data=data)
+            else:
+                features = self._extract_feature_array_from_frame(frame=frame)
+                if self._inference_speed_check is True:
+                    data_repr_end = time()
+                    data_repr_time = data_repr_end - data_repr_start
+                    inference_start = time()
+                model_input_data = []
+                for _,graph_definition in enumerate(self._graph_definitions):
+                    data = graph_definition(
+                        input_features=features[_],
+                        input_feature_names=self.features_list[_],
+                    )
+                    model_input_data.append(Batch.from_data_list([data]))
+
+                predictions = self._apply_model(data=model_input_data)
+
             if self._inference_speed_check is True:
                 inference_end = time()
                 inference_time = inference_end - inference_start
@@ -187,7 +227,6 @@ class I3InferenceModule(DeploymentModule):
         # Submit Dictionary to frame
         self._add_to_frame(frame=frame, data=data)
         del data
-        del frame
         if self._inference_speed_check is True:
             write_end = time()
             write_time = write_end - write_start
@@ -200,6 +239,7 @@ class I3InferenceModule(DeploymentModule):
             self.warning("Memory watch triggered. Trying to return to device.")
             self.model.to(self._device)
         return True
+    
 
     def _check_dimensions(self, predictions: np.ndarray) -> int:
         if len(predictions.shape) > 1:
@@ -291,16 +331,33 @@ class I3InferenceModule(DeploymentModule):
         features = None
         for i3extractor in self._i3_extractors:
             feature_dict = i3extractor(frame)
-            features_pulsemap = np.array(
-                [feature_dict[key] for key in self._features]
-            ).T
-            if features is None:
-                features = features_pulsemap
-            else:
-                features = np.concatenate(
-                    (features, features_pulsemap), axis=0
-                )
-        return features
+            if self.multiple_models == False:
+                features_pulsemap = np.array(
+                    [feature_dict[key] for key in self._features]
+                ).T
+                if features is None:
+                    features = features_pulsemap
+                else:
+                    features = np.concatenate(
+                        (features, features_pulsemap), axis=0
+                    )
+                return features
+            if self.multiple_models == True:
+                features_array = []
+                for feature_list in self.features_list:
+                    features = None
+                    features_pulsemap = np.array(
+                        [feature_dict[key] for key in feature_list]
+                    ).T
+                    if features is None:
+                        features = features_pulsemap
+                    else:
+                        features = np.concatenate(
+                            (features, features_pulsemap), axis=0
+                        )
+                    features_array.append(features)
+            return features_array
+
 
     def _add_to_frame(self, frame: I3Frame, data: Dict[str, Any]) -> None:
         """Add every field in data to I3Frame.

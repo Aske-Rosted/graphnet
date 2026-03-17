@@ -85,6 +85,16 @@ class MSELoss(LossFunction):
         elements = torch.mean((prediction - target) ** 2, dim=-1)
         return elements
 
+class RMSEAdjustedLoss(LossFunction):
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+
+        assert prediction.dim() == 2
+        assert prediction.size() == target.size()
+
+        elements = torch.mean((prediction - target) ** 2/((1+target) ** (.5)), dim=-1)
+        return elements
+
 
 class RMSELoss(MSELoss):
     """Root mean squared error loss."""
@@ -96,6 +106,13 @@ class RMSELoss(MSELoss):
         elements = torch.sqrt(elements)
         return elements
 
+class PoissonLoss(LossFunction):
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        
+        loss_func = nn.PoissonNLLLoss(log_input=False, reduction='none')
+        test = loss_func(prediction.float(), target.float())
+        return test
 
 class LogCoshLoss(LossFunction):
     """Log-cosh loss function.
@@ -130,6 +147,7 @@ class CrossEntropyLoss(LossFunction):
     def __init__(
         self,
         options: Union[int, List[Any], Dict[Any, int]],
+        ratio: float = 1,
         *args: Any,
         **kwargs: Any,
     ):
@@ -157,7 +175,7 @@ class CrossEntropyLoss(LossFunction):
                 f"Class options of type {type(self._options)} not supported"
             )
 
-        self._loss = nn.CrossEntropyLoss(reduction="none")
+        self._loss = nn.CrossEntropyLoss(weight=torch.Tensor([ratio, 1]), reduction="none")
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Transform outputs to angle and prepare prediction."""
@@ -200,6 +218,98 @@ class CrossEntropyLoss(LossFunction):
         )
 
         return self._loss(prediction.float(), target_one_hot.float())
+    
+class FocalCrossEntropyLoss(LossFunction):
+    """Compute cross-entropy loss for classification tasks.
+
+    Predictions are an [N, num_class]-matrix of logits (i.e., non-softmax'ed
+    probabilities), and targets are an [N,1]-matrix with integer values in
+    (0, num_classes - 1).
+    """
+
+    def __init__(
+        self,
+        options: Union[int, List[Any], Dict[Any, int]],
+        ratio: float = 1,
+        gamma: float = 2,
+        alpha: float = 1,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        """Construct CrossEntropyLoss."""
+        # Base class constructor
+        super().__init__(*args, **kwargs)
+
+        # Member variables
+        self._gamma = gamma
+        self._alpha = alpha
+        self._options = options
+        self._nb_classes: int
+        if isinstance(self._options, int):
+            assert self._options in [torch.int32, torch.int64]
+            assert (
+                self._options >= 2
+            ), f"Minimum of two classes required. Got {self._options}."
+            self._nb_classes = options  # type: ignore
+        elif isinstance(self._options, list):
+            self._nb_classes = len(self._options)  # type: ignore
+        elif isinstance(self._options, dict):
+            self._nb_classes = len(
+                np.unique(list(self._options.values()))
+            )  # type: ignore
+        else:
+            raise ValueError(
+                f"Class options of type {type(self._options)} not supported"
+            )
+
+        self._loss = nn.CrossEntropyLoss(weight=torch.Tensor([ratio, 1]), reduction="none")
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        """Transform outputs to angle and prepare prediction."""
+        if isinstance(self._options, int):
+            # Integer number of classes: Targets are expected to be in
+            # (0, nb_classes - 1).
+
+            # Target integers are positive
+            assert torch.all(target >= 0)
+
+            # Target integers are consistent with the expected number of class.
+            assert torch.all(target < self._options)
+
+            assert target.dtype in [torch.int32, torch.int64]
+            target_integer = target
+
+        elif isinstance(self._options, list):
+            # List of classes: Mapping target classes in list onto
+            # (0, nb_classes - 1). Example:
+            #    Given options: [1, 12, 13, ...]
+            #    Yields: [1, 13, 12] -> [0, 2, 1, ...]
+            target_integer = torch.tensor(
+                [self._options.index(value) for value in target]
+            )
+
+        elif isinstance(self._options, dict):
+            # Dictionary of classes: Mapping target classes in dict onto
+            # (0, nb_classes - 1). Example:
+            #     Given options: {1: 0, -1: 0, 12: 1, -12: 1, ...}
+            #     Yields: [1, -1, -12, ...] -> [0, 0, 1, ...]
+            target_integer = torch.tensor(
+                [self._options[int(value)] for value in target]
+            )
+
+        else:
+            assert False, "Shouldn't reach here."
+
+        target_one_hot: Tensor = one_hot(target_integer, self._nb_classes).to(
+            prediction.device
+        )
+
+        cross_loss = self._loss(prediction.float(), target_one_hot.float())
+
+        a_t = self._alpha*target_one_hot.float() + (1-self._alpha)*(1-target_one_hot.float())
+        #p_t = prediction.float()*target + (1-prediction.float())*(1-target_one_hot.float())
+        p_t = torch.exp(-cross_loss)
+        return (1-p_t)**self._gamma*cross_loss
 
 
 class BinaryCrossEntropyLoss(LossFunction):
@@ -213,6 +323,37 @@ class BinaryCrossEntropyLoss(LossFunction):
         return binary_cross_entropy(
             prediction.float(), target.float(), reduction="none"
         )
+    
+class FocalBinaryCrossEntropyLoss(LossFunction):
+    """Compute binary cross entropy loss.
+
+    Predictions are vector probabilities (i.e., values between 0 and 1), and
+    targets should be 0 and 1.
+    """
+
+    def __init__(
+        self,
+        options: Union[int, List[Any], Dict[Any, int]],
+        ratio: float = 1,
+        gamma: float = 2,
+        alpha: float = 1,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        """Construct CrossEntropyLoss."""
+        # Base class constructor
+        super().__init__(*args, **kwargs)
+
+        self._gamma = gamma
+        self._alpha = alpha
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        binary_loss = binary_cross_entropy(
+            prediction.float(), target.float(), reduction="none", 
+        )
+        a_t = self._alpha*target + (1-self._alpha)*(1-target)
+        p_t = prediction*target + (1-prediction)*(1-target)
+        return a_t*(1-p_t)**self._gamma*binary_loss
 
 
 class LogCMK(torch.autograd.Function):
