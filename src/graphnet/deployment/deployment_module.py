@@ -4,11 +4,7 @@ from abc import abstractmethod
 from typing import Any, List, Union, Dict
 
 import numpy as np
-<<<<<<< HEAD
 from torch import Tensor, load
-=======
-from torch import Tensor, load, device
->>>>>>> bundle_reco
 from torch_geometric.data import Data, Batch
 
 from graphnet.models import Model
