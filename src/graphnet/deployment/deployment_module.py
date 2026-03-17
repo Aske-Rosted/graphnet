@@ -111,7 +111,8 @@ class DeploymentModule(Logger):
                             prediction_columns[i]
                         )
                 else:
-                    resolved_prediction_columns.append(model.prediction_labels)
+                    # Only Take First Label
+                    resolved_prediction_columns.append(model.prediction_labels[0])
             return resolved_prediction_columns
 
     def _inference(self, data: Union[Data, Batch]) -> List[np.ndarray]:
@@ -139,5 +140,9 @@ class DeploymentModule(Logger):
                 output = model(data=data[_])
                 for k in range(len(output)):
                     output[k] = output[k].detach().cpu().numpy()
+                if output[0].shape[1] > 1:
+                    output = np.delete(output[0], 1, axis=1)
+                else:
+                    output = output[0]
                 outputs.append(output)
             return outputs

@@ -94,18 +94,20 @@ class StandardModel(EasySyntax):
         self._data_representation = data_representation
         self.backbone = backbone
         self._split = split
-        assert (
-            sum(self._split[0]) == self.backbone.nb_outputs
-        ), "Split dimensions do not match backbone output dimension check your configuration"
 
-        if learned_multitask_weights != -1:
-            assert isinstance(tasks, list)
-            # init the module for learned task weights
-            self.loss_weight_balancing = LossWeightBalancing(
-                tasks, late_activation=learned_multitask_weights
-            )
-        else:
-            self.loss_weight_balancing = None
+        if self._split is not None:
+            assert (
+                sum(self._split[0]) == self.backbone.nb_outputs
+            ), "Split dimensions do not match backbone output dimension check your configuration"
+
+            if learned_multitask_weights != -1:
+                assert isinstance(tasks, list)
+                # init the module for learned task weights
+                self.loss_weight_balancing = LossWeightBalancing(
+                    tasks, late_activation=learned_multitask_weights
+                )
+            else:
+                self.loss_weight_balancing = None
 
     def compute_loss(
         self, preds: Tensor, data: List[Data], verbose: bool = False
