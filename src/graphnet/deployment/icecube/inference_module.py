@@ -4,10 +4,8 @@ Contains functionality for writing model predictions to i3 files.
 """
 
 from typing import List, Union, Optional, TYPE_CHECKING, Dict, Any
-
 import numpy as np
 from torch_geometric.data import Data, Batch
-
 from torch.cuda import OutOfMemoryError
 from time import sleep
 import torch
@@ -51,7 +49,6 @@ class I3InferenceModule(DeploymentModule):
         prediction_columns: Optional[Union[List[str], None]] = None,
         pulsemap: Optional[str] = None,
         multiple_models: bool = False,
-        key_name: Optional[str] = None,
         requirements: Optional[callable] = None,
         device: Optional[str] = "cpu",
         batch_size: Optional[int] = 1,
@@ -75,8 +72,6 @@ class I3InferenceModule(DeploymentModule):
                                 E.g. ['energy_reco']. Optional.
             pulsemap: the pulsmap that the model is expecting as input.
             multiple_models: process multiple models with the same feature set at once.
-            key_name: The name used for the key in the I3Frame. Will help define the
-                     named entry in the I3Frame. E.g. "dynedge_predictions".
         """
         super().__init__(
             model_config=model_config,
@@ -130,7 +125,6 @@ class I3InferenceModule(DeploymentModule):
         self._num_threads = num_threads
         self._inference_speed_check = inference_speed_check
         self._multiple_models = multiple_models
-        self._key_name = key_name
         # Set GCD file for pulsemap extractor
         if gcd_file is not None:
             for i3_extractor in self._i3_extractors:
@@ -266,26 +260,31 @@ class I3InferenceModule(DeploymentModule):
     ) -> Dict[str, Any]:
         """Transform predictions into a dictionary."""
         data = {}
-        for i in range(dim):
-            data[self.model_name + "_" + self.prediction_columns[i]] = (
-                I3Double(float(predictions[i]))
-            )
+        if self._multiple_models == True:
+            for i, key in enumerate(self.model_name):
+                data[key] = float(predictions[i])
+        else:
+            for i in range(dim):
+                data[self.model_name + "_" + self.prediction_columns[i]] = (
+                    I3Double(float(predictions[i]))
+                )
 
-            # try:
-            #     assert len(predictions[:, i]) == 1
-            #     data[
-            #         self.model_name + "_" + self.prediction_columns[i]
-            #     ] = I3Double(float(predictions[:, i][0]))
-            # except IndexError:
-            #     data[
-            #         self.model_name + "_" + self.prediction_columns[i]
-            #     ] = I3Double(predictions[0])
+                # try:
+                #     assert len(predictions[:, i]) == 1
+                #     data[
+                #         self.model_name + "_" + self.prediction_columns[i]
+                #     ] = I3Double(float(predictions[:, i][0]))
+                # except IndexError:
+                #     data[
+                #         self.model_name + "_" + self.prediction_columns[i]
+                #     ] = I3Double(predictions[0])
         return data
 
     def _apply_model(self, data: Data) -> np.ndarray:
         """Apply model to `Data` and case-handling."""
         if data is not None:
             predictions = self._inference(data)
+            #print(predictions, type(predictions), type(predictions[0]))
             if isinstance(predictions, list):
                 predictions = np.concatenate(
                     [pred.flatten() for pred in predictions]
@@ -479,3 +478,25 @@ class I3ParticleInferenceModule(I3InferenceModule):
         # for all the other values in data, add them to an I3Dictionary
         super()._add_to_frame(frame=frame, data=data)
         return
+
+class I3MultipleModelInferenceModule(I3InferenceModule):
+    """I3InferenceModule for I3Particle data."""
+
+    def __init__(
+        self,
+        key_name: List[str],
+        **kwargs,
+    ):
+        """
+        key_name: The name used for the key in the I3Frame. Will help define the
+                     named entry in the I3Frame.
+        """
+        super().__init__(**kwargs)
+
+        self._key_name = key_name
+
+    def _add_to_frame(self, frame, data):
+
+        i3_score_container = dataclasses.I3MapStringDouble(data)
+        frame.Put(self._key_name, i3_score_container)
+
