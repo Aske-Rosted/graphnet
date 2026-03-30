@@ -254,8 +254,11 @@ class DynEdge(GNN):
         assert self._global_pooling_schemes
         pooled = []
         for pooling_scheme in self._global_pooling_schemes:
-            pooling_fn = GLOBAL_POOLINGS[pooling_scheme]
-            pooled_x = pooling_fn(x, index=batch, dim=0)
+            with torch.cuda.device(
+                x.device
+            ):  # Ensure pooling is performed on the same device as x
+                pooling_fn = GLOBAL_POOLINGS[pooling_scheme]
+                pooled_x = pooling_fn(x, index=batch, dim=0)
             if isinstance(pooled_x, tuple) and len(pooled_x) == 2:
                 # `scatter_{min,max}`, which return also an argument, vs.
                 # `scatter_{mean,sum}`

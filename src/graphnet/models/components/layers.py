@@ -67,11 +67,12 @@ class DynEdgeConv(EdgeConv, LightningModule):
         x = super().forward(x, edge_index)
 
         # Recompute adjacency
-        edge_index = knn_graph(
-            x=x[:, self.features_subset],
-            k=self.nb_neighbors,
-            batch=batch,
-        ).to(self.device)
+        with torch.cuda.device(x.device):
+            edge_index = knn_graph(
+                x=x[:, self.features_subset],
+                k=self.nb_neighbors,
+                batch=batch,
+            ).to(x.device)
 
         return x, edge_index
 

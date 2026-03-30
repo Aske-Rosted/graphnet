@@ -149,42 +149,10 @@ class I3InferenceModule(DeploymentModule):
                 return True
         # inference
         memory_watch = False
-        if self._inference_speed_check is True:
-            # create log file if it does not exist
-            data_repr_start = time()
         try:
-            if not self.multiple_models:
-                data = self._create_data_representation(frame=frame).to(
-                    self._device
-                )
-                if self._inference_speed_check is True:
-                    data_repr_end = time()
-                    data_repr_time = data_repr_end - data_repr_start
-                    inference_start = time()
-                predictions = self._apply_model(data=data)
-            else:
-                features = self._extract_feature_array_from_frame(frame=frame)
-                if self._inference_speed_check is True:
-                    data_repr_end = time()
-                    data_repr_time = data_repr_end - data_repr_start
-                    inference_start = time()
-                model_input_data = []
-                for _, graph_definition in enumerate(self._graph_definitions):
-                    data = graph_definition(
-                        input_features=features[_],
-                        input_feature_names=self.features_list[_],
-                    )
-                    model_input_data.append(Batch.from_data_list([data]))
-
-                predictions = self._apply_model(data=model_input_data)
-
-            if self._inference_speed_check is True:
-                inference_end = time()
-                inference_time = inference_end - inference_start
-                self._logger.info(
-                    f"Data representation time: {data_repr_time:.4f} s\n"
-                    f"Inference time: {inference_time:.4f} s\n"
-                )
+            predictions, data_repr_time, inference_time = (
+                self._create_data_and_apply(frame=frame)
+            )
 
         except OutOfMemoryError:
             self.error(
@@ -195,22 +163,12 @@ class I3InferenceModule(DeploymentModule):
             save_device = self._device
             self._device = "cpu"
             self.model.to(self._device)
-            data = self._create_data_representation(frame=frame)
-            if self._inference_speed_check is True:
-                data_repr_end = time()
-                data_repr_time = data_repr_end - data_repr_start
-                inference_start = time()
-            predictions = self._apply_model(data=data)
-            if self._inference_speed_check is True:
-                inference_end = time()
-                inference_time = inference_end - inference_start
-                self._logger.info(
-                    f"Data representation time: {data_repr_time:.4f} s\n"
-                    f"Inference time: {inference_time:.4f} s\n"
-                )
-            self._device = save_device
+
+            predictions, data_repr_time, inference_time = (
+                self._create_data_and_apply(frame=frame)
+            )
             memory_watch = True
-        del data
+            self._device = save_device
 
         if self._inference_speed_check is True:
             write_start = time()
@@ -237,6 +195,49 @@ class I3InferenceModule(DeploymentModule):
             self.warning("Memory watch triggered. Trying to return to device.")
             self.model.to(self._device)
         return True
+
+    def _create_data_and_apply(self, frame: I3Frame) -> tuple:
+        data_repr_time = -1
+        inference_time = -1
+        if self._inference_speed_check is True:
+            # create log file if it does not exist
+            data_repr_start = time()
+        if not self.multiple_models:
+            data = self._create_data_representation(frame=frame).to(
+                self._device
+            )
+            if self._inference_speed_check is True:
+                data_repr_end = time()
+                data_repr_time = data_repr_end - data_repr_start
+                inference_start = time()
+            predictions = self._apply_model(data=data)
+        else:
+            features = self._extract_feature_array_from_frame(frame=frame)
+            if self._inference_speed_check is True:
+                data_repr_end = time()
+                data_repr_time = data_repr_end - data_repr_start
+                inference_start = time()
+            model_input_data = []
+            for _, graph_definition in enumerate(self._graph_definitions):
+                data = graph_definition(
+                    input_features=features[_],
+                    input_feature_names=self.features_list[_],
+                )
+                model_input_data.append(
+                    Batch.from_data_list([data.to(self._device)])
+                )
+
+            predictions = self._apply_model(data=model_input_data)
+
+        if self._inference_speed_check is True:
+            inference_end = time()
+            inference_time = inference_end - inference_start
+            self._logger.info(
+                f"Data representation time: {data_repr_time:.4f} s\n"
+                f"Inference time: {inference_time:.4f} s\n"
+            )
+        del data
+        return predictions, data_repr_time, inference_time
 
     def _check_dimensions(self, predictions: np.ndarray) -> int:
         if len(predictions.shape) > 1:
@@ -284,7 +285,7 @@ class I3InferenceModule(DeploymentModule):
         """Apply model to `Data` and case-handling."""
         if data is not None:
             predictions = self._inference(data)
-            #print(predictions, type(predictions), type(predictions[0]))
+            # print(predictions, type(predictions), type(predictions[0]))
             if isinstance(predictions, list):
                 predictions = np.concatenate(
                     [pred.flatten() for pred in predictions]
@@ -316,8 +317,8 @@ class I3InferenceModule(DeploymentModule):
             data = self._graph_definition(
                 input_features=input_features,
                 input_feature_names=self._features,
-            )
-            return Batch.from_data_list([data.to(self._device)])
+            ).to(self._device)
+            return Batch.from_data_list([data])
         else:
             return None
 
@@ -421,10 +422,10 @@ class I3ParticleInferenceModule(I3InferenceModule):
             len(self._positions) == 3
         ), "positions must be a list of 3 elements"
 
-    def _get_min_time(self, frame: I3Frame) -> float:
+    def _get_min_time(self, frame: I3Frame, pulsemap: str) -> float:
         """Get the minimum time of the first pulse in the frame."""
         min_time = np.inf
-        doms = frame[self._pulsemap].apply(frame).values()
+        doms = frame[pulsemap].apply(frame).values()
         # seach for the minimum time
         for dom in doms:
             if dom[0].time < min_time:
@@ -451,10 +452,11 @@ class I3ParticleInferenceModule(I3InferenceModule):
 
         if self._shift_time:
             # Shift time to be relative to the first pulse
-            shift_time = (
-                self._get_min_time(frame)
-                - frame["CVStatistics"].min_pulse_time
-            )
+            shift_time = self._get_min_time(frame, self._pulsemap)
+            if "CVStatistics" in frame:
+                shift_time -= frame["CVStatistics"].min_pulse_time
+            else:
+                shift_time -= self._get_min_time(frame, "InIcePulses")
             particle.time = data[self._time].value + shift_time
         else:
             particle.time = data[self._time].value
@@ -479,6 +481,7 @@ class I3ParticleInferenceModule(I3InferenceModule):
         super()._add_to_frame(frame=frame, data=data)
         return
 
+
 class I3MultipleModelInferenceModule(I3InferenceModule):
     """I3InferenceModule for I3Particle data."""
 
@@ -499,4 +502,3 @@ class I3MultipleModelInferenceModule(I3InferenceModule):
 
         i3_score_container = dataclasses.I3MapStringDouble(data)
         frame.Put(self._key_name, i3_score_container)
-

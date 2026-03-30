@@ -112,7 +112,9 @@ class DeploymentModule(Logger):
                         )
                 else:
                     # Only Take First Label
-                    resolved_prediction_columns.append(model.prediction_labels[0])
+                    resolved_prediction_columns.append(
+                        model.prediction_labels[0]
+                    )
             return resolved_prediction_columns
 
     def _inference(self, data: Union[Data, Batch]) -> List[np.ndarray]:
