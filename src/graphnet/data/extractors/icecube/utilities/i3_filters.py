@@ -208,7 +208,6 @@ class RecomputeChargeFilter(I3Filter):
                 The I3-frame to check.
         """
         oms = defaultdict(list)
-
         try:
             data = frame['SplitInIcePulses'].apply(frame)
         except:

@@ -317,7 +317,8 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
                     output["awtd"].append(self._parse_awtd_flag(pulse))
 
         # Convert Dictionary to Dataframe for Easier Manipulation
-        evt_pulses = pl.DataFrame(output)
+        print(frame['I3EventHeader'].event_id, frame['HQTOT'].value)
+        evt_pulses = pl.DataFrame(output, strict=False)
 
         # Summarized Charge Information
         evt_pulses = evt_pulses.with_columns(
@@ -332,15 +333,19 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
 
         mask = pl.lit(False)
 
-        if self._exclude_saturation:
+        if self._exclude_saturation or self._training_data:
             mask = mask | (pl.col("in_saturation_window").cast(pl.Int32) == 1)
 
-        if self._exclude_errata:
+            evt_pulses = evt_pulses.with_columns(
+                charge_sat=pl.when(mask).then(0).otherwise(pl.col('charge'))
+            )
+
+        if self._exclude_errata or self._training_data:
             mask = mask | (pl.col("in_calibration_errata").cast(pl.Int32) == 1)
 
-        evt_pulses = evt_pulses.with_columns(
-            charge_temp=pl.when(mask).then(0).otherwise(pl.col('charge'))
-        )
+            evt_pulses = evt_pulses.with_columns(
+                charge_temp=pl.when(mask).then(0).otherwise(pl.col('charge'))
+            )
         
         evt_pulses = evt_pulses.with_columns(
             t_from_leading = pl.col("time") - pl.col("time").min().over(["string", "dom_number"]),
@@ -357,36 +362,62 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
         For training data, process all combinations of summarized features:
         -> No Exclusion
         -> Exclude Saturation Windows
-        -> Exclude Calibration Errata Windows
         -> Exclude Both
         """
 
-        # Add Charges After T ns
-        afterpulses_removed = self._charge_after_time(
-            afterpulses_removed,
-            time_cutoffs=self._charges_after_t,
-        ) 
+        if (not self._exclude_saturation and not self._exclude_errata) or self._training_data:
+            """
+            All Pulses, Process Conditionally Unless Processing Training Data.
+            """
+            
+            afterpulses_removed = self._charge_after_time(
+                afterpulses_removed,
+                time_cutoffs=self._charges_after_t,
+            ) 
 
-        # Add Time at Charge Percentile
-        afterpulses_removed = self._time_at_charge_percentile(
-            afterpulses_removed,
-            quantiles=self._time_charge_percentiles,
-        )
+            # Add Time at Charge Percentile
+            afterpulses_removed = self._time_at_charge_percentile(
+                afterpulses_removed,
+                quantiles=self._time_charge_percentiles,
+            )
 
-        afterpulses_removed = self._charge_after_time(
-            afterpulses_removed,
-            time_cutoffs=self._charges_after_t,
-            charge_key = 'charge_temp',
-            name = '_excl',
-        ) 
+        if (self._exclude_saturation and self._exclude_errata) or self._training_data:
+            """
+            All Exclusions, Process Conditionally Unless Processing Training Data.
+            """
+            afterpulses_removed = self._charge_after_time(
+                afterpulses_removed,
+                time_cutoffs=self._charges_after_t,
+                charge_key = 'charge_temp',
+                name = '_excl',
+            ) 
 
-        # Add Time at Charge Percentile
-        afterpulses_removed = self._time_at_charge_percentile(
-            afterpulses_removed,
-            quantiles=self._time_charge_percentiles,
-            charge_key = 'charge_temp',
-            name = '_excl',
-        )
+            # Add Time at Charge Percentile
+            afterpulses_removed = self._time_at_charge_percentile(
+                afterpulses_removed,
+                quantiles=self._time_charge_percentiles,
+                charge_key = 'charge_temp',
+                name = '_excl',
+            )
+
+        if (self._exclude_saturation and not self._exclude_errata) or self._training_data:
+            """
+            Only Exclude Saturation, Process Conditionally Unless Processing Training Data.
+            """
+            afterpulses_removed = self._charge_after_time(
+                afterpulses_removed,
+                time_cutoffs=self._charges_after_t,
+                charge_key = 'charge_sat',
+                name = '_sat',
+            ) 
+
+            # Add Time at Charge Percentile
+            afterpulses_removed = self._time_at_charge_percentile(
+                afterpulses_removed,
+                quantiles=self._time_charge_percentiles,
+                charge_key = 'charge_sat',
+                name = '_sat',
+            )
 
         median_pulse_time = (
             afterpulses_removed.select(
@@ -457,6 +488,7 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
         )
 
         del reco_pulses_final, evt_pulses, hlc_pulses
+        print(output.keys())
         return output
 
     def _get_relative_dom_efficiency(
@@ -514,9 +546,8 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
             .alias(f"charge_after_{time_cutoff}{name}")
             for time_cutoff in time_cutoffs
         ]
-        pulses = pulses.with_columns(operations)
 
-        return pulses
+        return pulses.with_columns(operations)
     
     def _time_at_charge_percentile(
         self,
@@ -542,8 +573,7 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
             for q in quantiles
         ]   
 
-        pulses.with_columns(operations)
-        return pulses
+        return pulses.with_columns(operations)
         
     
     # Error Getting this for a certain set

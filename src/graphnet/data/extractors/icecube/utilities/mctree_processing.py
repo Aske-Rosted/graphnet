@@ -201,9 +201,9 @@ def add_closest_approach_vectors(
     
     r, cx, cy, cz, s = closest_approach_distance_vector(
         leading,
-        pulses['x'],
-        pulses['y'],
-        pulses['z'],
+        pulses.get_column('x').to_numpy(),
+        pulses.get_column('y').to_numpy(),
+        pulses.get_column('z').to_numpy(),
     )
 
     dr, dcx, dcy, dcz, ds = closest_approach_distance_vector(
@@ -213,10 +213,14 @@ def add_closest_approach_vectors(
         0,
     )
 
-    pulses['r'] = r
-    # Closest Approach Point to the Detector Origin is Zero
-    pulses['s'] = s - ds
-    pulses['r_det'] = np.sqrt(pulses['x']**2 + pulses['y']**2)
+    pulses = pulses.with_columns([
+        pl.Series("r", r),
+        (pl.col("x")**2 + pl.col("y")**2).sqrt().alias("r_det"),
+    ])
+    pulses = pulses.with_columns(
+        s = pl.Series(s-ds),
+    )
+
     return pulses
 
 def compute_training_labels(
@@ -231,9 +235,9 @@ def compute_training_labels(
     Compute the Training Labels for the Light Source Information
     """
 
-    r = light_source_information['r']
-    s = light_source_information['s']
-    w = light_source_information[information_type]
+    r = light_source_information['r'].to_numpy()
+    s = light_source_information['s'].to_numpy()
+    w = light_source_information[information_type].to_numpy()
     
     bin_count = 100
     """
@@ -386,33 +390,33 @@ def make_shower_and_stochasticity_info(
     primary = frame['PolyplopiaPrimary']
     primary_mctree_information = add_closest_approach_vectors(
         leading=primary,
-        pulses=mctree_information.copy(),
+        pulses=mctree_information.clone(),
     )
 
     leading_mctree_information = add_closest_approach_vectors(
         leading=leading_particle,
-        pulses=mctree_information.copy(),
+        pulses=mctree_information.clone(),
     )
 
     del mctree_information
 
     primary_mcpe_information = add_closest_approach_vectors(
         leading=primary,
-        pulses=mcpe_information.copy(),
+        pulses=mcpe_information.clone(),
     )
 
     leading_mcpe_information = add_closest_approach_vectors(
         leading=leading_particle,
-        pulses=mcpe_information.copy(),
+        pulses=mcpe_information.clone(),
     )
 
     del mcpe_information
     
     # Min S and Max S
-    s_min_primary = np.min(primary_mcpe_information['s'])
-    s_max_primary = np.max(primary_mcpe_information['s'])
-    s_min_leading = np.min(leading_mcpe_information['s'])
-    s_max_leading = np.max(leading_mcpe_information['s'])
+    s_min_primary = primary_mcpe_information['s'].min()
+    s_max_primary = primary_mcpe_information['s'].max()
+    s_min_leading = leading_mcpe_information['s'].min()
+    s_max_leading = leading_mcpe_information['s'].max()
 
     length_deposited = {
         'primary_length_deposited': s_max_primary-s_min_primary,
