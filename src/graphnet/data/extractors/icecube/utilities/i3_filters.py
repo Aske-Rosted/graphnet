@@ -318,6 +318,7 @@ class ChargeFilter(I3Filter):
         Args:
             frame: I3-frame
         """
+        print('running')
         if frame.Has(self._table_name):
             try:
                 charge = frame[self._table_name].value

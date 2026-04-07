@@ -13,9 +13,6 @@ from graphnet.utilities.imports import has_icecube_package
 from .utilities.mctree_processing import (
     make_shower_and_stochasticity_info
 )
-parent_dir = '/data/user/mnakos/EHE_Globalfit'
-import sys
-sys.path.append(parent_dir)
 
 from .utilities.track_topologies import (
     compute_skimming_event,
@@ -41,7 +38,7 @@ class I3BundleExtractor(I3Extractor):
         name: str = "truth",
         borders: Optional[List[np.ndarray]] = None,
         mctree: Optional[str] = "I3MCTree_preMuonProp",
-        sim_type: Optional[str] = "corsika",
+        pulse_labeling: Optional[bool] = False,
     ):
         """Construct I3BundleExtractor.
 
@@ -52,6 +49,7 @@ class I3BundleExtractor(I3Extractor):
                 stopping within the detector. Defaults to hard-coded boundary
                 coordinates.
             mctree: Str of which MCTree to use for truth values.
+            pulse_labeling: Whether to apply pulse labeling.
         """
         # Base class constructor
         super().__init__(name)
@@ -94,7 +92,6 @@ class I3BundleExtractor(I3Extractor):
         else:
             self._borders = borders
         self._mctree = mctree
-        self._sim_type = sim_type
         self._dom_list = compute_dom_positions()
         self._outer_boundar = make_outer_boundary(self._dom_list)
 
@@ -102,11 +99,6 @@ class I3BundleExtractor(I3Extractor):
         self, frame: "icetray.I3Frame", padding_value: Any = -1
     ) -> Dict[str, Any]:
         """Extract truth-level information."""
-        is_mc = frame_is_montecarlo(frame, self._mctree)
-        is_noise = False
-        #is_noise = frame_is_noise(frame, self._mctree)
-        #sim_type = self._find_data_type(is_mc, self._i3_file)
-        sim_type = self._sim_type
 
         """
         Primary: Primary Corsika/Neutrino
@@ -302,15 +294,6 @@ class I3BundleExtractor(I3Extractor):
                     if particle.energy > highest_energy:
                         highest_energy = particle.energy
                         current = particle
-
-        tracklist = frame['MMCTrackList']
-
-        e_initial = 0
-        for track in tracklist:
-            #if full_mctree.is_in_subtree(primary, track.particle) == True: # Cleaning Coincidence Hits
-            if track.Ei > e_initial:
-                e_initial = track.Ei
-                current = track.particle
         
         return primary, current
     

@@ -13,8 +13,8 @@ if has_icecube_package() or TYPE_CHECKING:
     from icecube import simclasses
     from icecube import recclasses
 
-import pandas as pd
-pd.options.mode.chained_assignment = None
+import polars as pl
+
 import numpy as np
 from collections import defaultdict 
 
@@ -26,14 +26,28 @@ class I3PulseExtractorNew(I3Extractor):
                  time_charge_percentiles: float = [1,3,6,10,15,25,50,80],
                  pulse_labeling: bool = True,
                  afterpulse_cutoff: float = 4000.0, # 4 microseconds
+                 training_data: bool = True,
+                 exclude_saturation: bool = False,
+                 exclude_errata: bool = False,
+                 #exclude_bright_doms: bool = False,
+                 #exclude_bad_doms: bool = False, 
                 ):
         """Construct I3FeatureExtractor.
 
         Args:
             pulsemap: Name of the pulse (series) map for which to extract
                 reconstructed features.
-            quantiles_time: 
-            quantiles_charge
+            charges_after_t: List of time cutoffs (in ns) for which to compute charge
+            summurized pulses. 
+            time_charge_percentiles: List of charge percentile thresholds (summarized)
+                for which the time at which the charge reaches that percentile will be computed.
+            pulse_labeling: Whether to label pulses based on their hit type (leading, lateral, coincident, noise)
+            afterpulse_cutoff: Time cutoff (in ns) after the leading pulse for which to exclude pulses as potential afterpulses.
+            training_data: Whether the data being processed is training data. False if inference is being done.
+            exclude_saturation: Whether to exclude pulses that fall within saturation windows.
+            exclude_errata: Whether to exclude pulses that fall within calibration errata windows.
+            exclude_bright_doms: Whether to exclude pulses from bright DOMs. (Probably A Better Input for NodesAsPulses)
+            exclude_bad_doms: Whether to exclude pulses from bad DOMs. (Probably A Better Input for NodesAsPulses)
         """
         # Member variable(s)
         self._pulsemap = pulsemap
@@ -41,9 +55,17 @@ class I3PulseExtractorNew(I3Extractor):
         self._charges_after_t = charges_after_t
         # Time Passed when Charge Reaches Threshold
         self._time_charge_percentiles = time_charge_percentiles
+
         self._pulse_labeling = pulse_labeling
+
         # Cutoff For Pulses from DOM First Hit
         self._afterpulse_cutoff = afterpulse_cutoff
+
+        self._training_data = training_data
+        self._exclude_saturation = exclude_saturation
+        self._exclude_errata = exclude_errata
+        #self._exclude_bright_doms = exclude_bright_doms
+        #self._exclude_bad_doms = exclude_bad_doms
 
         self._drop_at_end = [
             'in_saturation_window',
@@ -52,23 +74,13 @@ class I3PulseExtractorNew(I3Extractor):
             'saturation_stop_time',
             'errata_start_time',
             'errata_stop_time',
-            'residual_primary',
-            'residual_charge',
+            'timing_residual_primary',
+            'timing_residual_charge',
             'qcumsum',
         ]
         # Base class constructor
         super().__init__(pulsemap)
 
-
-
-
-'''
-Chain
--> get a list of the muons
--> compute mc pulse array
--> label pulses
--> 
-'''
 class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
     """Class processing through and labeling pulses."""
 
@@ -87,23 +99,13 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
         output: Dict[str, List[Any]] = {
             "charge": [],
             "time": [],
-            "adjusted_time": [],
             "width": [],
-            "dom_qtot": [],
-            "dom_qtot_excl": [], # DOM Excluded Saturation/Calibration Errata Windows
             "dom_x": [],
             "dom_y": [],
             "dom_z": [],
             "dom_hit": [],
             "pmt_area": [],
             "rde": [],
-            "r_charge": [],
-            "r_energy": [],
-            "r_primary": [],
-            "timing_residual_charge": [],
-            "timing_residual_energy": [],
-            "timing_residual_primary": [],
-            #"is_bright_dom": [],
             "is_bad_dom": [],
             "in_saturation_window": [],
             "in_calibration_errata": [],
@@ -120,6 +122,18 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
             "dom_number": [],
             "dom_type": [],
         }
+
+        if self._pulse_labeling:
+            output_pulse_labeling = {
+                "r_charge": [],
+                "r_energy": [],
+                "r_primary": [],
+                "timing_residual_charge": [],
+                "timing_residual_energy": [],
+                "timing_residual_primary": [],
+            }
+            output.update(output_pulse_labeling)
+        
         # Get OM data
         if self._pulsemap in frame:
             om_keys, data = get_om_keys_and_pulseseries(
@@ -151,23 +165,22 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
 
         # Process MCPulses Information
         particle_pdg = frame['PolyplopiaPrimary'].pdg_encoding
-        if (np.abs(particle_pdg) not in [12,14,16]):
-            mc_labeled_pulses, leading = self.get_mc_pulse_info(
-                frame, 
-                geo = self._gcd_dict,
-            )
+        if self._training_data:
+            if (np.abs(particle_pdg) not in [12,14,16]) & (self._pulse_labeling):
+                mc_labeled_pulses, leading = self.get_mc_pulse_info(
+                    frame, 
+                    geo = self._gcd_dict,
+                )
 
-            
-            self.make_multiplicity_information(
-                frame,
-                mc_pulses=mc_labeled_pulses,
-            )
-        else:
-            leading = self._get_leading_nugen(
-                frame,
-            )
+                self.make_multiplicity_information(
+                    frame,
+                    mc_pulses=mc_labeled_pulses,
+                )
+            else:
+                leading = self._get_leading_nugen(
+                    frame,
+                )
 
-        
         for om_key in om_keys:
             # Common values for each OM
             x = self._gcd_dict[om_key].position.x
@@ -178,14 +191,14 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
                 frame, om_key, padding_value
             )
 
-            r = phys_services.I3Calculator.closest_approach_distance(leading[0], self._gcd_dict[om_key].position)
-            r_energy = phys_services.I3Calculator.closest_approach_distance(leading[1], self._gcd_dict[om_key].position)
-            r_primary = phys_services.I3Calculator.closest_approach_distance(leading[2], self._gcd_dict[om_key].position)
+            if self._pulse_labeling:
+                r = phys_services.I3Calculator.closest_approach_distance(leading[0], self._gcd_dict[om_key].position)
+                r_energy = phys_services.I3Calculator.closest_approach_distance(leading[1], self._gcd_dict[om_key].position)
+                r_primary = phys_services.I3Calculator.closest_approach_distance(leading[2], self._gcd_dict[om_key].position)
 
-            t_charge = leading[0].time + phys_services.I3Calculator.cherenkov_time(leading[0],self._gcd_dict[om_key].position)
-            t_energy = leading[1].time + phys_services.I3Calculator.cherenkov_time(leading[1],self._gcd_dict[om_key].position)
-            t_primary = leading[2].time + phys_services.I3Calculator.cherenkov_time(leading[2],self._gcd_dict[om_key].position) 
-
+                t_charge = leading[0].time + phys_services.I3Calculator.cherenkov_time(leading[0],self._gcd_dict[om_key].position)
+                t_energy = leading[1].time + phys_services.I3Calculator.cherenkov_time(leading[1],self._gcd_dict[om_key].position)
+                t_primary = leading[2].time + phys_services.I3Calculator.cherenkov_time(leading[2],self._gcd_dict[om_key].position) 
 
             string = om_key[0]
             dom_number = om_key[1]
@@ -286,14 +299,13 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
                     output["errata_stop_time"].append(-1)
 
                 # Residual Information
-                output['r_charge'].append(r)
-                output['r_energy'].append(r_energy)
-                output['r_primary'].append(r_primary)
-                output['timing_residual_charge'].append(pulse.time - t_charge)
-                output['timing_residual_energy'].append(pulse.time - t_energy)
-                output['timing_residual_primary'].append(pulse.time - t_primary)
-
-
+                if self._pulse_labeling:
+                    output['r_charge'].append(r)
+                    output['r_energy'].append(r_energy)
+                    output['r_primary'].append(r_primary)
+                    output['timing_residual_charge'].append(pulse.time - t_charge)
+                    output['timing_residual_energy'].append(pulse.time - t_energy)
+                    output['timing_residual_primary'].append(pulse.time - t_primary)
 
                 # Pulse flags
                 flags = getattr(pulse, "flags", padding_value)
@@ -304,128 +316,111 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
                     output["hlc"].append((pulse.flags >> 0) & 0x1)  # bit 0
                     output["awtd"].append(self._parse_awtd_flag(pulse))
 
-                
+        # Convert Dictionary to Dataframe for Easier Manipulation
+        evt_pulses = pl.DataFrame(output)
 
-        # Convert Event Info Into Dataframe
-        evt_pulses = pd.DataFrame( {"charge": output['charge'],
-                                    "time": output['time'],
-                                    "width": output['width'],
-                                    "dom_x": output['dom_x'],
-                                    "dom_y": output['dom_y'],
-                                    "dom_z": output['dom_z'],
-                                    "dom_hit": output['dom_hit'],
-                                    "pmt_area": output['pmt_area'],
-                                    "rde": output['rde'],
-                                    #"is_bright_dom": output['is_bright_dom'],
-                                    "is_bad_dom": output['is_bad_dom'],
-                                    "hlc": output['hlc'],
-                                    "awtd": output['awtd'],
-                                    "string": output['string'],
-                                    "pmt_number": output['pmt_number'],
-                                    "dom_number": output['dom_number'],
-                                    "dom_type": output['dom_type'],
-                                    "r_charge": output['r_charge'],
-                                    "r_energy": output['r_energy'],
-                                    "r_primary": output['r_primary'],
-                                    "residual_charge": output['timing_residual_charge'],
-                                    "residual_energy": output['timing_residual_energy'],
-                                    "residual_primary": output['timing_residual_primary'],
-                                    "in_saturation_window": output['in_saturation_window'],
-                                    'saturation_start_time': output['saturation_start_time'],
-                                    'saturation_stop_time': output['saturation_stop_time'],
-                                    "in_calibration_errata": output['in_calibration_errata'],
-                                    'errata_start_time': output['errata_start_time'],
-                                    'errata_stop_time': output['errata_stop_time'],
-                                    "saturation_total_time": output['saturation_total_time'],
-                                    "errata_total_time": output['errata_total_time'],
-                                    },)
-        
-        # Produce Quantile Information of Each DOM
-
-        # Compute Charge of T Seconds
-
-        evt_pulses['qcumsum'] = evt_pulses.groupby(["string", "dom_number"])['charge'].cumsum()	
+        # Summarized Charge Information
+        evt_pulses = evt_pulses.with_columns(
+            qcumsum=pl.col("charge").cum_sum().over(["string", "dom_number"]),
+            dom_qtot=pl.col("charge").sum().over(["string", "dom_number"]),
+            first_hit=pl.col("time").min().over(["string", "dom_number"]),
+        )
     
-        evt_pulses['dom_qtot'] = evt_pulses.groupby(["string", "dom_number"])['charge'].transform('sum')
-
-        
-        evt_pulses['charge_temp'] = evt_pulses['charge']
-
-        evt_pulses.loc[(evt_pulses['in_saturation_window'].astype(int) == 1) | (evt_pulses['in_calibration_errata'].astype(int) == 1), 'charge_temp'] = 0
-        evt_pulses['dom_qtot_exc'] = evt_pulses.groupby(["string", "dom_number"])['charge_temp'].transform('sum')
-        # Extrac the Minimum Pulse Time of Each Dom
-        #min_times = evt_pulses.loc[evt_pulses.groupby(["string", "dom_number"], as_index=True)['time'].idxmin()]
-        earliest_hits = evt_pulses.groupby(['string', 'dom_number'])['time'].transform('min')
-
-        evt_pulses['t_from_leading'] = evt_pulses['time'] - earliest_hits
-
-        afterpulses_removed = evt_pulses[(evt_pulses['t_from_leading'] < self._afterpulse_cutoff)]
-
-        afterpulses_removed['dom_qtot_no_afterpulse'] = afterpulses_removed.groupby(["string", "dom_number"])['charge'].transform('sum')
-        afterpulses_removed['dom_qtot_exc_no_afterpulse'] = afterpulses_removed.groupby(["string", "dom_number"])['charge_temp'].transform('sum')
-
-        # Add Charges After T ns
-        for time_cut in self._charges_after_t:
-            afterpulses_removed = self._charge_after_time(
-                afterpulses_removed,
-                time_cutoff=time_cut,
-            ) 
-
-        # Add Time at Charge Percentile
-        for quant in self._time_charge_percentiles:
-            afterpulses_removed = self._time_at_charge_percentile(
-                afterpulses_removed,
-                quantile=quant,
-            )
-
-        for time_cut in self._charges_after_t:
-            afterpulses_removed = self._charge_after_time(
-                afterpulses_removed,
-                time_cutoff=time_cut,
-                charge_key = 'charge_temp',
-                name = '_excl',
-            ) 
-
-        # Add Time at Charge Percentile
-        for quant in self._time_charge_percentiles:
-            afterpulses_removed = self._time_at_charge_percentile(
-                afterpulses_removed,
-                quantile=quant,
-                charge_key = 'charge_temp',
-                name = '_excl',
-            )
-        
-        median_pulse_time = self._weighted_quantile(
-            afterpulses_removed['time'].values,
-            afterpulses_removed['charge'].values,
-            quantile=50,
+        evt_pulses = evt_pulses.with_columns(
+            charge_temp = pl.col("charge")
         )
 
-        afterpulses_removed['time_from_median'] = afterpulses_removed['time'] - median_pulse_time
+        mask = pl.lit(False)
 
-        afterpulses_removed = afterpulses_removed.drop(['charge_temp'], axis=1)
+        if self._exclude_saturation:
+            mask = mask | (pl.col("in_saturation_window").cast(pl.Int32) == 1)
 
-#
-        #min_times = evt_pulses[(evt_pulses['t_from_leading'] < self._dom_time_max) | (evt_pulses['qcumsum'] < self._dom_charge_max)]
-        # Restrict to first hits
-        min_times = afterpulses_removed.loc[evt_pulses.groupby(["string", "dom_number"], as_index=True)['time'].idxmin()]
+        if self._exclude_errata:
+            mask = mask | (pl.col("in_calibration_errata").cast(pl.Int32) == 1)
 
-        min_times['adjusted_time'] = min_times["time"] - min_times["time"].min()
- 
-        bright_doms = min_times['dom_qtot']/frame['HQTOT'].value >= .4
+        evt_pulses = evt_pulses.with_columns(
+            charge_temp=pl.when(mask).then(0).otherwise(pl.col('charge'))
+        )
+        
+        evt_pulses = evt_pulses.with_columns(
+            t_from_leading = pl.col("time") - pl.col("time").min().over(["string", "dom_number"]),
+        )
 
-        min_times['bright_dom'] = bright_doms.to_numpy(dtype=float)
+        afterpulses_removed = evt_pulses.filter(pl.col('t_from_leading') < self._afterpulse_cutoff)
 
-        #bad_doms = (min_times['is_errata_dom'] == 1) | (min_times['is_saturated_dom'] == 1)
-        #t_name_keys = [f't{int(1000*quant)}' for quant in self._quantiles_time]
-        #q_name_keys = [f'q{int(1000*quant)}' for quant in self._quantiles_charge]
-#
-        #for t_name in t_name_keys:
-        #    min_times[t_name] = min_times[t_name] - min_times["time"].min()
+        afterpulses_removed = afterpulses_removed.with_columns(
+            dom_qtot_no_afterpulse=pl.col("charge").sum().over(["string", "dom_number"]),
+            dom_qtot_exc_no_afterpulse=pl.col("charge_temp").sum().over(["string", "dom_number"]),
+        )
+
+        """
+        For training data, process all combinations of summarized features:
+        -> No Exclusion
+        -> Exclude Saturation Windows
+        -> Exclude Calibration Errata Windows
+        -> Exclude Both
+        """
+
+        # Add Charges After T ns
+        afterpulses_removed = self._charge_after_time(
+            afterpulses_removed,
+            time_cutoffs=self._charges_after_t,
+        ) 
+
+        # Add Time at Charge Percentile
+        afterpulses_removed = self._time_at_charge_percentile(
+            afterpulses_removed,
+            quantiles=self._time_charge_percentiles,
+        )
+
+        afterpulses_removed = self._charge_after_time(
+            afterpulses_removed,
+            time_cutoffs=self._charges_after_t,
+            charge_key = 'charge_temp',
+            name = '_excl',
+        ) 
+
+        # Add Time at Charge Percentile
+        afterpulses_removed = self._time_at_charge_percentile(
+            afterpulses_removed,
+            quantiles=self._time_charge_percentiles,
+            charge_key = 'charge_temp',
+            name = '_excl',
+        )
+
+        median_pulse_time = (
+            afterpulses_removed.select(
+                pl.col('time').sort_by("time")
+                .filter(
+                    pl.col('charge').sort_by("time").cum_sum() >= (pl.col('charge').sum() * 0.5)
+                )
+                .first()
+            ).item()
+        )
+
+        afterpulses_removed = afterpulses_removed.with_columns(
+            time_from_median = pl.col('time') - median_pulse_time,
+        )
+
+        afterpulses_removed = afterpulses_removed.drop("charge_temp")
+
+        min_times = (
+            afterpulses_removed.sort("time")
+            .group_by(["string", "dom_number"])
+            .first()
+        )
+
+        min_times = min_times.with_columns(
+            adjusted_time=pl.col("time") - pl.col("time").min()
+        )
+
+        min_times = min_times.with_columns(
+            bright_dom = (pl.col('dom_qtot')/frame['HQTOT'].value).ge(0.4).cast(pl.Int32)
+        )
 
         if (np.abs(particle_pdg) not in [12,14,16]) and self._pulse_labeling:
 
-            reco_pulses_labeled = label_reco_pulses_newer(
+            reco_pulses_labeled = label_reco_pulses(
                 reco_pulses=min_times,
                 mc_pulses=mc_labeled_pulses,
             )
@@ -441,17 +436,27 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
         else:
             reco_pulses_final = min_times
 
+        reco_pulses_final = reco_pulses_final.drop(['r_charge', 'r_energy', 'r_primary'])
+        reco_pulses_final = reco_pulses_final.drop(self._drop_at_end)
+        output = reco_pulses_final.to_dict(as_series = False)
 
-        reco_pulses_final = reco_pulses_final.drop(['r_charge', 'r_energy', 'r_primary'], axis=1)
-        reco_pulses_final = reco_pulses_final.drop(self._drop_at_end, axis=1)
-        output = reco_pulses_final.to_dict(orient='list')
+        frame['NumberStrings'] = dataclasses.I3Double(
+            float(evt_pulses.select(pl.col("string").n_unique()).item())
+        )
+        frame['NumberDOMs'] = dataclasses.I3Double(
+           float(evt_pulses.select(pl.struct(["dom_x", "dom_y", "dom_z"]).n_unique()).item())
+        )
 
-        frame['NumberStrings'] = dataclasses.I3Double(len(np.unique(evt_pulses['string'].values)))
-        frame['NumberDOMs'] = dataclasses.I3Double(len(np.unique(evt_pulses[['dom_x', 'dom_y', 'dom_z']].values)))
-        evt_pulses = evt_pulses[evt_pulses['hlc'] == 1]  # Only keep HLC pulses
-        frame['NumberStringsHLC'] = dataclasses.I3Double(len(np.unique(evt_pulses['string'].values)))
-        frame['NumberDOMsHLC'] = dataclasses.I3Double(len(np.unique(evt_pulses[['dom_x', 'dom_y', 'dom_z']].values))) 
-        del reco_pulses_final, evt_pulses
+        hlc_pulses = evt_pulses.filter(pl.col("hlc") == 1)
+
+        frame['NumberStringsHLC'] = dataclasses.I3Double(
+            float(hlc_pulses.select(pl.col("string").n_unique()).item())
+        )
+        frame['NumberDOMsHLC'] = dataclasses.I3Double(
+            float(hlc_pulses.select(pl.struct(["dom_x", "dom_y", "dom_z"]).n_unique()).item())
+        )
+
+        del reco_pulses_final, evt_pulses, hlc_pulses
         return output
 
     def _get_relative_dom_efficiency(
@@ -492,79 +497,87 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
     
     def _charge_after_time(
         self,
-        pulses: pd.DataFrame,
-        time_cutoff: float = 10.0,
+        pulses: pl.DataFrame,
+        time_cutoffs: list[float] = [10.0],
         charge_key: str = 'charge',
         name = '',
-    ) -> pd.DataFrame:
-        """Calculate total charge after a certain time window."""
-        
-        pulses[f'charge_after_{time_cutoff}{name}'] = pulses[pulses['t_from_leading'] <= time_cutoff].groupby(['string', 'dom_number'])[charge_key].transform('sum')
-        return pulses
-
-
-    def _weighted_quantile(
-        self,
-        x,
-        weights,
-        quantile: float,
-    ):
-        """Compute the weighted quantile of a 1D array.
-
-        Args:
-            x: 1D array of values.
-            weights: 1D array of weights.
-            quantile: Quantile to compute (between 0 and 1).
-
-        Returns:
-            Weighted quantile value.
+    ) -> pl.DataFrame:
         """
-        sorter = np.argsort(x)
-        x_sorted = x[sorter]
-        weights_sorted = weights[sorter]
-        cumulative_weights = np.cumsum(weights_sorted)
-        cutoff = weights_sorted.sum() * (quantile / 100)
+        Calculate total charge for different time windows.
+        """
+        
+        operations = [
+            pl.col(charge_key)
+            .filter(pl.col('t_from_leading') > time_cutoff).sum()
+            .over(['string', 'dom_number'])
+            .fill_null(0)
+            .alias(f"charge_after_{time_cutoff}{name}")
+            for time_cutoff in time_cutoffs
+        ]
+        pulses = pulses.with_columns(operations)
 
-        return x_sorted[cumulative_weights >= cutoff][0]
+        return pulses
     
     def _time_at_charge_percentile(
         self,
-        pulses: pd.DataFrame,
-        quantile: float = 0.5,
+        pulses: pl.DataFrame,
+        quantiles: list[float] = [5],
         charge_key: str = 'charge',
         name = '',
-    ) -> pd.DataFrame:
-        
-        test = pulses.groupby(['string', 'dom_number']).apply(lambda x: self._weighted_quantile(
-            x['time'].values,
-            x[charge_key].values,
-            quantile=quantile,
-        ))
-        pulses[f'time_charge_{quantile}{name}'] = list(zip(pulses["string"], pulses["dom_number"]))
-        pulses[f'time_charge_{quantile}{name}'] = pulses[f'time_charge_{quantile}{name}'].map(test)
+    ) -> pl.DataFrame:
+        """
+        Calculate time at which charge reaches a certain percentile for each DOM.
+        """
+
+        operations = [
+            pl.col('time').sort_by('time')
+            .filter(
+                pl.col(charge_key).sort_by('time').cum_sum()
+                .over(['string', 'dom_number']) >= 
+                (pl.col(charge_key).sum().over(['string', 'dom_number']) * q / 100)
+            )
+            .first()
+            .over(['string', 'dom_number'])
+            .alias(f'time_charge_{q}{name}')
+            for q in quantiles
+        ]   
+
+        pulses.with_columns(operations)
         return pulses
         
     
     # Error Getting this for a certain set
     def _get_leading_particle(
-            self, frame: "icetray.I3Frame",
-        ):
+        self,
+        frame: "icetray.I3Frame",
+    ):
 
-        try:
-            tracklist = frame['MMCTrackList']
+        primary = frame['PolyplopiaPrimary']
+        pdg = frame['PolyplopiaPrimary'].pdg_encoding
+        mctree = frame['I3MCTree_preMuonProp']
 
-            max_energy = -1
-            max_particle = tracklist[0]
-            for particle in tracklist:
-                if particle.Ei > max_energy:
-                    max_energy = particle.Ei
-                    max_particle = particle
+        # Handling Neutrino Leading Particles
+        if np.abs(pdg) in [12, 14, 16]:
+            current = mctree[1]
+            while mctree.number_of_children(current) > 0:
+                current = mctree.first_child(current)
 
-            return max_particle.particle
-        except:
-            print('no mmctracklist')
-            mctree = frame['I3MCTree_preMuonProp']
-            return mctree[1]
+            primary.pos.x = current.pos.x
+            primary.pos.y = current.pos.y
+            primary.pos.z = current.pos.z
+
+        # Handling Corsika Events
+        else:
+            current = mctree[frame['PolyplopiaPrimary']]
+            highest_energy = -1
+            bundle_particles = mctree.get_daughters(current)
+            for particle in bundle_particles:
+                if (particle.type_string in ['MuPlus', 'MuMinus'] and particle.location_type_string == 'InIce'):
+                    if particle.energy > highest_energy:
+                        highest_energy = particle.energy
+                        current = particle
+        
+        return current
         
     def _get_leading_nugen(
         self,
@@ -623,8 +636,6 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
         geo,
     ):
         
-        make_labeled_pulses(frame, geo)
-
         bundle_muons = get_all_bundle_muons(frame) 
         event_pulses = make_labeled_pulses(frame, geo)
 
@@ -672,12 +683,11 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
     def label_training_targets(
         self,
         leading_muon,
-        pulses,
+        pulses: pl.DataFrame,
     ): 
         """
         If the hit type is leading, label it as a 0.
-        If the hit type is lateral and has a negative residual, label it as a 1.
-        If the hit type is lateral and has a positive residual, label it 10.
+        If the hit type is lateral, label it as a 1.
         If the hit type is coincident, label it as a 2.
         If the hit type is noise, label it as a 3.
         """
@@ -689,12 +699,14 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
             'noise': 3,
         }
 
-        pulses[f'label_{leading_muon}'] = pulses[f'hit_type_{leading_muon}'].map(mapping)
-
-        pulses[f'label_{leading_muon}'] = np.where((pulses[f'label_{leading_muon}'] == 1) & (pulses[f'residual_{leading_muon}'] >= 0), 10, pulses[f'label_{leading_muon}'])
-
+        pulses = (
+            pulses.with_columns(
+                pl.col(f'hit_type_{leading_muon}').replace(mapping).alias(f'label_{leading_muon}')
+            )
+            .drop(['hit_type_charge', 'hit_type_energy', 'hit_type_primary'])
+        )
         
-        return pulses.drop(['hit_type_charge', 'hit_type_energy', 'hit_type_primary'], axis=1)
+        return pulses
 
 
 

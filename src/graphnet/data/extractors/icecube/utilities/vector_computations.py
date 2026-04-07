@@ -1,5 +1,10 @@
 import numpy as np
 
+"""
+closest approach distance vector
+compute cherenkov time
+-> numpy vectorized implementations should save running time
+"""
 
 def closest_approach_distance_vector(
     particle,

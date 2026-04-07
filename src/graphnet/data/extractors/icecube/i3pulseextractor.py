@@ -342,7 +342,7 @@ class I3PulseExtractorIceCube86(I3PulseExtractor):
 
         if (np.abs(particle_pdg) not in [12,14,16]) and self._pulse_labeling:
 
-            reco_pulses_labeled = label_reco_pulses_newer(
+            reco_pulses_labeled = label_reco_pulses(
                 reco_pulses=min_times,
                 mc_pulses=mc_labeled_pulses,
             )

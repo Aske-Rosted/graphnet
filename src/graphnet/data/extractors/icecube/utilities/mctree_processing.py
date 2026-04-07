@@ -9,6 +9,7 @@ if has_icecube_package():
 
 import numpy as np
 import pandas as pd
+import polars as pl
 
 from collections import defaultdict 
 import matplotlib.patches as patches
@@ -134,7 +135,7 @@ def turn_mctree_into_light_sources(
         oms['z'].append(particle.pos.z)
         oms['energy'].append(particle.energy)
     
-    mctree_information = pd.DataFrame(oms)    
+    mctree_information = pl.DataFrame(oms)    
 
     return mctree_information
 
@@ -184,7 +185,7 @@ def turn_mcpe_into_light_sources(
             oms['MCPEs'].append(len(dom_hits))
     
     
-    mcpe_information = pd.DataFrame(oms)
+    mcpe_information = pl.DataFrame(oms)
     if len(mcpe_information) == 0:
         frame['fraction_coincidence'] = dataclasses.I3Double(1)
     else:
