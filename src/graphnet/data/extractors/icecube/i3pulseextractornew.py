@@ -172,10 +172,13 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
                     geo = self._gcd_dict,
                 )
 
-                self.make_multiplicity_information(
+                print(mc_labeled_pulses['hit_type_energy'].unique())
+
+                make_multiplicity_statistics(
                     frame,
-                    mc_pulses=mc_labeled_pulses,
+                    event_pulses=mc_labeled_pulses,
                 )
+
             else:
                 leading = self._get_leading_nugen(
                     frame,
@@ -488,7 +491,6 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
         )
 
         del reco_pulses_final, evt_pulses, hlc_pulses
-        print(output.keys())
         return output
 
     def _get_relative_dom_efficiency(
@@ -540,7 +542,7 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
         
         operations = [
             pl.col(charge_key)
-            .filter(pl.col('t_from_leading') > time_cutoff).sum()
+            .filter(pl.col('t_from_leading') <= time_cutoff).sum()
             .over(['string', 'dom_number'])
             .fill_null(0)
             .alias(f"charge_after_{time_cutoff}{name}")
@@ -696,19 +698,6 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
         )
 
         return event_pulses, leading_muons
-    
-    def make_multiplicity_information(
-        self,
-        frame,
-        mc_pulses,
-    ):
-        
-
-        make_multiplicity_statistics(
-            frame,
-            mc_pulses,
-        )
-        
 
     def label_training_targets(
         self,

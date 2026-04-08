@@ -209,7 +209,11 @@ def make_labeled_pulses(
 def add_pulse_labels(
     event_pulses: pl.DataFrame,
     leading: list,
-):
+):  
+    
+    print(event_pulses['original_id'].unique())
+    print(event_pulses['subbundle_id'].unique())
+    print(event_pulses['muon_id'].unique())
     
     def make_label(muon_id):
         return (
