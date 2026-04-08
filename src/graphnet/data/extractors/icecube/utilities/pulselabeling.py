@@ -213,14 +213,14 @@ def add_pulse_labels(
     
     print(event_pulses['original_id'].unique())
     print(event_pulses['subbundle_id'].unique())
-    print(event_pulses['muon_id'].unique())
+    print('MuonID:', event_pulses['muon_id'].unique())
     
     def make_label(muon_id):
         return (
-            pl.when(pl.col('original_id') == 0).then(pl.lit('noise'))
-            .when(pl.col('muon_id') == muon_id).then(pl.lit('leading'))
+            pl.when((pl.col('muon_id') != 0) & (pl.col('muon_id') != muon_id)).then(pl.lit('lateral'))
             .when((pl.col('original_id') != 0) & (pl.col('muon_id') == 0)).then(pl.lit('coincidence'))
-            .when((pl.col('muon_id') != 0) & (pl.col('muon_id') != muon_id)).then(pl.lit('lateral'))
+            .when(pl.col('muon_id') == muon_id).then(pl.lit('leading'))
+            .when(pl.col('original_id') == 0).then(pl.lit('noise'))
             .otherwise(pl.lit('unknown'))
         )
     
