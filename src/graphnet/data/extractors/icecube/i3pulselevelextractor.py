@@ -266,7 +266,7 @@ class I3PulseOriginLabels(I3PulseLevelExtractor):
         """
         super().__init__(pulsemap, exclude, extractor_name)
         self._time_window = time_window
-        self._mctree = mctree
+        self.mctree = mctree
         self._mcpe_map = mcpe_map
         self._mcpe_map_id = mcpe_map_id
         self._pulse_source_map = pulse_source_map
@@ -418,45 +418,14 @@ class I3PulseOriginLabels(I3PulseLevelExtractor):
         npe_list: list[float] = []
         track_like_list: list[float] = []
         noise_list: list[bool] = []
-        try:
-            mcpe_info = np.array(frame[self._mcpe_map][om_key])
-        except KeyError as e:
-            if self._mcpe_map in str(e):
-                self.warning_once(
-                    f"MCPE map {self._mcpe_map} not found in frame."
-                )
-                return (
-                    np.array(npe_list),
-                    np.array(times),
-                    np.array(nu_bool),
-                    np.array(track_like_list),
-                    np.array(noise_list),
-                )
-            elif "Invalid key" in str(e):
-                return (
-                    np.array(npe_list),
-                    np.array(times),
-                    np.array(nu_bool),
-                    np.array(track_like_list),
-                    np.array(noise_list),
-                )
-            else:
-                raise e
 
-        mcpe_id_map_keys = []
-        mcpe_index_map = []
-        try:
-            for id_key, id_vals in frame[self._mcpe_map_id][om_key].items():
-                mcpe_id_map_keys.extend([id_key] * len(id_vals))
-                # mcpe_id_map_vals.extend(mcpe_info[id_vals])
-                mcpe_index_map.extend(id_vals)
-
-        except KeyError:
-            # This just means all the pulses are noise hits (do nothing)
-            pass
-
-        mcpe_id_map_keys = np.array(mcpe_id_map_keys)
-        mcpe_index_map = np.array(mcpe_index_map)
+        mcpe_info, mcpe_id_map_keys, mcpe_index_map = (
+            self._get_info_map_and_index(frame, om_key)
+        )
+        if len(mcpe_info) == 0:
+            return self._format_return(
+                npe_list, times, nu_bool, track_like_list, noise_list
+            )
 
         for i, mcpe in enumerate(mcpe_info):
             is_noise = False
@@ -468,20 +437,31 @@ class I3PulseOriginLabels(I3PulseLevelExtractor):
 
             elif mcpe.ID != dataclasses.I3ParticleID(0, -1):
                 # Not a multiple parent hit - use direct method
-                particle = frame[self._mctree].get_particle(mcpe.ID)
-                track_like = float(particle.is_track)
-                neutrino_bool = particle.is_neutrino
+                try:
+                    particle = frame[self.mctree].get_particle(mcpe.ID)
+                    track_like = float(particle.is_track)
+                    neutrino_bool = particle.is_neutrino
+                except RuntimeError as e:
+                    if "particleID not found" in str(e):
+                        self._missing_mcpe_warning(mcpe.ID, frame, om_key)
+                        # continue but raise warning as this is unexpected.
+                        track_like = 0.0
+                        neutrino_bool = False
 
             else:
                 # Hit with multiple parent particles - need to loop over all parent particles
-                particle_list = [
-                    frame[self._mctree].get_particle(p)
-                    for p in mcpe_id_map_keys[i == mcpe_index_map]
-                ]
+                particle_list = []
+
+                for p in mcpe_id_map_keys[i == mcpe_index_map]:
+                    try:
+                        particle_list.append(
+                            frame[self.mctree].get_particle(p)
+                        )
+                    except RuntimeError as e:
+                        if "particleID not found" in str(e):
+                            self._missing_mcpe_warning(p, frame, om_key)
+
                 if len(particle_list) == 0:
-                    warning_string = f"No parent particles found for MCPE with ID {mcpe.ID} in OMKey {om_key}.\n"
-                    warning_string += f"{frame['I3EventHeader']}\n"
-                    self.warning(warning_string)
                     track_like = 0.0
                     neutrino_bool = False
                 else:
@@ -496,12 +476,8 @@ class I3PulseOriginLabels(I3PulseLevelExtractor):
             npe_list.append(mcpe.npe)
             noise_list.append(is_noise)
 
-        return (
-            np.array(npe_list),
-            np.array(times),
-            np.array(nu_bool),
-            np.array(track_like_list),
-            np.array(noise_list),
+        return self._format_return(
+            npe_list, times, nu_bool, track_like_list, noise_list
         )
 
     def _get_pulse_info(
@@ -517,6 +493,63 @@ class I3PulseOriginLabels(I3PulseLevelExtractor):
         """Create gaussian weight matrix based on time distance matrix."""
         return np.exp(
             -0.5 * (time_distance_matrix / (self._time_window / 2)) ** 2
+        )
+
+    def _missing_mcpe_warning(
+        self, id: Any, frame: "icetray.I3Frame", om_key: "icetray.OMKey"
+    ) -> None:
+        warning_string = f"Could not find particle for MCPE with ID {id} in OMKey {om_key}.\n"
+        warning_string += f"{frame['I3EventHeader']}\n"
+        self.warning(warning_string)
+
+    def _get_info_map_and_index(
+        self, frame: "icetray.I3Frame", om_key: "icetray.OMKey"
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+
+        mcpe_id_map_keys = []
+        mcpe_index_map = []
+
+        try:
+            mcpe_info = np.array(frame[self._mcpe_map][om_key])
+        except KeyError as e:
+            if self._mcpe_map in str(e):
+                self.warning_once(
+                    f"MCPE map {self._mcpe_map} not found in frame."
+                )
+                return np.array([]), np.array([]), np.array([])
+            elif "Invalid key" in str(e):
+                return np.array([]), np.array([]), np.array([])
+            else:
+                raise e
+
+        try:
+            for id_key, id_vals in frame[self._mcpe_map_id][om_key].items():
+                mcpe_id_map_keys.extend([id_key] * len(id_vals))
+                mcpe_index_map.extend(id_vals)
+
+        except KeyError:
+            # This just means all the pulses are noise hits (do nothing)
+            pass
+
+        mcpe_id_map_keys = np.array(mcpe_id_map_keys)
+        mcpe_index_map = np.array(mcpe_index_map)
+
+        return mcpe_info, mcpe_id_map_keys, mcpe_index_map
+
+    def _format_return(
+        self,
+        npe_list: List[float],
+        times: List[float],
+        nu_bool: List[bool],
+        track_like_list: List[float],
+        noise_bool: List[bool],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        return (
+            np.array(npe_list),
+            np.array(times),
+            np.array(nu_bool),
+            np.array(track_like_list),
+            np.array(noise_bool),
         )
 
 
