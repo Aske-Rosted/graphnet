@@ -199,9 +199,9 @@ def make_labeled_pulses(
     muon_positions = np.searchsorted(photon_ids, labeled_pulses['subbundle_id'].to_numpy(), side='right')
     idx = np.maximum(muon_positions-1, 0)
     muon_labels = muon_ids[idx]
-
-    labeled_pulses.with_columns(
-        muon_id = pl.Series(muon_labels)
+    
+    labeled_pulses = labeled_pulses.with_columns(
+        pl.Series('muon_id', muon_labels)
     )
 
     return labeled_pulses
@@ -210,10 +210,6 @@ def add_pulse_labels(
     event_pulses: pl.DataFrame,
     leading: list,
 ):  
-    
-    print(event_pulses['original_id'].unique())
-    print(event_pulses['subbundle_id'].unique())
-    print('MuonID:', event_pulses['muon_id'].unique())
     
     def make_label(muon_id):
         return (
@@ -321,11 +317,11 @@ def get_leading_muon_charge(
 ):
 
     max_muon = (
-        pulses.filter(pl.col('muon_id') != 0).groupby('muon_id')
+        pulses.filter(pl.col('muon_id') != 0).group_by('muon_id')
         .agg(pl.col('charge').sum())
         .sort('charge', descending=True)
-        .select(pl.col('muon_id').first())
-        .item()
+        .get_column('muon_id')
+        .first()
     )
 
     leading_charge = next(muon for muon in bundle_muons if muon.minor_id == max_muon)

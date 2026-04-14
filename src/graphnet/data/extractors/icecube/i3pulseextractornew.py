@@ -172,8 +172,6 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
                     geo = self._gcd_dict,
                 )
 
-                print(mc_labeled_pulses['hit_type_energy'].unique())
-
                 make_multiplicity_statistics(
                     frame,
                     event_pulses=mc_labeled_pulses,
