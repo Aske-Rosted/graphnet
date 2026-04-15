@@ -471,6 +471,7 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
                 'r_charge', 'r_energy', 'r_primary', 'timing_residual_primary', 'timing_residual_charge',
             ])
         reco_pulses_final = reco_pulses_final.drop(self._drop_at_end)
+        reco_pulses_final = reco_pulses_final.sort(['adjusted_time', 'dom_x', 'dom_y', 'dom_z'])
         output = reco_pulses_final.to_dict(as_series = False)
 
         frame['NumberStrings'] = dataclasses.I3Double(

@@ -12,6 +12,7 @@ if has_icecube_package() or TYPE_CHECKING:
     from icecube import dataclasses
 
 import pandas as pd
+pd.options.mode.chained_assignment = None
 import numpy as np
 from collections import defaultdict 
 
