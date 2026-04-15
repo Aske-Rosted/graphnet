@@ -74,8 +74,6 @@ class I3PulseExtractorNew(I3Extractor):
             'saturation_stop_time',
             'errata_start_time',
             'errata_stop_time',
-            'timing_residual_primary',
-            'timing_residual_charge',
             'qcumsum',
         ]
         # Base class constructor
@@ -318,7 +316,7 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
                     output["awtd"].append(self._parse_awtd_flag(pulse))
 
         # Convert Dictionary to Dataframe for Easier Manipulation
-        print(frame['I3EventHeader'].event_id, frame['HQTOT'].value)
+        # print(frame['I3EventHeader'].event_id, frame['HQTOT'].value)
         evt_pulses = pl.DataFrame(output, strict=False)
 
         # Summarized Charge Information
@@ -468,7 +466,10 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
         else:
             reco_pulses_final = min_times
 
-        reco_pulses_final = reco_pulses_final.drop(['r_charge', 'r_energy', 'r_primary'])
+        if self._training_data:
+            reco_pulses_final = reco_pulses_final.drop([
+                'r_charge', 'r_energy', 'r_primary', 'timing_residual_primary', 'timing_residual_charge',
+            ])
         reco_pulses_final = reco_pulses_final.drop(self._drop_at_end)
         output = reco_pulses_final.to_dict(as_series = False)
 
