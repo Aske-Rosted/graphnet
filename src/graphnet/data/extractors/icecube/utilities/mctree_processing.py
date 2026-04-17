@@ -273,11 +273,7 @@ def compute_training_labels(
     Lateral Distribution: Weighted RMS
     """
 
-    mask = (s >= min_s) & (s <= max_s)
-    rms = np.sqrt(np.sum(w[mask] * r[mask]**2) / np.sum(w[mask]))
-    rms3 = np.sqrt(np.sum(w[mask] * r[mask]**3) / np.sum(w[mask]))
-    rms4 = np.sqrt(np.sum(w[mask] * r[mask]**4) / np.sum(w[mask]))
-    most_lateral_deposit = np.max(r[mask])
+    
 
     try:
         mask = (s >= min_s) & (s <= max_s)
