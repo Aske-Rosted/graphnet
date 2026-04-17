@@ -272,9 +272,6 @@ def compute_training_labels(
     """
     Lateral Distribution: Weighted RMS
     """
-
-    
-
     try:
         mask = (s >= min_s) & (s <= max_s)
         rms = np.sqrt(np.sum(w[mask] * r[mask]**2) / np.sum(w[mask]))
