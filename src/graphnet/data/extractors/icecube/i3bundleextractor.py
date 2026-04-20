@@ -10,12 +10,9 @@ from .utilities.frames import (
     frame_is_noise,
 )
 from graphnet.utilities.imports import has_icecube_package
-from .utilities.mctree_processing import make_shower_and_stochasticity_info
-
-parent_dir = "/data/user/mnakos/EHE_Globalfit"
-import sys
-
-sys.path.append(parent_dir)
+from .utilities.mctree_processing import (
+    make_shower_and_stochasticity_info
+)
 
 from .utilities.track_topologies import (
     compute_skimming_event,
@@ -41,7 +38,7 @@ class I3BundleExtractor(I3Extractor):
         name: str = "truth",
         borders: Optional[List[np.ndarray]] = None,
         mctree: Optional[str] = "I3MCTree_preMuonProp",
-        sim_type: Optional[str] = "corsika",
+        pulse_labeling: Optional[bool] = False,
     ):
         """Construct I3BundleExtractor.
 
@@ -52,6 +49,7 @@ class I3BundleExtractor(I3Extractor):
                 stopping within the detector. Defaults to hard-coded boundary
                 coordinates.
             mctree: Str of which MCTree to use for truth values.
+            pulse_labeling: Whether to apply pulse labeling.
         """
         # Base class constructor
         super().__init__(name)
@@ -94,7 +92,6 @@ class I3BundleExtractor(I3Extractor):
         else:
             self._borders = borders
         self._mctree = mctree
-        self._sim_type = sim_type
         self._dom_list = compute_dom_positions()
         self._outer_boundar = make_outer_boundary(self._dom_list)
 
@@ -102,11 +99,7 @@ class I3BundleExtractor(I3Extractor):
         self, frame: "icetray.I3Frame", padding_value: Any = -1
     ) -> Dict[str, Any]:
         """Extract truth-level information."""
-        is_mc = frame_is_montecarlo(frame, self._mctree)
-        is_noise = False
-        # is_noise = frame_is_noise(frame, self._mctree)
-        # sim_type = self._find_data_type(is_mc, self._i3_file)
-        sim_type = self._sim_type
+
         """
         Primary: Primary Corsika/Neutrino
         Leading: Highest Energy Charged Particle
@@ -149,19 +142,19 @@ class I3BundleExtractor(I3Extractor):
             "leading_rms3_energy": padding_value,
             "leading_rms_MCPE": padding_value,
             "leading_rms3_MCPE": padding_value,
-            "leading_most_lateral_deposit": padding_value,
-            # "primary_stochasticity_std_energy": padding_value,
-            # "primary_stochasticity_pomean_energy": padding_value,
-            # "primary_stochasticity_pomedian_energy": padding_value,
-            # "primary_stochasticity_std_MCPE": padding_value,
-            # "primary_stochasticity_pomean_MCPE": padding_value,
-            # "primary_stochasticity_pomedian_MCPE": padding_value,
-            "leading_stochasticity_std_energy": padding_value,
-            "leading_stochasticity_pomean_energy": padding_value,
-            "leading_stochasticity_pomedian_energy": padding_value,
-            "leading_stochasticity_std_MCPE": padding_value,
-            "leading_stochasticity_pomean_MCPE": padding_value,
-            "leading_stochasticity_pomedian_MCPE": padding_value,
+            'leading_most_lateral_deposit': padding_value,
+            #"primary_stochasticity_std_energy": padding_value,
+            #"primary_stochasticity_pomean_energy": padding_value,
+            #"primary_stochasticity_pomedian_energy": padding_value,
+            #"primary_stochasticity_std_MCPE": padding_value,
+            #"primary_stochasticity_pomean_MCPE": padding_value,
+            #"primary_stochasticity_pomedian_MCPE": padding_value,
+            #"leading_stochasticity_std_energy": padding_value,
+            #"leading_stochasticity_pomean_energy": padding_value,
+            #"leading_stochasticity_pomedian_energy": padding_value,
+            #"leading_stochasticity_std_MCPE": padding_value,
+            #"leading_stochasticity_pomean_MCPE": padding_value,
+            #"leading_stochasticity_pomedian_MCPE": padding_value,
             "primary_length_deposited": padding_value,
             "leading_length_deposited": padding_value,
             "length_in_detector": padding_value,
@@ -234,67 +227,31 @@ class I3BundleExtractor(I3Extractor):
 
         output.update(
             {
-                "primary_rms_energy": frame["PrimaryShowerProfile_energy"][
-                    "lateral_rms"
-                ],
-                "primary_rms3_energy": frame["PrimaryShowerProfile_energy"][
-                    "lateral_rms3"
-                ],
-                "primary_rms_MCPE": frame["PrimaryShowerProfile_MCPEs"][
-                    "lateral_rms"
-                ],
-                "primary_rms3_MCPE": frame["PrimaryShowerProfile_MCPEs"][
-                    "lateral_rms3"
-                ],
-                "primary_most_lateral_deposit": frame[
-                    "PrimaryShowerProfile_MCPEs"
-                ]["most_lateral_deposit"],
-                "leading_rms_energy": frame["LeadingShowerProfile_energy"][
-                    "lateral_rms"
-                ],
-                "leading_rms3_energy": frame["LeadingShowerProfile_energy"][
-                    "lateral_rms3"
-                ],
-                "leading_rms_MCPE": frame["LeadingShowerProfile_MCPEs"][
-                    "lateral_rms"
-                ],
-                "leading_rms3_MCPE": frame["LeadingShowerProfile_MCPEs"][
-                    "lateral_rms3"
-                ],
-                "leading_most_lateral_deposit": frame[
-                    "LeadingShowerProfile_MCPEs"
-                ]["most_lateral_deposit"],
-                # "primary_stochasticity_std_energy": frame['PrimaryShowerProfile_energy']['stochasticity_std'],
-                # "primary_stochasticity_pomean_energy": frame['PrimaryShowerProfile_energy']['stochasticity_ratio_above_mean'],
-                # "primary_stochasticity_pomedian_energy": frame['PrimaryShowerProfile_energy']['stochasticity_ratio_above_median'],
-                # "primary_stochasticity_std_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_std'],
-                # "primary_stochasticity_pomean_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_ratio_above_mean'],
-                # "primary_stochasticity_pomedian_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_ratio_above_median'],
-                "leading_stochasticity_std_energy": frame[
-                    "LeadingShowerProfile_energy"
-                ]["stochasticity_std"],
-                "leading_stochasticity_pomean_energy": frame[
-                    "LeadingShowerProfile_energy"
-                ]["stochasticity_ratio_above_mean"],
-                "leading_stochasticity_pomedian_energy": frame[
-                    "LeadingShowerProfile_energy"
-                ]["stochasticity_ratio_above_median"],
-                "leading_stochasticity_std_MCPE": frame[
-                    "LeadingShowerProfile_MCPEs"
-                ]["stochasticity_std"],
-                "leading_stochasticity_pomean_MCPE": frame[
-                    "LeadingShowerProfile_MCPEs"
-                ]["stochasticity_ratio_above_mean"],
-                "leading_stochasticity_pomedian_MCPE": frame[
-                    "LeadingShowerProfile_MCPEs"
-                ]["stochasticity_ratio_above_median"],
-                "primary_length_deposited": frame["ShowerLengthDeposited"][
-                    "primary_length_deposited"
-                ],
-                "leading_length_deposited": frame["ShowerLengthDeposited"][
-                    "leading_length_deposited"
-                ],
-                "fraction_coincidence": frame["fraction_coincidence"].value,
+                "primary_rms_energy": frame['PrimaryShowerProfile_energy']['lateral_rms'],
+                "primary_rms3_energy": frame['PrimaryShowerProfile_energy']['lateral_rms3'],
+                "primary_rms_MCPE": frame['PrimaryShowerProfile_MCPEs']['lateral_rms'],
+                "primary_rms3_MCPE": frame['PrimaryShowerProfile_MCPEs']['lateral_rms3'],
+                'primary_most_lateral_deposit': frame['PrimaryShowerProfile_MCPEs']['most_lateral_deposit'],
+                "leading_rms_energy": frame['LeadingShowerProfile_energy']['lateral_rms'],
+                "leading_rms3_energy": frame['LeadingShowerProfile_energy']['lateral_rms3'],
+                "leading_rms_MCPE": frame['LeadingShowerProfile_MCPEs']['lateral_rms'],
+                "leading_rms3_MCPE": frame['LeadingShowerProfile_MCPEs']['lateral_rms3'],
+                'leading_most_lateral_deposit': frame['LeadingShowerProfile_MCPEs']['most_lateral_deposit'],
+                #"primary_stochasticity_std_energy": frame['PrimaryShowerProfile_energy']['stochasticity_std'],
+                #"primary_stochasticity_pomean_energy": frame['PrimaryShowerProfile_energy']['stochasticity_ratio_above_mean'],
+                #"primary_stochasticity_pomedian_energy": frame['PrimaryShowerProfile_energy']['stochasticity_ratio_above_median'],
+                #"primary_stochasticity_std_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_std'],
+                #"primary_stochasticity_pomean_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_ratio_above_mean'],
+                #"primary_stochasticity_pomedian_MCPE": frame['PrimaryShowerProfile_MCPEs']['stochasticity_ratio_above_median'],
+                #"leading_stochasticity_std_energy": frame['LeadingShowerProfile_energy']['stochasticity_std'],
+                #"leading_stochasticity_pomean_energy": frame['LeadingShowerProfile_energy']['stochasticity_ratio_above_mean'],
+                #"leading_stochasticity_pomedian_energy": frame['LeadingShowerProfile_energy']['stochasticity_ratio_above_median'],
+                #"leading_stochasticity_std_MCPE": frame['LeadingShowerProfile_MCPEs']['stochasticity_std'],
+                #"leading_stochasticity_pomean_MCPE": frame['LeadingShowerProfile_MCPEs']['stochasticity_ratio_above_mean'],
+                #"leading_stochasticity_pomedian_MCPE": frame['LeadingShowerProfile_MCPEs']['stochasticity_ratio_above_median'],
+                "primary_length_deposited": frame['ShowerLengthDeposited']['primary_length_deposited'],
+                "leading_length_deposited": frame['ShowerLengthDeposited']['leading_length_deposited'],
+                "fraction_coincidence": frame['fraction_coincidence'].value,
             }
         )
 
@@ -332,16 +289,7 @@ class I3BundleExtractor(I3Extractor):
                     if particle.energy > highest_energy:
                         highest_energy = particle.energy
                         current = particle
-
-        tracklist = frame["MMCTrackList"]
-
-        e_initial = 0
-        for track in tracklist:
-            # if full_mctree.is_in_subtree(primary, track.particle) == True: # Cleaning Coincidence Hits
-            if track.Ei > e_initial:
-                e_initial = track.Ei
-                current = track.particle
-
+        
         return primary, current
 
     def _get_basic_event_information(

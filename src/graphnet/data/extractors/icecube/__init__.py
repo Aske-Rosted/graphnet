@@ -39,10 +39,6 @@ from .i3inferencepulseextractornew import (
     I3InferencePulseExtractorNewIceCube86,
 )
 
-from .i3pulseextractornugen import (
-    I3PulseExtractorNugen,
-    I3PulseExtractorNugenIceCube86,
-)
 from .i3truthextractor import I3TruthExtractor
 from .i3bundleextractor import I3BundleExtractor
 from .i3retroextractor import I3RetroExtractor

@@ -214,7 +214,6 @@ class RecomputeChargeFilter(I3Filter):
                 The I3-frame to check.
         """
         oms = defaultdict(list)
-
         try:
             data = frame["SplitInIcePulses"].apply(frame)
         except:
@@ -330,6 +329,7 @@ class ChargeFilter(I3Filter):
         Args:
             frame: I3-frame
         """
+        print('running')
         if frame.Has(self._table_name):
             try:
                 charge = frame[self._table_name].value

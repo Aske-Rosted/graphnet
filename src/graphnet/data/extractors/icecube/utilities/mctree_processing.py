@@ -9,6 +9,7 @@ if has_icecube_package():
 
 import numpy as np
 import pandas as pd
+import polars as pl
 
 from collections import defaultdict
 import matplotlib.patches as patches
@@ -161,12 +162,12 @@ def turn_mctree_into_light_sources(
             continue  # Only Adding the Coninuous Losses
 
         # Only add particles if the particles are a light source in the detector
-        oms["x"].append(particle.pos.x)
-        oms["y"].append(particle.pos.y)
-        oms["z"].append(particle.pos.z)
-        oms["energy"].append(particle.energy)
-
-    mctree_information = pd.DataFrame(oms)
+        oms['x'].append(particle.pos.x)
+        oms['y'].append(particle.pos.y)
+        oms['z'].append(particle.pos.z)
+        oms['energy'].append(particle.energy)
+    
+    mctree_information = pl.DataFrame(oms)    
 
     return mctree_information
 
@@ -211,13 +212,14 @@ def turn_mcpe_into_light_sources(
                     # if mc_tree.is_in_subtree(primary, full_particle) == False: # Cleaning Coincidence Hits
                     coincidence_hits += len(dom_hits)
                     continue
-
-            oms["x"].append(full_particle.pos.x)
-            oms["y"].append(full_particle.pos.y)
-            oms["z"].append(full_particle.pos.z)
-            oms["MCPEs"].append(len(dom_hits))
-
-    mcpe_information = pd.DataFrame(oms)
+        
+            oms['x'].append(full_particle.pos.x)
+            oms['y'].append(full_particle.pos.y)
+            oms['z'].append(full_particle.pos.z)
+            oms['MCPEs'].append(len(dom_hits))
+    
+    
+    mcpe_information = pl.DataFrame(oms)
     if len(mcpe_information) == 0:
         frame["fraction_coincidence"] = dataclasses.I3Double(1)
     else:
@@ -236,9 +238,9 @@ def add_closest_approach_vectors(
 
     r, cx, cy, cz, s = closest_approach_distance_vector(
         leading,
-        pulses["x"],
-        pulses["y"],
-        pulses["z"],
+        pulses.get_column('x').to_numpy(),
+        pulses.get_column('y').to_numpy(),
+        pulses.get_column('z').to_numpy(),
     )
 
     dr, dcx, dcy, dcz, ds = closest_approach_distance_vector(
@@ -248,10 +250,14 @@ def add_closest_approach_vectors(
         0,
     )
 
-    pulses["r"] = r
-    # Closest Approach Point to the Detector Origin is Zero
-    pulses["s"] = s - ds
-    pulses["r_det"] = np.sqrt(pulses["x"] ** 2 + pulses["y"] ** 2)
+    pulses = pulses.with_columns([
+        pl.Series("r", r),
+        (pl.col("x")**2 + pl.col("y")**2).sqrt().alias("r_det"),
+    ])
+    pulses = pulses.with_columns(
+        s = pl.Series(s-ds),
+    )
+
     return pulses
 
 
@@ -265,10 +271,10 @@ def compute_training_labels(
 ):
     """Compute the Training Labels for the Light Source Information."""
 
-    r = light_source_information["r"]
-    s = light_source_information["s"]
-    w = light_source_information[information_type]
-
+    r = light_source_information['r'].to_numpy()
+    s = light_source_information['s'].to_numpy()
+    w = light_source_information[information_type].to_numpy()
+    
     bin_count = 100
     """Stochasticity."""
     dict_training = {}
@@ -307,13 +313,6 @@ def compute_training_labels(
     """
     Lateral Distribution: Weighted RMS
     """
-
-    mask = (s >= min_s) & (s <= max_s)
-    rms = np.sqrt(np.sum(w[mask] * r[mask] ** 2) / np.sum(w[mask]))
-    rms3 = np.sqrt(np.sum(w[mask] * r[mask] ** 3) / np.sum(w[mask]))
-    rms4 = np.sqrt(np.sum(w[mask] * r[mask] ** 4) / np.sum(w[mask]))
-    most_lateral_deposit = np.max(r[mask])
-
     try:
         mask = (s >= min_s) & (s <= max_s)
         rms = np.sqrt(np.sum(w[mask] * r[mask] ** 2) / np.sum(w[mask]))
@@ -413,33 +412,33 @@ def make_shower_and_stochasticity_info(
     primary = frame["PolyplopiaPrimary"]
     primary_mctree_information = add_closest_approach_vectors(
         leading=primary,
-        pulses=mctree_information.copy(),
+        pulses=mctree_information.clone(),
     )
 
     leading_mctree_information = add_closest_approach_vectors(
         leading=leading_particle,
-        pulses=mctree_information.copy(),
+        pulses=mctree_information.clone(),
     )
 
     del mctree_information
 
     primary_mcpe_information = add_closest_approach_vectors(
         leading=primary,
-        pulses=mcpe_information.copy(),
+        pulses=mcpe_information.clone(),
     )
 
     leading_mcpe_information = add_closest_approach_vectors(
         leading=leading_particle,
-        pulses=mcpe_information.copy(),
+        pulses=mcpe_information.clone(),
     )
 
     del mcpe_information
 
     # Min S and Max S
-    s_min_primary = np.min(primary_mcpe_information["s"])
-    s_max_primary = np.max(primary_mcpe_information["s"])
-    s_min_leading = np.min(leading_mcpe_information["s"])
-    s_max_leading = np.max(leading_mcpe_information["s"])
+    s_min_primary = primary_mcpe_information['s'].min()
+    s_max_primary = primary_mcpe_information['s'].max()
+    s_min_leading = leading_mcpe_information['s'].min()
+    s_max_leading = leading_mcpe_information['s'].max()
 
     length_deposited = {
         "primary_length_deposited": s_max_primary - s_min_primary,
