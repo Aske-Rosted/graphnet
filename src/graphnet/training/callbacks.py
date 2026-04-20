@@ -163,6 +163,76 @@ class ProgressBar(TQDMProgressBar):
             h.setLevel(level)
 
 
+class EventCountProgressBar(ProgressBar):
+    """Progress bar that supports event-count fallback for variable batches."""
+
+    def __init__(
+        self,
+        refresh_rate: int = 1,
+        update_every_n_batches: int = 50,
+    ) -> None:
+        super().__init__(refresh_rate=refresh_rate)
+        self._update_every_n_batches = max(1, update_every_n_batches)
+
+    @staticmethod
+    def _extract_train_batch_sampler(trainer: Trainer) -> Optional[Any]:
+        """Get training batch sampler, if available."""
+        if trainer.train_dataloader is None:
+            return None
+
+        train_loader = trainer.train_dataloader
+        if isinstance(train_loader, dict):
+            for key, value in train_loader.items():
+                if "train" in key.lower():
+                    train_loader = value
+                    break
+            else:
+                return None
+
+        return getattr(train_loader, "batch_sampler", None)
+
+    def _update_from_sampler(self, trainer: Trainer) -> None:
+        """Update tqdm counters from sampler virtual progress information."""
+        sampler = self._extract_train_batch_sampler(trainer)
+        if sampler is None:
+            return
+        if not hasattr(sampler, "virtual_total_steps"):
+            return
+        if self.train_progress_bar is None:
+            return
+
+        total = int(getattr(sampler, "virtual_total_steps"))
+        seen = int(getattr(sampler, "virtual_steps_seen", 0))
+        if total <= 0:
+            return
+
+        bar = self.train_progress_bar
+        bar.total = total
+        if seen >= bar.n:
+            bar.n = min(seen, total)
+            bar.refresh()
+
+    def on_train_epoch_start(
+        self, trainer: Trainer, model: LightningModule
+    ) -> None:
+        super().on_train_epoch_start(trainer, model)
+        self._update_from_sampler(trainer)
+
+    def on_train_batch_end(
+        self,
+        trainer: Trainer,
+        pl_module: LightningModule,
+        outputs: Any,
+        batch: Any,
+        batch_idx: int,
+    ) -> None:
+        super().on_train_batch_end(
+            trainer, pl_module, outputs, batch, batch_idx
+        )
+        if (batch_idx + 1) % self._update_every_n_batches == 0:
+            self._update_from_sampler(trainer)
+
+
 class GraphnetEarlyStopping(EarlyStopping):
     """Early stopping callback for graphnet."""
 

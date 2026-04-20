@@ -11,7 +11,7 @@ from torch import Tensor
 from torch.nn import ModuleList
 from torch.optim import Adam
 from torch.utils.data import DataLoader, SequentialSampler
-from torch_geometric.data import Data
+from torch_geometric.data import Data, Batch
 import pandas as pd
 from pytorch_lightning.loggers import Logger as LightningLogger
 
@@ -37,6 +37,7 @@ class EasySyntax(Model):
         scheduler_class: Optional[type] = None,
         scheduler_kwargs: Optional[Dict] = None,
         scheduler_config: Optional[Dict] = None,
+        additional_attributes: Optional[List[str]] = None,
     ) -> None:
         """Construct `StandardModel`."""
         # Base class constructor
@@ -53,6 +54,7 @@ class EasySyntax(Model):
         self._scheduler_class = scheduler_class
         self._scheduler_kwargs = scheduler_kwargs or dict()
         self._scheduler_config = scheduler_config or dict()
+        self._additional_attributes = additional_attributes or []
 
         self.validate_tasks()
 
@@ -68,7 +70,9 @@ class EasySyntax(Model):
         """Forward pass, chaining model components."""
         raise NotImplementedError
 
-    def shared_step(self, batch: List[Data], batch_idx: int) -> Tensor:
+    def shared_step(
+        self, batch: List[Data], batch_idx: int
+    ) -> tuple[Tensor, Tensor]:
         """Perform shared step.
 
         Applies the forward pass and the following loss calculation, shared
@@ -256,7 +260,7 @@ class EasySyntax(Model):
         """Perform training step."""
         if isinstance(train_batch, Data):
             train_batch = [train_batch]
-        loss = self.shared_step(train_batch, batch_idx)
+        loss, loss_stack = self.shared_step(train_batch, batch_idx)
         self.log(
             "train_loss",
             loss,
@@ -266,7 +270,6 @@ class EasySyntax(Model):
             on_step=False,
             sync_dist=True,
         )
-
         current_lr = self.trainer.optimizers[0].param_groups[0]["lr"]
         self.log("lr", current_lr, prog_bar=True, on_step=True)
         return loss
@@ -278,7 +281,7 @@ class EasySyntax(Model):
         with torch.no_grad():
             if isinstance(val_batch, Data):
                 val_batch = [val_batch]
-            loss = self.shared_step(val_batch, batch_idx)
+            loss, loss_stack = self.shared_step(val_batch, batch_idx)
             self.log(
                 "val_loss",
                 loss,
@@ -289,6 +292,36 @@ class EasySyntax(Model):
                 sync_dist=True,
             )
         return loss
+
+    def predict_step(
+        self, batch, batch_idx, dataloader_idx=0
+    ) -> Dict[str, Tensor]:
+        return_dict = {}
+        with torch.no_grad():  # redundant with self.inference()?
+            if isinstance(batch, Data):
+                batch = [batch]
+            preds = self.forward(batch)
+            for pred, task in zip(preds, self._tasks):
+                names = task._prediction_labels
+                for i, name in enumerate(names):
+                    return_dict[name] = pred[:, i].detach().cpu()
+
+        if len(self._additional_attributes) > 0:
+            for attr in self._additional_attributes:
+                attr_temp = []
+                for b in batch:
+                    attribute = b[attr]
+                    if not isinstance(attribute, torch.Tensor):
+                        attribute = torch.as_tensor(attribute)
+                    attribute = attribute.detach().cpu()
+                    if attribute.dim() == 0:
+                        attribute = attribute.unsqueeze(0)
+                    attr_temp.append(attribute)
+
+                attribute = torch.cat(attr_temp, dim=0)
+                return_dict[attr] = attribute
+
+        return return_dict
 
     def inference(self) -> None:
         """Activate inference mode."""
@@ -309,7 +342,7 @@ class EasySyntax(Model):
         gpus: Optional[Union[List[int], int]] = None,
         distribution_strategy: Optional[str] = "auto",
         **trainer_kwargs: Any,
-    ) -> List[Tensor]:
+    ) -> Dict[str, np.ndarray]:
         """Return predictions for `dataloader`."""
         self.inference()
         self.train(mode=False)
@@ -325,22 +358,24 @@ class EasySyntax(Model):
             **trainer_kwargs,
         )
 
-        predictions_list = inference_trainer.predict(self, dataloader)
-        assert len(predictions_list), "Got no predictions"
+        outputs = inference_trainer.predict(self, dataloader)
+        if len(outputs) == 0:
+            raise ValueError("Got no predictions")
+        # stack the dictionaries
 
-        nb_outputs = len(predictions_list[0])
-        predictions: List[Tensor] = [
-            torch.cat([preds[ix] for preds in predictions_list], dim=0)
-            for ix in range(nb_outputs)
-        ]
-        return predictions
+        outputs = {
+            key: torch.cat([out[key] for out in outputs], dim=0).numpy()
+            for key in outputs[0].keys()
+        }
+
+        return outputs
 
     def predict_as_dataframe(
         self,
         dataloader: DataLoader,
         prediction_columns: Optional[List[str]] = None,
         *,
-        additional_attributes: Optional[List[str]] = None,
+        # additional_attributes: Optional[List[str]] = None,
         gpus: Optional[Union[List[int], int]] = None,
         distribution_strategy: Optional[str] = "auto",
         **trainer_kwargs: Any,
@@ -353,100 +388,18 @@ class EasySyntax(Model):
         if prediction_columns is None:
             prediction_columns = self.prediction_labels
 
-        if additional_attributes is None:
-            additional_attributes = []
-        assert isinstance(additional_attributes, list)
-
-        if (
-            not isinstance(dataloader.sampler, SequentialSampler)
-            and additional_attributes
-        ):
-            print(dataloader.sampler)
-            raise UserWarning(
-                "DataLoader has a `sampler` that is not `SequentialSampler`, "
-                "indicating that shuffling is enabled. Using "
-                "`predict_as_dataframe` with `additional_attributes` assumes "
-                "that the sequence of batches in `dataloader` are "
-                "deterministic. Either call this method a `dataloader` which "
-                "doesn't resample batches; or do not request "
-                "`additional_attributes`."
-            )
         self.info(f"Column names for predictions are: \n {prediction_columns}")
+        self.warning_once(
+            "DEPRECATION WARNING 2.0: predict_as_dataframe will be deprecated as it has just become a simple wrapper around predict. Please use predict instead and convert the output to a DataFrame yourself."
+        )
         predictions_torch = self.predict(
             dataloader=dataloader,
             gpus=gpus,
             distribution_strategy=distribution_strategy,
             **trainer_kwargs,
         )
-        predictions = (
-            torch.cat(predictions_torch, dim=1).detach().cpu().numpy()
-        )
-        assert len(prediction_columns) == predictions.shape[1], (
-            f"Number of provided column names ({len(prediction_columns)}) and "
-            f"number of output columns ({predictions.shape[1]}) don't match."
-        )
+        results = pd.DataFrame.from_dict(predictions_torch)
 
-        # Check if predictions are on event- or pulse-level
-        pulse_level_predictions = len(predictions) > len(dataloader.dataset)
-
-        # Get additional attributes
-        attributes: Dict[str, List[np.ndarray]] = OrderedDict(
-            [(attr, []) for attr in additional_attributes]
-        )
-        for batch in dataloader:
-            for attr in attributes:
-                attribute = batch[attr]
-                if isinstance(attribute, torch.Tensor):
-                    attribute = attribute.detach().cpu().numpy()
-
-                # Check if node level predictions
-                # If true, additional attributes are repeated
-                # to make dimensions fit
-                if pulse_level_predictions:
-                    if len(attribute) < np.sum(
-                        batch.n_pulses.detach().cpu().numpy()
-                    ):
-                        attribute = np.repeat(
-                            attribute, batch.n_pulses.detach().cpu().numpy()
-                        )
-                attributes[attr].extend(attribute)
-
-        # Confirm that attributes match length of predictions
-        skip_attributes = []
-        for attr in attributes.keys():
-            try:
-                assert len(attributes[attr]) == len(predictions)
-            except AssertionError:
-                self.warning_once(
-                    "Could not automatically adjust length"
-                    f" of additional attribute '{attr}' to match length of"
-                    f" predictions.This error can be caused by heavy"
-                    " disagreement between number of examples in the"
-                    " dataset vs. actual events in the dataloader, e.g. "
-                    " heavy filtering of events in `collate_fn` passed to"
-                    " `dataloader`. This can also be caused by requesting"
-                    " pulse-level attributes for `Task`s that produce"
-                    " event-level predictions. Attribute skipped."
-                )
-                skip_attributes.append(attr)
-
-        # Remove bad attributes
-        for attr in skip_attributes:
-            attributes.pop(attr)
-            additional_attributes.remove(attr)
-
-        data = np.concatenate(
-            [predictions]
-            + [
-                np.asarray(values)[:, np.newaxis]
-                for values in attributes.values()
-            ],
-            axis=1,
-        )
-
-        results = pd.DataFrame(
-            data, columns=prediction_columns + additional_attributes
-        )
         return results
 
     def _create_default_callbacks(

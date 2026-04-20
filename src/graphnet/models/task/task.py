@@ -244,6 +244,7 @@ class LearnedTask(Task):
         self,
         hidden_size: int,
         loss_function: "LossFunction",
+        detach_backbone: bool = False,
         **task_kwargs: Any,
     ):
         """Construct `LearnedTask`.
@@ -260,6 +261,7 @@ class LearnedTask(Task):
         # Mapping from last hidden layer to required size of input
         self._loss_function = loss_function
         self._affine = Linear(hidden_size, self.nb_inputs)
+        self._detach_backbone = detach_backbone
 
     @abstractmethod
     def _forward(  # type: ignore
@@ -290,6 +292,8 @@ class LearnedTask(Task):
         target dimensions.
         """
         self._regularisation_loss = 0  # Reset
+        if self._detach_backbone == True:
+            x = x.detach()
         x = self._affine(x)
         x = self._forward(x=x)
         return self._transform_prediction(x)

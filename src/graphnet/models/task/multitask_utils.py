@@ -28,18 +28,6 @@ class LossWeightBalancing(Model):
             [torch.nn.Parameter(torch.zeros(())) for _ in range(len(tasks))]
         )
         self.late_activation = late_activation
-        # check whether the task is regression or classification.
-        # self.cl_tasks= []
-        # classification_tasks = []
-        # for name, cls in inspect.getmembers(importlib.import_module("graphnet.models.task.classification"), inspect.isclass):
-        #     if cls.__module__ == 'graphnet.models.task.classification':
-        #         classification_tasks.append(name)
-
-        # for task in tasks:
-        #     if task.__class__.__name__ in classification_tasks:
-        #         self.cl_tasks.append(True)
-        #     else:
-        #         self.cl_tasks.append(False)
 
     def forward(self, losses: list) -> torch.tensor:
         """
@@ -53,16 +41,6 @@ class LossWeightBalancing(Model):
         if self.current_epoch >= self.late_activation:
             for i, loss in enumerate(losses):
 
-                # assert loss.dim() == 0, f"Loss should be a scalar, got shape {loss.shape}"
-                # if self.cl_tasks[i]:
-                #     noise_i = torch.exp(self.noise_params[i])
-                #     losses[i] = (1/noise_i)*loss + torch.log(torch.sqrt(noise_i))
-                # else:
-                #     noise_i = torch.exp(self.noise_params[i])
-                #     losses[i] = (0.5/noise_i)*loss + torch.log(torch.sqrt(noise_i))
-                # losses can be negative for some loss functions like CauchyLoss. which leads to the simple solution of just creating large negative noise_params.
-                # to avoid this we have to apply a transformation to the loss values before applying the uncertainty weighting.
-                # One possible transformation is to use the exponential function.
                 loss = torch.log1p(
                     torch.exp(loss)
                 )  # softplus ensures the loss is always positive.
@@ -70,10 +48,5 @@ class LossWeightBalancing(Model):
                     torch.exp(-self.noise_params[i]) * loss
                     + 0.5 * self.noise_params[i]
                 ).mean()
-        # else:
-        #     #ensure no boundary between the no activation case and the activation case.
-        #     for i, loss in enumerate(losses):
-        #         if not self.cl_tasks[i]:
-        #             losses[i] = loss/2
 
         return losses

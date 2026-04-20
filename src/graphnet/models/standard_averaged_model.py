@@ -85,7 +85,7 @@ class StandardAveragedModel(StandardModel):
         if isinstance(train_batch, Data):
             train_batch = [train_batch]
         preds = self(train_batch)
-        loss = self.compute_loss(preds, train_batch)
+        loss, loss_stack = self.compute_loss(preds, train_batch)
         self.log(
             "train_loss",
             loss,
@@ -104,7 +104,9 @@ class StandardAveragedModel(StandardModel):
         if isinstance(val_batch, Data):
             val_batch = [val_batch]
         preds = self._averaged_model(val_batch)
-        loss = self._averaged_model.module.compute_loss(preds, val_batch)
+        loss, loss_stack = self._averaged_model.module.compute_loss(
+            preds, val_batch
+        )
         self.log(
             "val_loss",
             loss,
@@ -117,6 +119,18 @@ class StandardAveragedModel(StandardModel):
 
         current_lr = self.trainer.optimizers[0].param_groups[0]["lr"]
         self.log("lr", current_lr, prog_bar=True, on_step=True)
+        if loss_stack is not None:
+            for i, loss in enumerate(loss_stack):
+                self.log(
+                    "i_val_loss" + "_" + str(i),
+                    loss,
+                    prog_bar=False,
+                    logger=True,
+                    on_step=False,
+                    on_epoch=True,
+                    batch_size=self._get_batch_size(val_batch),
+                    sync_dist=True,
+                )
         return loss
 
     def optimizer_step(

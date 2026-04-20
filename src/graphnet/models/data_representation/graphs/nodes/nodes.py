@@ -720,6 +720,7 @@ class ClusterSummaryFeatures(NodeDefinition):
         node_limit_index: Optional[int] = None,
         node_limit_seed: Optional[int] = None,
         node_limit_ascending: bool = False,
+        exclude_bright_hits: Union[bool, str] = False,
     ) -> None:
         """Construct `ClusterSummaryFeatures`.
 
@@ -758,7 +759,7 @@ class ClusterSummaryFeatures(NodeDefinition):
             node_limit_index: Index of the feature to sort on when limiting
                 the number of nodes.
             node_limit_seed: Seed for random node limiting.
-
+            exclude_bright_hits: If True, excludes bright hits from the node features.
         NOTE: Make sure that either the input data is not already standardized
         or that the `charge_standardization` and `time_standardization`
         parameters are set to 1 to avoid a double standardization.
@@ -795,6 +796,30 @@ class ClusterSummaryFeatures(NodeDefinition):
                 "Setting `order_by_time` to False. "
                 "Make sure that the input data is already ordered in time."
             )
+        if isinstance(exclude_bright_hits, str):
+            try:
+                self._bright_hit_index = input_feature_names.index(
+                    exclude_bright_hits
+                )
+            except ValueError:
+                raise ValueError(
+                    f"exclude_bright_hits is set to '{exclude_bright_hits}' but it is not found in input_feature_names {input_feature_names}. Please set exclude_bright_hits to False or provide a valid column name."
+                )
+        elif exclude_bright_hits:
+            try:
+                self._bright_hit_index = input_feature_names.index(
+                    "is_bright_dom"
+                )
+            except ValueError:
+                raise ValueError(
+                    "exclude_bright_hits is set to True but 'is_bright_dom' is not found in input_feature_names. Please either set exclude_bright_hits to False, provide the name of the bright hit column in input_feature_names or set exclude_bright_hits to the name of the bright hit column."
+                )
+        elif not exclude_bright_hits:
+            self._bright_hit_index = None
+        else:
+            raise ValueError(
+                f"exclude_bright_hits should be either a bool or a str, but got {exclude_bright_hits} of type {type(exclude_bright_hits)}"
+            )
 
     def _define_output_feature_names(
         self,
@@ -825,6 +850,9 @@ class ClusterSummaryFeatures(NodeDefinition):
         """Construct nodes from raw node features ´x´."""
         # Cast to Numpy
         x = x.numpy()
+        # remove bright hits if specified
+        if self._bright_hit_index is not None:
+            x = x[~(x[:, self._bright_hit_index] == 1)]
         # Shift time to start at 0
         if self._time_idx is not None:
             x[:, self._time_idx] -= np.min(x[:, self._time_idx])

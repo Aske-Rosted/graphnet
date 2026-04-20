@@ -39,6 +39,7 @@ class collator_sequence_buckleting:
         last elements, which will always be 0 and 1 respectively.
         """
         self.batch_splits = batch_splits
+        self.parameter = "n_pulses"
 
     def __call__(self, graphs: List[Data]) -> Batch:
         """Execute sequence bucketing on the input list of graphs.
@@ -50,8 +51,8 @@ class collator_sequence_buckleting:
             A list of Batch objects, each containing a mini-batch of the input
             graphs sorted by their number of pulses.
         """
-        graphs = [g for g in graphs if g.n_pulses > 1]
-        graphs.sort(key=lambda x: x.n_pulses)
+        graphs = [g for g in graphs if getattr(g, self.parameter) > 1]
+        graphs.sort(key=lambda x: getattr(x, self.parameter))
         batch_list = []
 
         for minp, maxp in zip(
@@ -63,6 +64,150 @@ class collator_sequence_buckleting:
             if len(this_graphs) > 0:
                 this_batch = Batch.from_data_list(this_graphs)
                 batch_list.append(this_batch)
+        return batch_list
+
+
+class collator_auto_bucket:
+    """Perform the sequence bucketing for the graphs in the batch."""
+
+    def __init__(self, n_buckets: int = 3, parameter: str = "n_pulses"):
+        """Set number of buckets for the sequence bucketing."""
+
+        self.n_buckets = n_buckets
+        self.parameter = parameter
+
+    def __call__(self, graphs: List[Data]) -> Batch:
+        """Execute sequence bucketing on the input list of graphs.
+
+        Args:
+            graphs: A list of Data objects representing the input graphs.
+
+        Returns:
+            A list of Batch objects, each containing a mini-batch of the input
+            graphs sorted by their number of pulses.
+        """
+        if len(graphs) == 0:
+            return []
+
+        # Sort once by sequence length and drop invalid events in the same pass.
+        valid_sorted = sorted(
+            (
+                (getattr(g, self.parameter), g)
+                for g in graphs
+                if getattr(g, self.parameter) > 1
+            ),
+            key=lambda x: x[0],
+        )
+
+        if len(valid_sorted) == 0:
+            return []
+
+        total_length = sum(length for length, _ in valid_sorted)
+        average_length = total_length / self.n_buckets
+
+        # Fill buckets towards equal total token mass while preventing empty tail buckets.
+        batch_list = []
+        current_bucket: List[Data] = []
+        current_length = 0
+
+        for idx, (length, graph) in enumerate(valid_sorted):
+            remaining_graphs = len(valid_sorted) - idx
+            remaining_bucket_slots = self.n_buckets - len(batch_list)
+
+            if (
+                current_bucket
+                and current_length + length > average_length
+                and len(batch_list) < self.n_buckets - 1
+                and remaining_graphs > remaining_bucket_slots
+            ):
+                batch_list.append(Batch.from_data_list(current_bucket))
+                current_bucket = []
+                current_length = 0
+
+            current_bucket.append(graph)
+            current_length += length
+
+        if current_bucket:
+            batch_list.append(Batch.from_data_list(current_bucket))
+
+        return batch_list
+
+
+class collator_auto_bucket_trans:
+    """Perform bucketing tuned for transformer padding cost.
+
+    The heuristic used here targets the approximate padded transformer cost
+    of a bucket, which scales roughly like ``B * L_max^2`` where ``B`` is the
+    number of graphs in the bucket and ``L_max`` is the longest sequence in
+    that bucket.
+    """
+
+    def __init__(self, n_buckets: int = 3, parameter: str = "n_pulses"):
+        """Set number of buckets for the sequence bucketing."""
+
+        self.n_buckets = n_buckets
+        self.parameter = parameter
+
+    def __call__(self, graphs: List[Data]) -> Batch:
+        """Execute transformer-oriented bucketing on the input graphs.
+
+        Args:
+            graphs: A list of Data objects representing the input graphs.
+
+        Returns:
+            A list of Batch objects, each containing a mini-batch of the input
+            graphs sorted by sequence length and bucketed to better match the
+            quadratic transformer padding cost.
+        """
+        if len(graphs) == 0:
+            return []
+
+        valid_sorted = sorted(
+            (
+                (getattr(g, self.parameter), g)
+                for g in graphs
+                if getattr(g, self.parameter) > 1
+            ),
+            key=lambda x: x[0],
+        )
+
+        if len(valid_sorted) == 0:
+            return []
+
+        # Target approximate padded compute per bucket.
+        total_compute = sum(length * length for length, _ in valid_sorted)
+        target_compute = total_compute / self.n_buckets
+
+        batch_list: List[Batch] = []
+        current_bucket: List[Data] = []
+        current_max_length = 0
+
+        for idx, (length, graph) in enumerate(valid_sorted):
+            remaining_graphs = len(valid_sorted) - idx
+            remaining_bucket_slots = self.n_buckets - len(batch_list)
+
+            prospective_bucket_size = len(current_bucket) + 1
+            prospective_max_length = max(current_max_length, length)
+            prospective_cost = prospective_bucket_size * (
+                prospective_max_length * prospective_max_length
+            )
+
+            if (
+                current_bucket
+                and prospective_cost > target_compute
+                and len(batch_list) < self.n_buckets - 1
+                and remaining_graphs > remaining_bucket_slots
+            ):
+                batch_list.append(Batch.from_data_list(current_bucket))
+                current_bucket = []
+                current_max_length = 0
+
+            current_bucket.append(graph)
+            current_max_length = max(current_max_length, length)
+
+        if current_bucket:
+            batch_list.append(Batch.from_data_list(current_bucket))
+
         return batch_list
 
 

@@ -159,15 +159,24 @@ def create_table(
     """
     # Prepare column names and types
     query_columns = []
-    for column in columns:
-        type_ = default_type
-        if column == index_column:
-            if integer_primary_key:
-                type_ = "INTEGER PRIMARY KEY NOT NULL"
-            else:
-                type_ = "NOT NULL"
 
-        query_columns.append(f"{column} {type_}")
+    for column in columns:
+        if isinstance(default_type, str):
+            type_ = default_type
+            if column == index_column:
+                if integer_primary_key:
+                    type_ = "INTEGER PRIMARY KEY NOT NULL"
+                else:
+                    type_ = "NOT NULL"
+            query_columns.append(f"{column} {type_}")
+        elif isinstance(default_type, dict):
+            query_columns.append(
+                f"{column} {default_type.get(column, 'NOT NULL')}"
+            )
+        else:
+            raise ValueError(
+                "`default_type` must be either a string or a dictionary."
+            )
     query_columns_string = ", ".join(query_columns)
 
     # Run SQL code
@@ -239,6 +248,7 @@ def add_first_pulse_time_to_truth(
     pulses_table_name: str = "SRTInIcePulses",
     time_column: str = "dom_time",
     index_column: str = "event_no",
+    force: bool = False,
 ) -> None:
     """Add the first pulse time to the truth table.
 
@@ -287,7 +297,26 @@ def add_first_pulse_time_to_truth(
     )
     print(f"Adding column 'first_pulse_time' to {truth_table_name}.")
 
-    run_sql_code(database_path, query)
+    try:
+        run_sql_code(database_path, query)
+    except sqlite3.OperationalError as e:
+        if "duplicate column name: first_pulse_time" in str(e):
+            if not force:
+                print(
+                    "Column 'first_pulse_time' already exists in "
+                    f"{truth_table_name}. Use `force=True` to overwrite it."
+                )
+                return
+            else:
+                # if column already exists we have to remake the entire table since sqlite does not support dropping columns
+                drop_column(
+                    database_path=database_path,
+                    table_name=truth_table_name,
+                    column_name="first_pulse_time",
+                )
+                run_sql_code(database_path, query)
+        else:
+            raise e
     query = (
         f"UPDATE {truth_table_name} "
         f"SET first_pulse_time = (SELECT first_pulse_time "
@@ -310,6 +339,7 @@ def add_starting(
     truth_table_name: str = "truth",
     containment_column: str = "containment_type",
     index_column: str = "event_no",
+    force: bool = False,
 ) -> None:
     """Add the starting to the truth table.
 
@@ -317,6 +347,7 @@ def add_starting(
         database_path: Path to the database.
         truth_table_name: Name of the truth table.
         index_column: Name of the index column in both tables.
+        force: Whether to overwrite the 'starting' column if it already exists.
     """
 
     # mapping from containment enum to starting
@@ -341,9 +372,15 @@ def add_starting(
     containment_df = query_database(database_path, containment_type_query)
 
     # convert containment type to starting using map_dict
-    containment_df["starting"] = (
-        containment_df[containment_column].astype(int).map(map_dict)
+    temp = containment_df[containment_column]
+    # NA mask
+    na_mask = (
+        containment_df[containment_column].isna()
+        | containment_df[containment_column].isnull()
     )
+    #
+    containment_df["starting"] = containment_df[containment_column]
+    containment_df.loc[~na_mask, "starting"] = temp[~na_mask].map(map_dict)
 
     temp_table_name = "temp_starting"
     query = f"DROP TABLE IF EXISTS {temp_table_name};"
@@ -368,7 +405,28 @@ def add_starting(
     # Create the column and update it in the truth table remove if already exists
     query = f"ALTER TABLE {truth_table_name} " f"ADD COLUMN starting INTEGER;"
     print(f"Adding column 'starting' to {truth_table_name}.")
-    run_sql_code(database_path, query)
+
+    try:
+        run_sql_code(database_path, query)
+    except sqlite3.OperationalError as e:
+        if "duplicate column name: starting" in str(e):
+            if not force:
+                raise RuntimeError(
+                    "Column 'starting' already exists in "
+                    f"{truth_table_name}. Use `force=True` to overwrite it."
+                )
+            else:
+                # if column already exists we have to remake the entire table since sqlite does not support dropping columns
+                drop_column(
+                    database_path=database_path,
+                    table_name=truth_table_name,
+                    column_name="starting",
+                )
+                run_sql_code(database_path, query)
+
+        else:
+            raise e
+
     query = (
         f"UPDATE {truth_table_name} "
         f"SET starting = (SELECT starting "
@@ -381,4 +439,54 @@ def add_starting(
     # Drop the temporary table
     query = f"DROP TABLE IF EXISTS {temp_table_name};"
     print(f"Dropping temporary table {temp_table_name}.")
+    run_sql_code(database_path, query)
+
+
+def drop_column(
+    database_path: str,
+    table_name: str,
+    column_name: str,
+) -> None:
+    """Drop a column from a table in the database."""
+    # Get the current columns of the table
+    # drop intermediate table if it already exists this can happen if this process was interrupted.
+    query = f"DROP TABLE IF EXISTS {table_name}_new;"
+    run_sql_code(database_path, query)
+
+    query = f"PRAGMA table_info({table_name});"
+    columns_info = query_database(database_path, query)
+    columns = columns_info["name"].tolist()
+
+    if column_name not in columns:
+        print(f"Column {column_name} does not exist in {table_name}.")
+        return
+
+    # Create a new table without the column to be dropped
+    new_columns = [col for col in columns if col != column_name]
+    new_table_name = f"{table_name}_new"
+
+    # Get the types of the columns
+    type_dict = dict(zip(columns_info["name"], columns_info["type"]))
+
+    create_table(
+        columns=new_columns,
+        table_name=new_table_name,
+        database_path=database_path,
+        index_column="event_no",
+        default_type=type_dict,
+        integer_primary_key=True,
+    )
+
+    # Copy data from the old table to the new table
+    columns_string = ", ".join(new_columns)
+    query = (
+        f"INSERT INTO {new_table_name} ({columns_string}) "
+        f"SELECT {columns_string} FROM {table_name};"
+    )
+    run_sql_code(database_path, query)
+
+    # Drop the old table and rename the new table to the original name
+    query = f"DROP TABLE {table_name};"
+    run_sql_code(database_path, query)
+    query = f"ALTER TABLE {new_table_name} RENAME TO {table_name};"
     run_sql_code(database_path, query)

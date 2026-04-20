@@ -5,6 +5,7 @@ import torch
 from torch import Tensor
 from torch_geometric.data import Data
 from torch.optim import Adam
+from itertools import chain
 
 from graphnet.models.gnn.gnn import GNN
 from graphnet.models import Model
@@ -93,11 +94,22 @@ class StandardModel(EasySyntax):
         # Member variable(s)
         self._data_representation = data_representation
         self.backbone = backbone
-        self._split = split
 
-        if self._split is not None:
+        if split is not None:
+            self._split_sizes = split[0]
+            self._split_indices = split[1]
+            max_index = max(
+                list(
+                    chain.from_iterable(
+                        [indc] if isinstance(indc, int) else indc
+                        for indc in self._split_indices
+                    )
+                )
+            )
+            assert len(self._split_sizes) == (max_index + 1)
+
             assert (
-                sum(self._split[0]) == self.backbone.nb_outputs
+                sum(self._split_sizes) == self.backbone.nb_outputs
             ), "Split dimensions do not match backbone output dimension check your configuration"
 
             if learned_multitask_weights != -1:
@@ -111,7 +123,7 @@ class StandardModel(EasySyntax):
 
     def compute_loss(
         self, preds: Tensor, data: List[Data], verbose: bool = False
-    ) -> Tensor:
+    ) -> tuple[Tensor, Tensor]:
         """Compute and sum losses across tasks."""
         data_merged = {}
         target_labels_merged = list(set(self.target_labels))
@@ -134,7 +146,9 @@ class StandardModel(EasySyntax):
 
         if self.training == False:
             # during validation we would like to inspect the individual losses for each task, so we log them separately
-
+            assert len(losses) == len(
+                self._tasks
+            ), f"Rank {self.global_rank}: expected {len(self._tasks)} losses, got {len(losses)}"
             for i, loss in enumerate(losses):
                 self.log(
                     "i_loss" + "_" + str(i),
@@ -152,7 +166,8 @@ class StandardModel(EasySyntax):
         assert all(
             loss.dim() == 0 for loss in losses
         ), "Please reduce loss for each task separately"
-        return torch.sum(torch.stack(losses))
+        loss_stack = torch.stack(losses)
+        return torch.sum(loss_stack), loss_stack
 
     def forward(
         self, data: Union[Data, List[Data]]
@@ -165,25 +180,34 @@ class StandardModel(EasySyntax):
             x = self.backbone(d)
             x_list.append(x)
         x = torch.cat(x_list, dim=0)
-        if self._split is not None:
-            x = x.split(self._split[0], dim=-1)
-            preds = [
-                task(x[self._split[1][i]])
-                for i, task in enumerate(self._tasks)
-            ]
+        if self._split_sizes is not None:
+            x = x.split(list(self._split_sizes), dim=-1)
+            preds = []
+            for indc, task in zip(self._split_indices, self._tasks):
+                if isinstance(indc, int):
+                    x_set = x[indc]
+                elif isinstance(indc, list):
+                    x_set = torch.concat([x[i] for i in indc], dim=-1)
+                else:
+                    raise TypeError(
+                        f"expected indc in self._split_indices of type int or list but got {type(indc)}"
+                    )
+                preds.append(task(x_set))
         else:
             preds = [task(x) for task in self._tasks]
         return preds
 
-    def shared_step(self, batch: List[Data], batch_idx: int) -> Tensor:
+    def shared_step(
+        self, batch: List[Data], batch_idx: int
+    ) -> tuple[Tensor, Tensor]:
         """Perform shared step.
 
         Applies the forward pass and the following loss calculation, shared
         between the training and validation step.
         """
         preds = self(batch)
-        loss = self.compute_loss(preds, batch)
-        return loss
+        loss, loss_stack = self.compute_loss(preds, batch)
+        return loss, loss_stack
 
     def validate_tasks(self) -> None:
         """Verify that self._tasks contain compatible elements."""

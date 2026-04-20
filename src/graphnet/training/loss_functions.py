@@ -12,9 +12,11 @@ import scipy.special
 import torch
 from torch import Tensor
 from torch import nn
+from torch.distributions import Beta
 from torch.nn.functional import (
     one_hot,
     binary_cross_entropy,
+    binary_cross_entropy_with_logits,
     softplus,
 )
 
@@ -337,6 +339,19 @@ class BinaryCrossEntropyLoss(LossFunction):
         )
 
 
+class BinaryCrossEntropyLossLogits(LossFunction):
+    """Compute binary cross entropy loss.
+
+    Predictions are vector probabilities (i.e., values between 0 and 1), and
+    targets should be 0 and 1.
+    """
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        return binary_cross_entropy_with_logits(
+            prediction.float(), target.float(), reduction="none"
+        )
+
+
 class FocalBinaryCrossEntropyLoss(LossFunction):
     """Compute binary cross entropy loss.
 
@@ -346,10 +361,9 @@ class FocalBinaryCrossEntropyLoss(LossFunction):
 
     def __init__(
         self,
-        options: Union[int, List[Any], Dict[Any, int]],
-        ratio: float = 1,
         gamma: float = 2,
-        alpha: float = 1,
+        alpha: float = 0.25,
+        logits: bool = False,
         *args: Any,
         **kwargs: Any,
     ):
@@ -360,12 +374,23 @@ class FocalBinaryCrossEntropyLoss(LossFunction):
         self._gamma = gamma
         self._alpha = alpha
 
+        self._logits = logits
+
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
-        binary_loss = binary_cross_entropy(
-            prediction.float(),
-            target.float(),
-            reduction="none",
-        )
+        if self._logits:
+            binary_loss = binary_cross_entropy_with_logits(
+                prediction.float(),
+                target.float(),
+                reduction="none",
+            )
+            prediction = torch.sigmoid(prediction.float())
+        else:
+            binary_loss = binary_cross_entropy(
+                prediction.float(),
+                target.float(),
+                reduction="none",
+            )
+
         a_t = self._alpha * target + (1 - self._alpha) * (1 - target)
         p_t = prediction * target + (1 - prediction) * (1 - target)
         return a_t * (1 - p_t) ** self._gamma * binary_loss
@@ -1095,20 +1120,12 @@ class BetaNLLLoss(LossFunction):
     ) -> Tensor:
         """Calculate the Beta Negative Log Likelihood Loss."""
         # clamp target to [0, 1] +/- self._eps
-        target = target.clamp(min=0 + self._eps, max=1 - self._eps)
-        alpha = alpha + self._eps  # Ensure alpha is positive
-        beta = beta + self._eps  # Ensure beta is positive
-        # Calculate the Beta NLL loss
-        log_norm = (
-            torch.lgamma(alpha + beta)
-            - torch.lgamma(alpha)
-            - torch.lgamma(beta)
-        )
-        log_lik = (alpha - 1) * torch.log(target) + (beta - 1) * torch.log(
-            1 - target
-        )
-        elements = -log_lik + log_norm
-        return elements
+        target = (
+            target * (1 - 2 * self._eps) + self._eps
+        )  # maps [0,1] -> [eps, 1-eps]
+        # Calculate the Beta NLL loss using the torc
+        dist = torch.distributions.Beta(alpha, beta)
+        return -dist.log_prob(target)
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Implement loss calculation."""
@@ -1116,9 +1133,9 @@ class BetaNLLLoss(LossFunction):
         assert prediction.dim() == 2
         if target.dim() != prediction.dim():
             target = target.squeeze(1)
-        # task should have 4 outputs: alpha, beta, and two additional outputs
-        # which are the from alpha and beta calculated prediction and variance
-        assert all(prediction.size() == (target.size() * np.array([1, 4])))
+        # task should have 5 outputs: alpha, beta, and two additional outputs
+        # which are the from alpha and the mean, variance, precision, calculated by
+        assert all(prediction.size() == (target.size() * np.array([1, 5])))
 
         # Extract the mean and standard deviation from the prediction
         alpha = prediction[:, [0]]

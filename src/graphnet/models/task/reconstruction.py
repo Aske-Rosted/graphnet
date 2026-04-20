@@ -372,15 +372,15 @@ class BetaAlphaReconstruction(StandardLearnedTask):
     nb_inputs = 2
 
     def _forward(self, x: Tensor) -> Tensor:
-        mean = torch.sigmoid(x[:, 0])
-        precision = torch.exp(x[:, 1])
+        mean = torch.sigmoid(x[:, 0]).clamp(1e-4, 1 - 1e-4)
+        precision = torch.exp(x[:, 1]).clamp(1e-4, 1e4)
         # Transform the output to be positive
-        alpha = mean * precision
-        beta = (1 - mean) * precision
+        alpha = (mean * precision).clamp(min=1e-4)
+        beta = ((1 - mean) * precision).clamp(min=1e-4)
 
         # calculate the predicted value as the mean of the beta distribution
         variance = mean * (1 - mean) / (precision + 1)
-        return torch.stack((alpha, beta, mean, variance), dim=1)
+        return torch.stack((alpha, beta, mean, variance, precision), dim=1)
 
 
 class MuonMultiplicityReconstruction(StandardLearnedTask):

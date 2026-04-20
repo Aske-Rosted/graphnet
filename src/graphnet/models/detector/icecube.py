@@ -280,6 +280,7 @@ class IceCube86(Detector):
             "dom_qtot": self._charge,
             "rde": self._rde,
             "pmt_area": self._pmt_area,
+            "is_bright_dom": self._identity,
         }
 
         return feature_map
