@@ -281,6 +281,7 @@ class IceCube86(Detector):
             "rde": self._rde,
             "pmt_area": self._pmt_area,
             "is_bright_dom": self._identity,
+            "is_saturated_dom": self._identity,
         }
 
         return feature_map

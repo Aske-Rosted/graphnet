@@ -720,7 +720,7 @@ class ClusterSummaryFeatures(NodeDefinition):
         node_limit_index: Optional[int] = None,
         node_limit_seed: Optional[int] = None,
         node_limit_ascending: bool = False,
-        exclude_bright_hits: Union[bool, str] = False,
+        exclude_flags: Union[str, List[str], None] = None,
     ) -> None:
         """Construct `ClusterSummaryFeatures`.
 
@@ -759,7 +759,8 @@ class ClusterSummaryFeatures(NodeDefinition):
             node_limit_index: Index of the feature to sort on when limiting
                 the number of nodes.
             node_limit_seed: Seed for random node limiting.
-            exclude_bright_hits: If True, excludes bright hits from the node features.
+            exclude_flags: Column name or list of column names whose values
+                indicate pulses to exclude from the node features.
         NOTE: Make sure that either the input data is not already standardized
         or that the `charge_standardization` and `time_standardization`
         parameters are set to 1 to avoid a double standardization.
@@ -789,6 +790,28 @@ class ClusterSummaryFeatures(NodeDefinition):
         self._node_limit_index = node_limit_index
         self._node_limit_seed = node_limit_seed
         self._node_limit_ascending = node_limit_ascending
+        if exclude_flags is None:
+            self._exclude_flag_indices = None
+        else:
+            if isinstance(exclude_flags, str):
+                exclude_flags = [exclude_flags]
+            elif not isinstance(exclude_flags, list):
+                raise ValueError(
+                    f"exclude_flags should be either a str, a list of str, or None, but got {exclude_flags} of type {type(exclude_flags)}"
+                )
+
+            self._exclude_flag_indices = []
+            for exclude_flag in exclude_flags:
+                try:
+                    self._exclude_flag_indices.append(
+                        input_feature_names.index(exclude_flag)
+                    )
+                    #update charge and time indices if necessary
+
+                except ValueError:
+                    raise ValueError(
+                        f"exclude_flags is set to '{exclude_flag}' but it is not found in input_feature_names {input_feature_names}. Please set exclude_flags to None or provide valid column name(s)."
+                    )
         # Base class constructor
         super().__init__(input_feature_names=input_feature_names)
         if self._order_in_time is False:
@@ -796,36 +819,14 @@ class ClusterSummaryFeatures(NodeDefinition):
                 "Setting `order_by_time` to False. "
                 "Make sure that the input data is already ordered in time."
             )
-        if isinstance(exclude_bright_hits, str):
-            try:
-                self._bright_hit_index = input_feature_names.index(
-                    exclude_bright_hits
-                )
-            except ValueError:
-                raise ValueError(
-                    f"exclude_bright_hits is set to '{exclude_bright_hits}' but it is not found in input_feature_names {input_feature_names}. Please set exclude_bright_hits to False or provide a valid column name."
-                )
-        elif exclude_bright_hits:
-            try:
-                self._bright_hit_index = input_feature_names.index(
-                    "is_bright_dom"
-                )
-            except ValueError:
-                raise ValueError(
-                    "exclude_bright_hits is set to True but 'is_bright_dom' is not found in input_feature_names. Please either set exclude_bright_hits to False, provide the name of the bright hit column in input_feature_names or set exclude_bright_hits to the name of the bright hit column."
-                )
-        elif not exclude_bright_hits:
-            self._bright_hit_index = None
-        else:
-            raise ValueError(
-                f"exclude_bright_hits should be either a bool or a str, but got {exclude_bright_hits} of type {type(exclude_bright_hits)}"
-            )
 
     def _define_output_feature_names(
         self,
         input_feature_names: List[str],
     ) -> List[str]:
         """Set the output feature names."""
+        #drop the excluded flag columns from the output feature names
+        input_feature_names = [val for i, val in enumerate(input_feature_names) if i not in self._exclude_flag_indices] if self._exclude_flag_indices is not None else input_feature_names
         self.set_indices(input_feature_names)
         new_feature_names = deepcopy(self._cluster_on)
         if self._total_charge:
@@ -850,9 +851,11 @@ class ClusterSummaryFeatures(NodeDefinition):
         """Construct nodes from raw node features ´x´."""
         # Cast to Numpy
         x = x.numpy()
-        # remove bright hits if specified
-        if self._bright_hit_index is not None:
-            x = x[~(x[:, self._bright_hit_index] == 1)]
+        # remove flagged pulses if specified
+        if self._exclude_flag_indices is not None:
+            x = x[~np.any(x[:, self._exclude_flag_indices] == 1, axis=1)]
+            # remove the flag columns from x
+            x = np.delete(x, self._exclude_flag_indices, axis=1)
         # Shift time to start at 0
         if self._time_idx is not None:
             x[:, self._time_idx] -= np.min(x[:, self._time_idx])

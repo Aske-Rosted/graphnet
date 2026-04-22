@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Union, Type
 
 import numpy as np
 import torch
+import torch.distributed as dist
 from pytorch_lightning import Callback, Trainer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from torch import Tensor
@@ -359,14 +360,45 @@ class EasySyntax(Model):
         )
 
         outputs = inference_trainer.predict(self, dataloader)
+        local_outputs: Dict[str, np.ndarray]
+        if len(outputs) == 0:
+            local_outputs = {}
+        else:
+            local_outputs = {
+                key: torch.cat([out[key] for out in outputs], dim=0).numpy()
+                for key in outputs[0].keys()
+            }
+
+        # In distributed prediction each rank holds only a shard; gather all shards.
+        if dist.is_available() and dist.is_initialized():
+            gathered_outputs: List[Dict[str, np.ndarray]] = [
+                {} for _ in range(dist.get_world_size())
+            ]
+            dist.all_gather_object(gathered_outputs, local_outputs)
+
+            all_keys = sorted(
+                {
+                    key
+                    for rank_outputs in gathered_outputs
+                    for key in rank_outputs.keys()
+                }
+            )
+            outputs = {
+                key: np.concatenate(
+                    [
+                        rank_outputs[key]
+                        for rank_outputs in gathered_outputs
+                        if key in rank_outputs
+                    ],
+                    axis=0,
+                )
+                for key in all_keys
+            }
+        else:
+            outputs = local_outputs
+
         if len(outputs) == 0:
             raise ValueError("Got no predictions")
-        # stack the dictionaries
-
-        outputs = {
-            key: torch.cat([out[key] for out in outputs], dim=0).numpy()
-            for key in outputs[0].keys()
-        }
 
         return outputs
 
