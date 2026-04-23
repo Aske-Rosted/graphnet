@@ -210,6 +210,74 @@ class collator_auto_bucket_trans:
 
         return batch_list
 
+class collator_auto_bucket_trans_max_compute:
+    """Perform transformer-oriented bucketing under a compute budget.
+
+    Graphs are sorted by sequence length and then packed greedily until the
+    estimated padded compute in the current bucket would exceed the configured
+    maximum. This produces a variable number of microbatches per input batch.
+    """
+
+    def __init__(self, max_compute: float, parameter: str = "n_pulses", verbose: bool = False):
+        """Set the maximum compute budget for each bucket."""
+
+        self.max_compute = max_compute
+        self.parameter = parameter
+        self.verbose = verbose
+
+    def __call__(self, graphs: List[Data]) -> Batch:
+        """Execute compute-budget bucketing on the input graphs.
+
+        Args:
+            graphs: A list of Data objects representing the input graphs.
+
+        Returns:
+            A list of Batch objects, each containing a mini-batch of the input
+            graphs packed so that the estimated compute stays below the
+            requested budget where possible.
+        """
+        if len(graphs) == 0:
+            return []
+
+        valid_sorted = sorted(
+            (
+                (getattr(g, self.parameter), g)
+                for g in graphs
+                if getattr(g, self.parameter) > 1
+            ),
+            key=lambda x: x[0],
+        )
+
+        if len(valid_sorted) == 0:
+            return []
+
+        batch_list: List[Batch] = []
+        current_bucket: List[Data] = []
+        current_max_length = 0
+
+        for length, graph in valid_sorted:
+            prospective_size = len(current_bucket) + 1
+            prospective_max_length = max(current_max_length, length)
+            prospective_compute = prospective_size * (
+                prospective_max_length * prospective_max_length
+            )
+
+            if current_bucket and prospective_compute > self.max_compute:
+                batch_list.append(Batch.from_data_list(current_bucket))
+                current_bucket = []
+                current_max_length = 0
+
+            current_bucket.append(graph)
+            current_max_length = max(current_max_length, length)
+
+        if current_bucket:
+            batch_list.append(Batch.from_data_list(current_bucket))
+
+        if self.verbose:
+            number_of_buckets = len(batch_list)
+            Logger().info(f"Number of buckets: {number_of_buckets}")
+        return batch_list
+
 
 # @TODO: Remove in favour of DataLoader{,.from_dataset_config}
 def make_dataloader(
