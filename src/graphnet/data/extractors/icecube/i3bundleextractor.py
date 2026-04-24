@@ -11,7 +11,9 @@ from .utilities.frames import (
 )
 from graphnet.utilities.imports import has_icecube_package
 from .utilities.mctree_processing import (
-    make_shower_and_stochasticity_info
+    make_shower_and_stochasticity_info,
+    rms_closest_approach,
+    compute_rms_surface,
 )
 
 from .utilities.track_topologies import (
@@ -133,6 +135,8 @@ class I3BundleExtractor(I3Extractor):
             "deposited_muon_multiplicity_residual_primary": padding_value,
             "deposited_muon_multiplicity_residual_energy": padding_value,
             "deposited_muon_multiplicity_residual_charge": padding_value,
+            "rms_closest_approach": padding_value,
+            "rms_surface": padding_value,
             "primary_rms_energy": padding_value,
             "primary_rms3_energy": padding_value,
             "primary_rms_MCPE": padding_value,
@@ -227,6 +231,8 @@ class I3BundleExtractor(I3Extractor):
 
         output.update(
             {
+                "rms_closest_approach": frame["rms_closest_approach"].value,
+                "rms_surface": frame["rms_surface"].value,
                 "primary_rms_energy": frame['PrimaryShowerProfile_energy']['lateral_rms'],
                 "primary_rms3_energy": frame['PrimaryShowerProfile_energy']['lateral_rms3'],
                 "primary_rms_MCPE": frame['PrimaryShowerProfile_MCPEs']['lateral_rms'],
@@ -451,6 +457,8 @@ class I3BundleExtractor(I3Extractor):
     ):
 
         make_shower_and_stochasticity_info(frame)
+        rms_closest_approach(frame)
+        compute_rms_surface(frame)
 
     def _generation_spectrum_correction(
         self,

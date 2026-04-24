@@ -492,3 +492,78 @@ def make_shower_and_stochasticity_info(
     )
 
     del leading_mctree_information
+
+
+def rms_closest_approach(
+    frame,
+    key = 'rms_closest_approach',
+):
+
+    primary, leading = get_leading_particle(frame)
+
+    primary = frame['PolyplopiaPrimary']
+    tracklist = frame['MMCTrackList']
+    mctree = frame['I3MCTree_preMuonProp']
+
+    oms = defaultdict(list)
+
+    for track in tracklist:
+        if mctree.is_in_subtree(primary, track.particle) == True: # Cleaning Coincidence Hits
+            oms['x'].append(track.xc)
+            oms['y'].append(track.yc)
+            oms['z'].append(track.zc)
+            oms['energy'].append(track.Ec)
+
+    ca_muon_info = pl.DataFrame(oms)
+    
+    if len(ca_muon_info) == 0:
+        frame[key] = dataclasses.I3Double(-1)
+        return
+
+    r, cx, cy, cz, s = closest_approach_distance_vector(
+        leading,
+        ca_muon_info.get_column('x').to_numpy(),
+        ca_muon_info.get_column('y').to_numpy(),
+        ca_muon_info.get_column('z').to_numpy(),
+    )
+
+    
+    w = ca_muon_info['energy'].to_numpy()
+    rms = np.sqrt(np.sum(w * r**2) / np.sum(w))
+    
+    frame[key] = dataclasses.I3Double(rms)
+
+def compute_rms_surface(
+    frame,
+    key = 'rms_surface',
+):
+    
+    surface_muons = frame['I3MCTree_preMuonProp']
+    
+    primary, leading = get_leading_particle(frame)
+    bundle_particles = surface_muons.get_daughters(primary)
+    oms = defaultdict(list)
+    for particle in bundle_particles:
+        if (
+            particle.type_string in ["MuPlus", "MuMinus"]
+            and particle.location_type_string == "InIce"
+        ):
+            oms['x'].append(particle.pos.x)
+            oms['y'].append(particle.pos.y)
+            oms['z'].append(particle.pos.z)
+            oms['energy'].append(particle.energy)
+
+    surface_muon_info = pl.DataFrame(oms)
+    
+    if len(surface_muon_info) == 0:
+        frame[key] = dataclasses.I3Double(-1)
+        return
+
+    zd = surface_muon_info['z'].to_numpy() - leading.pos.z
+    yd = surface_muon_info['y'].to_numpy() - leading.pos.y
+    xd = surface_muon_info['x'].to_numpy() - leading.pos.x
+    r = np.sqrt(xd**2 + yd**2 + zd**2)
+    w = surface_muon_info['energy'].to_numpy()
+    rms = np.sqrt(np.sum(w * r**2) / np.sum(w))
+
+    frame[key] = dataclasses.I3Double(rms)
