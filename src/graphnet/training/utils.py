@@ -218,12 +218,13 @@ class collator_auto_bucket_trans_max_compute:
     maximum. This produces a variable number of microbatches per input batch.
     """
 
-    def __init__(self, max_compute: float, parameter: str = "n_pulses", verbose: bool = False):
+    def __init__(self, max_compute: float, parameter: str = "n_pulses", verbose: bool = False,gamma: float = 2.0):
         """Set the maximum compute budget for each bucket."""
 
         self.max_compute = max_compute
         self.parameter = parameter
         self.verbose = verbose
+        self.gamma = gamma
 
     def __call__(self, graphs: List[Data]) -> Batch:
         """Execute compute-budget bucketing on the input graphs.
@@ -258,9 +259,7 @@ class collator_auto_bucket_trans_max_compute:
         for length, graph in valid_sorted:
             prospective_size = len(current_bucket) + 1
             prospective_max_length = max(current_max_length, length)
-            prospective_compute = prospective_size * (
-                prospective_max_length * prospective_max_length
-            )
+            prospective_compute = prospective_size * prospective_max_length**self.gamma
 
             if current_bucket and prospective_compute > self.max_compute:
                 batch_list.append(Batch.from_data_list(current_bucket))
@@ -276,6 +275,11 @@ class collator_auto_bucket_trans_max_compute:
         if self.verbose:
             number_of_buckets = len(batch_list)
             Logger().info(f"Number of buckets: {number_of_buckets}")
+            for i, batch in enumerate(batch_list):
+                batch_size = len(batch)
+                max_length = max(getattr(g, self.parameter) for g in batch.to_data_list())
+                estimated_compute = batch_size * (max_length * max_length)
+                Logger().info(f"Bucket {i}: size={batch_size}, max_length={max_length}, estimated_compute={estimated_compute}")
         return batch_list
 
 
