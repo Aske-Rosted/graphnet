@@ -99,14 +99,8 @@ class StandardModel(EasySyntax):
         if split is not None:
             self._split_sizes = split[0]
             self._split_indices = split[1]
-            max_index = max(
-                list(
-                    chain.from_iterable(
-                        [indc] if isinstance(indc, int) else indc
-                        for indc in self._split_indices
-                    )
+            max_index = max(self.flatten_split_indices(self._split_indices)
                 )
-            )
             assert len(self._split_sizes) == (max_index + 1)
 
             assert (
@@ -188,7 +182,19 @@ class StandardModel(EasySyntax):
                 if isinstance(indc, int):
                     x_set = x[indc]
                 elif isinstance(indc, list):
-                    x_set = torch.concat([x[i] for i in indc], dim=-1)
+                    if all(isinstance(i, int) for i in indc):
+                        x_set = torch.concat([x[i] for i in indc], dim=-1)
+                    else:
+                        assert len(indc) == 2, "If indc is a list it must be of length 2, the first being the task-specific indices and the second being the shared indices which are to be detached from the backbone output"
+                        task_specific_indices = indc[0]
+                        if isinstance(task_specific_indices, int):
+                            task_specific_indices = [task_specific_indices]
+                        shared_indices = indc[1]
+                        x_set = torch.concat(
+                            [torch.concat([x[i] for i in task_specific_indices], dim=-1),
+                             torch.concat([x[i] for i in shared_indices], dim=-1).detach()],
+                            dim=-1
+                        )
                 else:
                     raise TypeError(
                         f"expected indc in self._split_indices of type int or list but got {type(indc)}"
@@ -226,3 +232,10 @@ class StandardModel(EasySyntax):
             " GraphNeT 2.0. Please use `_data_representation` instead."
         )
         return self._data_representation
+
+    def flatten_split_indices(self, nested):
+        for item in nested:
+            if isinstance(item, list):
+                yield from self.flatten_split_indices(item)
+            else:
+                yield item
