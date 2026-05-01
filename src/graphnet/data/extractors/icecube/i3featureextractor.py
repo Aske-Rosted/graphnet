@@ -14,7 +14,12 @@ if has_icecube_package() or TYPE_CHECKING:
 class I3FeatureExtractor(I3Extractor):
     """Base class for extracting specific, reconstructed features."""
 
-    def __init__(self, pulsemap: str, exclude: list = [None]):
+    def __init__(self, 
+        pulsemap: str, 
+        exclude: list = [None],
+        exclude_saturation: bool = False,
+        exclude_calibration_errata: bool = False,
+    ) -> None:
         """Construct I3FeatureExtractor.
 
         Args:
@@ -24,6 +29,8 @@ class I3FeatureExtractor(I3Extractor):
         """
         # Member variable(s)
         self._pulsemap = pulsemap
+        self._exclude_saturation = exclude_saturation
+        self._exclude_calibration_errata = exclude_calibration_errata
 
         # Base class constructor
         super().__init__(pulsemap, exclude=exclude)
@@ -57,6 +64,8 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
             "is_bad_dom": [],
             "is_saturated_dom": [],
             "is_errata_dom": [],
+            "is_saturated_pulse": [],
+            "is_errata_pulse": [],
             "event_time": [],
             "hlc": [],
             "awtd": [],
@@ -81,6 +90,11 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
         bad_doms = None
         saturation_windows = None
         calibration_errata = None
+        saturation_start = None
+        saturation_end = None
+        errata_start = None
+        errata_end = None
+
         if "BrightDOMs" in frame:
             bright_doms = frame.Get("BrightDOMs")
 
@@ -123,22 +137,55 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
 
             if saturation_windows:
                 is_saturated_dom = 1 if om_key in saturation_windows else 0
+                if is_saturated_dom == 1:
+                    saturation_start = saturation_windows[om_key][0].start
+                    saturation_stop = saturation_windows[om_key][0].stop
+                else:
+                    saturation_start = -1
+                    saturation_stop = -1
             else:
                 is_saturated_dom = int(padding_value)
+                saturation_start = -1
+                saturation_stop = -1
 
             if calibration_errata:
                 is_errata_dom = 1 if om_key in calibration_errata else 0
+                if is_errata_dom == 1:
+                    errata_start = calibration_errata[om_key][0].start
+                    errata_stop = calibration_errata[om_key][0].stop
+                else:
+                    errata_start = -1
+                    errata_stop = -1
             else:
                 is_errata_dom = int(padding_value)
+                errata_start = -1
+                errata_stop = -1
 
             # Loop over pulses for each OM
             pulses = data[om_key]
             for pulse in pulses:
+                
+                pulse_time = getattr(pulse, "time", padding_value)
+
+                if is_saturated_dom == 1 and saturation_start <= pulse_time <= saturation_stop:
+                    is_saturated_pulse = 1
+                    if self._exclude_saturation:
+                        continue # Exclude Saturated Pulses
+                else:
+                    is_saturated_pulse = 0
+                
+                if is_errata_dom == 1 and errata_start <= pulse_time <= errata_stop:
+                    is_errata_pulse = 1
+                    if self._exclude_calibration_errata:
+                        continue # Exclude Errata Pulses
+                else:
+                    is_errata_pulse = 0
+
                 output["charge"].append(
                     getattr(pulse, "charge", padding_value)
                 )
                 output["dom_time"].append(
-                    getattr(pulse, "time", padding_value)
+                    pulse_time
                 )
                 output["width"].append(getattr(pulse, "width", padding_value))
                 output["pmt_area"].append(area)
@@ -157,6 +204,8 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
                 output["is_saturated_dom"].append(is_saturated_dom)
                 output["is_errata_dom"].append(is_errata_dom)
                 output["event_time"].append(event_time)
+                output["is_saturated_pulse"].append(is_saturated_pulse)
+                output["is_errata_pulse"].append(is_errata_pulse)
 
                 # Pulse flags
                 flags = getattr(pulse, "flags", padding_value)

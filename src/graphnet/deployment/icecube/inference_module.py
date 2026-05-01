@@ -186,9 +186,18 @@ class I3InferenceModule(DeploymentModule):
         if self._inference_speed_check is True:
             write_end = time()
             write_time = write_end - write_start
-            self._logger.info(f"Write time: {write_time:.4f} s\n")
+            #self._logger.info(f"Write time: {write_time:.4f} s\n")
             total_time = data_repr_time + inference_time + write_time
-            self._logger.info(f"Total time: {total_time:.4f} s\n")
+            #self._logger.info(f"Total time: {total_time:.4f} s\n")
+            dict_speed = {
+                "data_repr_time": data_repr_time,
+                "inference_time": inference_time,
+                "write_time": write_time,
+                "total_time": total_time,
+            }
+
+            self._add_runtimes_to_frame(frame=frame, runtimes=dict_speed)
+
         self._clean_device()
 
         if memory_watch:
@@ -232,10 +241,10 @@ class I3InferenceModule(DeploymentModule):
         if self._inference_speed_check is True:
             inference_end = time()
             inference_time = inference_end - inference_start
-            self._logger.info(
-                f"Data representation time: {data_repr_time:.4f} s\n"
-                f"Inference time: {inference_time:.4f} s\n"
-            )
+            #self._logger.info(
+            #    f"Data representation time: {data_repr_time:.4f} s\n"
+            #    f"Inference time: {inference_time:.4f} s\n"
+            #)
         del data
         return predictions, data_repr_time, inference_time
 
@@ -379,6 +388,11 @@ class I3InferenceModule(DeploymentModule):
                 frame.Put(key, data[key])
         return
 
+    def _add_runtimes_to_frame(self, frame, runtimes):
+
+        i3_runtime_container = dataclasses.I3MapStringDouble(runtimes)
+        frame.Put(self.model_name + "_Speed", i3_runtime_container)
+
     def _check_requirements(self, frame: I3Frame) -> bool:
         """Check if requirements are met."""
         for requirement in self._requirements:
@@ -502,3 +516,8 @@ class I3MultipleModelInferenceModule(I3InferenceModule):
 
         i3_score_container = dataclasses.I3MapStringDouble(data)
         frame.Put(self._key_name, i3_score_container)
+
+    def _add_runtimes_to_frame(self, frame, runtimes):
+
+        i3_runtime_container = dataclasses.I3MapStringDouble(runtimes)
+        frame.Put(self._key_name + "_Speed", i3_runtime_container)
