@@ -228,7 +228,7 @@ class NeutrinoEventMultitaskTransformer_v3(GNN):
                 x = torch.cat([tokens, x], 1)
 
         # extract the task tokens from the output of the last ESA block
-        x = x[:, : cls_token.shape[1]]
+        x = x[:, n_shrd:n_cls + n_shrd]
 
         if self.token_multiplier > 1:
             # reshape the output to (batch_size, n_tasks, token_multiplier*hidden_dim)
