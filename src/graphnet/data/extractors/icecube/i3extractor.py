@@ -293,16 +293,11 @@ class I3Extractor(Extractor):
         all_primaries = main_tree.get_primaries()
         if highest_energy_primary:
             # grab the id of the highest energy primary
-
-            energies = np.array(
-                [
-                    p.energy
-                    for p in self.find_in_ice_daughters(
-                        main_tree, all_primaries
-                    )
-                ]
+            in_ice_daughters = self.find_in_ice_daughters(
+                main_tree, [p for p in all_primaries if p.is_neutrino]
             )
-            p_highest = np.array(all_primaries)[np.argmax(energies)]
+            energies = np.array([p.energy for p in in_ice_daughters])
+            p_highest = np.array(in_ice_daughters)[np.argmax(energies)]
             parent_ids = [
                 p.id for p in self.get_all_parents(main_tree, p_highest)
             ]
@@ -333,7 +328,7 @@ class I3Extractor(Extractor):
 
         parents = []
         while mctree.has_parent(particle.id):
-            parent = mctree.get_parent(particle.id)
+            parent = mctree.parent(particle.id)
             parents.append(parent)
             particle = parent
         return parents
