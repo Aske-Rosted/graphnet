@@ -154,7 +154,7 @@ class I3Calorimetry(I3Extractor):
                     f"{frame['I3EventHeader']}"
                 )
 
-            e_target_fraction = (
+            fraction_target_total = (
                 e_total_target / e_total if e_total > 0 else 0.0
             )
             target_cascade_fraction = (
@@ -181,8 +181,8 @@ class I3Calorimetry(I3Extractor):
                     "e_track_bkg_" + self._extractor_name: e_track_bkg,
                     "e_cascade_bkg_" + self._extractor_name: e_cascade_bkg,
                     "e_bkg_" + self._extractor_name: e_total_bkg,
-                    "e_target_fraction_"
-                    + self._extractor_name: e_target_fraction,
+                    "fraction_target_total_"
+                    + self._extractor_name: fraction_target_total,
                     "fraction_target_primary_"
                     + self._extractor_name: fraction_primary,
                     "fraction_cascade_target_"
