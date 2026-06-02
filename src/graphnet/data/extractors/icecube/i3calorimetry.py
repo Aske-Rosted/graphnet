@@ -35,8 +35,8 @@ class I3Calorimetry(I3Extractor):
         mctree: str = "I3MCTree",
         mmctracklist: str = "MMCTrackList",
         extractor_name: str = "I3Calorimetry",
-        daughters: bool = False,
         highest_energy_primary: bool = False,
+        entrance_energy: bool = False,
         **kwargs: Any,
     ) -> None:
         """Create a ConvexHull object from the GCD file.
@@ -46,17 +46,16 @@ class I3Calorimetry(I3Extractor):
         mctree: Name of the I3MCTree in the frame.
         mmctracklist: Name of the MMCTrackList in the frame.
         extractor_name: Name of the extractor.
-        daughters: If True, only consider particles that are
-            daughters of the primary.
         highest_energy_primary: If True, only consider particles that are
             daughters of the highest energy primary.
+        entrance_energy: If True, consider entrance energy.
         """
         # Member variable(s)
         self.hull = hull
         self.mctree = mctree
         self.mmctracklist = mmctracklist
-        self.daughters = daughters
         self.highest_energy_primary = highest_energy_primary
+        self.entrance_energy = entrance_energy
         # Base class constructor
         super().__init__(extractor_name=extractor_name, **kwargs)
 
@@ -64,91 +63,145 @@ class I3Calorimetry(I3Extractor):
         """Extract all the visible particles entering the volume."""
         output = {}
         # copy the original mctree because we will be modifying it
-        tree_copy = deepcopy(frame[self.mctree])
         if self.frame_contains_info(frame):
-
-            primary_energy = sum(
-                [
-                    p.energy
-                    for p in self.check_primary_energy(
-                        frame,
-                        self.get_primaries(
-                            frame,
-                            self.daughters,
-                            highest_energy_primary=self.highest_energy_primary,
-                        ),
-                    )
-                ]
+            target_tree, bkg_tree = self.split_mc_tree(
+                frame, highest_energy_primary=self.highest_energy_primary
             )
-
-            e_entrance_track, e_deposited_track = self.total_track_energy(
-                frame
-            )
-
-            e_deposited_cascade = self.total_cascade_energy(frame)
-
-            e_total = e_entrance_track + e_deposited_cascade
-
-            if all(
-                (
-                    not self.daughters,
-                    not self.highest_energy_primary,
-                    e_total == 0,
+            if len(target_tree) + len(bkg_tree) != len(frame[self.mctree]):
+                raise ValueError(
+                    "Split mctree has different number of particles than original mctree"
                 )
-            ):
+
+            # For the target we consider either all neutrino primary products or only the highest energy primary of the neutrino depending on the flag.
+            target_primaries = self.get_primaries(
+                target_tree,
+                daughters=True,
+                highest_energy_primary=self.highest_energy_primary,
+            )
+            target_primaries = self.check_primary_energy(
+                target_tree, target_primaries
+            )
+            # For background we consider everything in the background tree.
+            bkg_primaries = self.get_primaries(
+                bkg_tree, daughters=False, highest_energy_primary=False
+            )
+            bkg_primaries = self.check_primary_energy(bkg_tree, bkg_primaries)
+
+            target_primaries_energy = sum([p.energy for p in target_primaries])
+            bkg_primaries_energy = sum([p.energy for p in bkg_primaries])
+
+            e_track_target = self.total_track_energy(
+                frame, target_tree, entrance_energy=self.entrance_energy
+            )
+            # Sanity check ensuring no double counting
+
+            if e_track_target > target_primaries_energy:
+                raise ValueError(
+                    f"Energy deposited in target is greater than primary energy: {e_track_target} > {target_primaries_energy}\nEvent header: {frame['I3EventHeader']}"
+                )
+            if len(bkg_primaries) > 0:
+                e_track_bkg = self.total_track_energy(
+                    frame, bkg_tree, entrance_energy=self.entrance_energy
+                )
+                if e_track_bkg > bkg_primaries_energy:
+                    raise ValueError(
+                        f"Energy deposited in background is greater than primary energy: {e_track_bkg} > {bkg_primaries_energy}\nEvent header: {frame['I3EventHeader']}"
+                    )
+            else:
+                e_track_bkg = 0.0
+
+            e_cascade_target = self.total_cascade_energy(
+                target_tree, target_primaries
+            )
+            if e_cascade_target > target_primaries_energy:
+                raise ValueError(
+                    f"Energy deposited in cascades is greater than primary energy: {e_cascade_target} > {target_primaries_energy}\nEvent header: {frame['I3EventHeader']}"
+                )
+            if len(bkg_primaries) > 0:
+                e_cascade_bkg = self.total_cascade_energy(
+                    bkg_tree, bkg_primaries
+                )
+                if e_cascade_bkg > bkg_primaries_energy:
+                    raise ValueError(
+                        f"Energy deposited in cascades is greater than primary energy: {e_cascade_bkg} > {bkg_primaries_energy}\nEvent header: {frame['I3EventHeader']}"
+                    )
+            else:
+                e_cascade_bkg = 0.0
+
+            e_total_target = e_track_target + e_cascade_target
+            e_total_bkg = e_track_bkg + e_cascade_bkg
+
+            e_total = e_total_target + e_total_bkg
+
+            if e_total == 0.0:
                 self.warning(
                     "No energy deposited in the hull, "
                     "Think about increasing the padding."
                     f"\nCurrent padding: {self.hull.padding}"
-                    f"\nTotal energy: {e_total}"
-                    f"\nTrack energy: {e_entrance_track}"
-                    f"\nCascade energy: {e_deposited_cascade}"
                     f"\nEvent header: {frame['I3EventHeader']}"
                 )
 
-            if self.daughters:
-                assert e_total <= (primary_energy * (1 + 1e-6)) or (
-                    e_total - primary_energy < 0.5
-                ), "Total energy on entrance is greater than primary energy\
-                    \nTotal energy: {}\
-                    \nPrimary energy: {}\
-                    \nTrack energy: {}\
-                    \nCascade energy: {}\
-                    {}".format(  # allow for differences due to mass -> kinetic energy conversion and numerical precision
-                    e_total,
-                    primary_energy,
-                    e_entrance_track,
-                    e_deposited_cascade,
-                    frame["I3EventHeader"],
+            if not (
+                e_total_target <= (target_primaries_energy * (1 + 1e-6))
+                or (e_total_target - target_primaries_energy < 0.5)
+            ):
+                raise ValueError(
+                    "Total energy on entrance is greater than primary energy\n"
+                    f"Total energy: {e_total_target}\n"
+                    f"Primary energy: {target_primaries_energy}\n"
+                    f"Track deposited energy: {e_track_target}\n"
+                    f"Cascade deposited energy: {e_cascade_target}\n"
+                    f"{frame['I3EventHeader']}"
                 )
 
-            cascade_fraction = None
-            if e_total > 0:
-                cascade_fraction = e_deposited_cascade / e_total
+            e_target_fraction = (
+                e_total_target / e_total if e_total > 0 else 0.0
+            )
+            target_cascade_fraction = (
+                e_cascade_target / e_total_target
+                if e_total_target > 0
+                else 0.0
+            )
 
-            if primary_energy > 0:
-                fraction_primary = e_total / primary_energy
+            if e_total > 0:
+                cascade_fraction_tot = (
+                    e_cascade_target + e_cascade_bkg
+                ) / e_total
+
+            if target_primaries_energy > 0:
+                fraction_primary = e_total_target / target_primaries_energy
             else:
                 fraction_primary = None
             output.update(
                 {
-                    "e_entrance_track_"
-                    + self._extractor_name: e_entrance_track,
-                    "e_deposited_track_"
-                    + self._extractor_name: e_deposited_track,
-                    "e_cascade_" + self._extractor_name: e_deposited_cascade,
-                    "e_visible_" + self._extractor_name: e_total,
-                    "fraction_primary_"
+                    "e_track_target_" + self._extractor_name: e_track_target,
+                    "e_cascade_target_"
+                    + self._extractor_name: e_cascade_target,
+                    "e_target_" + self._extractor_name: e_total_target,
+                    "e_track_bkg_" + self._extractor_name: e_track_bkg,
+                    "e_cascade_bkg_" + self._extractor_name: e_cascade_bkg,
+                    "e_bkg_" + self._extractor_name: e_total_bkg,
+                    "e_target_fraction_"
+                    + self._extractor_name: e_target_fraction,
+                    "fraction_target_primary_"
                     + self._extractor_name: fraction_primary,
-                    "fraction_cascade_"
-                    + self._extractor_name: cascade_fraction,
+                    "fraction_cascade_target_"
+                    + self._extractor_name: target_cascade_fraction,
+                    "e_track_total_"
+                    + self._extractor_name: e_track_target
+                    + e_track_bkg,
+                    "e_cascade_total_"
+                    + self._extractor_name: e_cascade_target
+                    + e_cascade_bkg,
+                    "e_dep_total_" + self._extractor_name: e_total,
+                    "fraction_cascade_total_"
+                    + self._extractor_name: (
+                        cascade_fraction_tot if e_total > 0 else 0.0
+                    ),
                 }
             )
 
         output = {k: v for k, v in output.items() if k not in self._exclude}
-        # restore original mctree
-        frame.Delete(self.mctree)
-        frame[self.mctree] = tree_copy
         return output
 
     def frame_contains_info(self, frame: "icetray.I3Frame") -> bool:
@@ -156,50 +209,31 @@ class I3Calorimetry(I3Extractor):
         return self.mctree in frame and self.mmctracklist in frame
 
     def total_track_energy(
-        self, frame: "icetray.I3Frame"
-    ) -> Tuple[float, float]:
-        """Get the total energy of track particles on entrance."""
-        e_entrance = 0
-        e_deposited = 0
-        primaries = self.get_primaries(
-            frame, self.daughters, self.highest_energy_primary
+        self,
+        frame: "icetray.I3Frame",
+        mctree: "dataclasses.I3MCTree",
+        entrance_energy: bool = False,
+    ) -> float:
+        """Get the total energy deposited by tracks entering the volume.
+
+        If entrance_energy is True, return the total energy entering the
+        volume as tracks instead of the energy deposited.
+        """
+        energy = 0
+
+        mmc_track_list = self.filter_track_list(
+            mctree, frame[self.mmctracklist]
         )
-        primaries = self.check_primary_energy(frame, primaries)
 
-        MMCTrackList = frame[self.mmctracklist]
-        if self.daughters:
-            MMCTrackList_filtered = []
-            for track in MMCTrackList:
-                try:
-                    if (
-                        frame[self.mctree].get_primary(track.GetI3Particle())
-                        in primaries
-                    ):
-                        MMCTrackList_filtered.append(track)
-                except RuntimeError as e:
-                    if "particle not found" in str(e):
-                        # log warning with event header
-                        self.warning(
-                            f"Could not find primary for track {track.GetI3Particle()}"
-                            f" in event {frame['I3EventHeader']}: {e}"
-                        )
-                        # continue to next track
-                    else:
-                        raise e
-
-            MMCTrackList = simclasses.I3MMCTrackList(MMCTrackList_filtered)
-
-        track_list = np.array(
-            MuonGun.Track.harvest(frame[self.mctree], MMCTrackList)
-        )
+        track_list = np.array(MuonGun.Track.harvest(mctree, mmc_track_list))
 
         while len(track_list) > 0:
             track = track_list[0]
             track_list = track_list[1:]
             try:
-                particle = frame[self.mctree].get_particle(track.id)
+                particle = mctree.get_particle(track.id)
             except RuntimeError:
-                # If the particle does not exist in the mctree, that means a partcle further up was processed and therefore it should not be counted
+                # If the particle does not exist in the mctree, that means a particle further up was processed and therefore it should not be counted
                 continue
 
             # Find distance to entrance and exit from sampling volume
@@ -235,32 +269,27 @@ class I3Calorimetry(I3Extractor):
                     raise
 
             # Accumulate
-            e_deposited += e0 - e1
-            e_entrance += e0
+            if entrance_energy:
+                energy += e0
+            else:
+                energy += e0 - e1
             # get descendant ids
-            # erase particle and children from mctree
-            frame[self.mctree].erase(track.id)
-
-        # Sanity check ensuring no double counting
-        if self.daughters:
-            assert e_entrance <= sum(
-                [p.energy for p in primaries]
-            ), "Energy on entrance is greater than primary energy"
-            assert e_deposited <= sum(
-                [p.energy for p in primaries]
-            ), "Energy deposited is greater than primary energy"
-        return e_entrance, e_deposited
+            if entrance_energy:
+                # if we are looking at the entrance energy then all energy entering the volume as a track is considered "track energy" even if it is later deposited in a cascade, so we remove all descendants of the track from the mctree to avoid double counting
+                mctree.erase(track.id)
+            else:
+                # if we are looking at the deposited energy then we only want to remove the tracks that have either deposited all their energy in the volume or left the volume again thus descendants cannot produce cascades in the volume.
+                if (e1 == 0) or (intersections.second < particle.length):
+                    mctree.erase(track.id)
+        return energy
 
     def total_cascade_energy(
         self,
-        frame: "icetray.I3Frame",
+        mctree: "dataclasses.I3MCTree",
+        primaries: "dataclasses.ListI3Particle",
     ) -> float:
         """Get the total energy of cascade particles on entrance."""
-        particles = deque(
-            self.get_primaries(
-                frame, self.daughters, self.highest_energy_primary
-            )
-        )
+        particles = deque(primaries)
 
         if len(particles) == 0:
             return 0.0
@@ -273,7 +302,6 @@ class I3Calorimetry(I3Extractor):
             [],
         )
 
-        mctree = frame[self.mctree]
         while len(particles) > 0:
             p = particles.popleft()
             p_children = mctree.get_daughters(p)
@@ -302,3 +330,25 @@ class I3Calorimetry(I3Extractor):
         in_hull = self.hull.point_in_hull(pos)
 
         return np.sum(energies[cascade_bool & in_hull])
+
+    def filter_track_list(
+        self,
+        mctree: "dataclasses.I3MCTree",
+        track_list: "simclasses.I3MMCTrackList",
+    ) -> "simclasses.I3MMCTrackList":
+        """Filter the track list based on the mctree provided.
+
+        (This function is only meant to run on target/bkg split trees)
+        """
+        filtered_track_list = []
+        for track in track_list:
+            try:
+                mctree.get_particle(track.particle.id)
+                filtered_track_list.append(track)
+            except RuntimeError as e:
+                if "particleID not found" in str(e):
+                    # if particle is not found in the mctree then it should not be included as it in the other tree.
+                    continue
+                else:
+                    raise e
+        return simclasses.I3MMCTrackList(filtered_track_list)
