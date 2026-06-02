@@ -90,47 +90,39 @@ class I3Calorimetry(I3Extractor):
             target_primaries_energy = sum([p.energy for p in target_primaries])
             bkg_primaries_energy = sum([p.energy for p in bkg_primaries])
 
-            e_track_target = self.total_track_energy(
-                frame, target_tree, entrance_energy=self.entrance_energy
-            )
+            if len(target_tree) > 0:
+                e_track_target = self.total_track_energy(
+                    frame,
+                    target_tree,
+                    entrance_energy=self.entrance_energy,
+                )
+            else:
+                e_track_target = 0.0
             # Sanity check ensuring no double counting
 
             if not (e_track_target <= target_primaries_energy * (1 + 1e-6)):
                 raise ValueError(
                     f"Energy deposited in target is greater than primary energy: {e_track_target} > {target_primaries_energy}\nEvent header: {frame['I3EventHeader']}"
                 )
-            if len(bkg_primaries) > 0:
+            if len(bkg_tree) > 0:
                 e_track_bkg = self.total_track_energy(
-                    frame, bkg_tree, entrance_energy=self.entrance_energy
+                    frame,
+                    bkg_tree,
+                    entrance_energy=self.entrance_energy,
                 )
-                if not (e_track_bkg <= bkg_primaries_energy * (1 + 1e-6)):
-                    raise ValueError(
-                        f"Energy deposited in background is greater than primary energy: {e_track_bkg} > {bkg_primaries_energy}\nEvent header: {frame['I3EventHeader']}"
-                    )
             else:
                 e_track_bkg = 0.0
 
-            e_cascade_target = self.total_cascade_energy(
-                target_tree, target_primaries
-            )
-            if not (
-                e_cascade_target <= target_primaries_energy * (1 + 1e-6)
-                or (e_cascade_target - target_primaries_energy < 0.5)
-            ):
-                raise ValueError(
-                    f"Energy deposited in cascades is greater than primary energy: {e_cascade_target} > {target_primaries_energy}\nEvent header: {frame['I3EventHeader']}"
+            if len(target_tree) > 0:
+                e_cascade_target = self.total_cascade_energy(
+                    target_tree, target_primaries
                 )
-            if len(bkg_primaries) > 0:
+            else:
+                e_cascade_target = 0.0
+            if len(bkg_tree) > 0:
                 e_cascade_bkg = self.total_cascade_energy(
                     bkg_tree, bkg_primaries
                 )
-                if not (
-                    e_cascade_bkg <= bkg_primaries_energy * (1 + 1e-6)
-                    or (e_cascade_bkg - bkg_primaries_energy < 0.5)
-                ):
-                    raise ValueError(
-                        f"Energy deposited in cascades is greater than primary energy: {e_cascade_bkg} > {bkg_primaries_energy}\nEvent header: {frame['I3EventHeader']}"
-                    )
             else:
                 e_cascade_bkg = 0.0
 
@@ -157,6 +149,19 @@ class I3Calorimetry(I3Extractor):
                     f"Primary energy: {target_primaries_energy}\n"
                     f"Track deposited energy: {e_track_target}\n"
                     f"Cascade deposited energy: {e_cascade_target}\n"
+                    f"{frame['I3EventHeader']}"
+                )
+
+            if not (
+                e_total_bkg <= (bkg_primaries_energy * (1 + 1e-6))
+                or (e_total_bkg - bkg_primaries_energy < 0.5)
+            ):
+                raise ValueError(
+                    "Total background energy is greater than primary energy\n"
+                    f"Total background energy: {e_total_bkg}\n"
+                    f"Background primary energy: {bkg_primaries_energy}\n"
+                    f"Track deposited background energy: {e_track_bkg}\n"
+                    f"Cascade deposited background energy: {e_cascade_bkg}\n"
                     f"{frame['I3EventHeader']}"
                 )
 
@@ -227,15 +232,18 @@ class I3Calorimetry(I3Extractor):
         """
         energy = 0
 
-        mmc_track_list = self.filter_track_list(
-            mctree, frame[self.mmctracklist]
-        )
+        if self._is_corsika:
+            mmc_track_list = frame[self.mmctracklist]
+        else:
+            mmc_track_list = self.filter_track_list(
+                mctree, frame[self.mmctracklist]
+            )
 
-        track_list = np.array(MuonGun.Track.harvest(mctree, mmc_track_list))
+        track_list = deque(MuonGun.Track.harvest(mctree, mmc_track_list))
 
         while len(track_list) > 0:
-            track = track_list[0]
-            track_list = track_list[1:]
+            track = track_list.popleft()
+
             try:
                 particle = mctree.get_particle(track.id)
             except RuntimeError:
@@ -247,10 +255,16 @@ class I3Calorimetry(I3Extractor):
                 track.pos, track.dir
             )
 
-            # Check if the track actually enters the volume
+            # Check if the track actually enters the volume. Values are NAN if the ray does not intersect the hull, negative if the intersection is behind the "origin". Uncertain if we can have negative intersections for both first and second intersection without it being converted to NAN (no intersection) but we check for both to be sure.
             if not (
-                np.isfinite(intersections.first)
-                and (intersections.first < particle.length)
+                (
+                    np.isfinite(intersections.first)
+                    and (intersections.first < particle.length)
+                )
+                and (
+                    np.isfinite(intersections.second)
+                    and intersections.second > 0
+                )
             ):
                 continue
 
@@ -279,7 +293,6 @@ class I3Calorimetry(I3Extractor):
                 energy += e0
             else:
                 energy += e0 - e1
-            # get descendant ids
             if entrance_energy:
                 # if we are looking at the entrance energy then all energy entering the volume as a track is considered "track energy" even if it is later deposited in a cascade, so we remove all descendants of the track from the mctree to avoid double counting
                 mctree.erase(track.id)
