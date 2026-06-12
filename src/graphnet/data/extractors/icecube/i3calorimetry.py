@@ -203,7 +203,7 @@ class I3Calorimetry(I3Extractor):
                     "e_cascade_total_"
                     + self._extractor_name: e_cascade_target
                     + e_cascade_bkg,
-                    "e_dep_total_" + self._extractor_name: e_total,
+                    "e_total_" + self._extractor_name: e_total,
                     "fraction_cascade_total_"
                     + self._extractor_name: (
                         cascade_fraction_tot if e_total > 0 else 0.0
