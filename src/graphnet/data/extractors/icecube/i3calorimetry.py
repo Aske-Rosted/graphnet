@@ -26,7 +26,22 @@ class I3Calorimetry(I3Extractor):
     """Event level energy labeling for IceCube data.
 
     This class extracts cumulative energy information from all visible
-    particles entering the detector volume, during the event.
+    particles entering the detector volume, during the event. The recorded energy is split into a "target" and "background" contribution, where the target contribution consists of all particles that downstream of neutrino primaries (or only the highest energy neutrino primary if the corresponding flag is set) and the background contribution consists of all other particles. The recorded energy is further split into a "track" and "cascade" contribution, where the track contribution consists of all energy deposited by particles that are classified as tracks (i.e. if a track is recorded in the MMCTrackList) and the cascade contribution consists of all energy deposited by particles that are not classified as tracks. The recorded energy varies depending on whether or not the entrance_energy flag is set. If the entrance_energy flag is set, the energy recorded is the energy of all visible particles entering the volume as they enter the volume. If the entrance_energy flag is not set, then the recorded energy is only the energy deposited inside the volume i.e. if a muon enters the volume with 100 GeV and leaves with 80 GeV, then the track energy recorded would be 20 GeV.
+
+    Returns a dictionary with the following keys
+    - e_track_target: Energy entering/deposited by target tracks.
+    - e_cascade_target: Energy entering/deposited by target cascades.
+    - e_target: Total energy entering/deposited by target particles.
+    - e_track_bkg: Energy entering/deposited by background tracks.
+    - e_cascade_bkg: Energy entering/deposited by background cascades.
+    - e_bkg: Total energy entering/deposited by background particles.
+    - fraction_target_total: Fraction of total recorded energy that is from target particles.
+    - fraction_target_primary: Fraction of primar(y/ies) energy that is recorded as entering/deposited by target particles.
+    - fraction_cascade_target: Fraction of target energy that is from cascades.
+    - e_track_total: Total energy entering/deposited by tracks.
+    - e_cascade_total: Total energy entering/deposited by cascades.
+    - e_total: Total energy entering/deposited by all particles.
+    - fraction_cascade_total: Fraction of total recorded energy that is from cascades.
     """
 
     def __init__(
