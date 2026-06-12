@@ -291,12 +291,10 @@ class I3Calorimetry(I3Extractor):
             # Accumulate
             if entrance_energy:
                 energy += e0
-            else:
-                energy += e0 - e1
-            if entrance_energy:
                 # if we are looking at the entrance energy then all energy entering the volume as a track is considered "track energy" even if it is later deposited in a cascade, so we remove all descendants of the track from the mctree to avoid double counting
                 mctree.erase(track.id)
             else:
+                energy += e0 - e1
                 # if we are looking at the deposited energy then we only want to remove the tracks that have either deposited all their energy in the volume or left the volume again thus descendants cannot produce cascades in the volume.
                 if (e1 == 0) or (intersections.second < particle.length):
                     mctree.erase(track.id)
