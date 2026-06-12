@@ -62,7 +62,6 @@ class I3Calorimetry(I3Extractor):
     def __call__(self, frame: "icetray.I3Frame") -> Dict[str, Any]:
         """Extract all the visible particles entering the volume."""
         output = {}
-        # copy the original mctree because we will be modifying it
         if self.frame_contains_info(frame):
             target_tree, bkg_tree = self.split_mc_tree(
                 frame, highest_energy_primary=self.highest_energy_primary
