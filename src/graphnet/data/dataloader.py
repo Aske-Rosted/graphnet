@@ -7,6 +7,7 @@ from torch_geometric.data import Batch, Data
 
 from graphnet.data.dataset import Dataset, EnsembleDataset
 from graphnet.utilities.config import DatasetConfig
+from torch.utils.data import Sampler
 
 
 def collate_fn(graphs: List[Data]) -> Batch:
@@ -35,9 +36,17 @@ class DataLoader(torch.utils.data.DataLoader):
         persistent_workers: bool = True,
         collate_fn: Callable = collate_fn,
         prefetch_factor: int = 2,
+        sampler: Sampler = None,
+        sampler_kwargs: Dict[str, Any] = None,
         **kwargs: Any,
     ) -> None:
         """Construct `DataLoader`."""
+        if sampler is not None and not isinstance(sampler, Sampler):
+            sampler_kwargs = sampler_kwargs or {}
+            sampler = sampler(dataset, **sampler_kwargs)
+        if sampler is not None:
+            shuffle = False
+
         # Base class constructor
         super().__init__(
             dataset,
@@ -47,6 +56,7 @@ class DataLoader(torch.utils.data.DataLoader):
             collate_fn=collate_fn,
             persistent_workers=persistent_workers,
             prefetch_factor=prefetch_factor,
+            sampler=sampler,
             **kwargs,
         )
 
