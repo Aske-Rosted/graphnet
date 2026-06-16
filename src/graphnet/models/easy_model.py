@@ -365,7 +365,7 @@ class EasySyntax(Model):
             local_outputs = {}
         else:
             local_outputs = {
-                key: torch.cat([out[key] for out in outputs], dim=0).numpy()
+                key: torch.cat([out[key] for out in outputs], dim=0).numpy().flatten()
                 for key in outputs[0].keys()
             }
 
@@ -430,6 +430,7 @@ class EasySyntax(Model):
             distribution_strategy=distribution_strategy,
             **trainer_kwargs,
         )
+
         results = pd.DataFrame.from_dict(predictions_torch)
 
         return results
