@@ -187,14 +187,20 @@ class StandardModel(EasySyntax):
                     else:
                         assert len(indc) == 2, "If indc is a list it must be of length 2, the first being the task-specific indices and the second being the shared indices which are to be detached from the backbone output"
                         task_specific_indices = indc[0]
-                        if isinstance(task_specific_indices, int):
+
+
+                        if isinstance(task_specific_indices, (int)):
                             task_specific_indices = [task_specific_indices]
+
                         shared_indices = indc[1]
-                        x_set = torch.concat(
-                            [torch.concat([x[i] for i in task_specific_indices], dim=-1),
-                             torch.concat([x[i] for i in shared_indices], dim=-1).detach()],
-                            dim=-1
-                        )
+                        if isinstance(task_specific_indices, type(None)):
+                            x_set = torch.concat([x[i] for i in indc[1]], dim=-1).detach()
+                        else: 
+                            x_set = torch.concat(
+                                [torch.concat([x[i] for i in task_specific_indices], dim=-1),
+                                torch.concat([x[i] for i in shared_indices], dim=-1).detach()],
+                                dim=-1
+                            )
                 else:
                     raise TypeError(
                         f"expected indc in self._split_indices of type int or list but got {type(indc)}"
@@ -237,5 +243,5 @@ class StandardModel(EasySyntax):
         for item in nested:
             if isinstance(item, list):
                 yield from self.flatten_split_indices(item)
-            else:
+            elif item is not None:
                 yield item
