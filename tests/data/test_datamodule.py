@@ -149,7 +149,9 @@ def _make_weighted_db(
         df.to_sql(weight_table, conn, index=False, if_exists="replace")
 
 
-def test_weighted_sampler_respects_selection_and_shuffle(tmp_path: str) -> None:
+def test_weighted_sampler_respects_selection_and_shuffle(
+    tmp_path: str,
+) -> None:
     """Test weighted sampling on a selected SQLite subset."""
     source_db = os.path.join(
         EXAMPLE_DATA_DIR, "sqlite", "prometheus", "prometheus-events.db"
@@ -159,7 +161,9 @@ def test_weighted_sampler_respects_selection_and_shuffle(tmp_path: str) -> None:
     weight_table = "sampling_weights"
     event_nos = _get_event_nos(source_db, truth_table)
     selection = event_nos[:4]
-    weights = {event_no: float(ix + 1) for ix, event_no in enumerate(event_nos)}
+    weights = {
+        event_no: float(ix + 1) for ix, event_no in enumerate(event_nos)
+    }
     _make_weighted_db(source_db, target_db, truth_table, weight_table, weights)
 
     dataset_kwargs = {
@@ -252,6 +256,7 @@ def test_weighted_sampler_supports_ensemble_dataset(tmp_path: str) -> None:
 
     expected = np.asarray([1.0, 2.0, 3.0, 40.0, 50.0]) / 96.0
     np.testing.assert_allclose(loader.sampler._weights.numpy(), expected)
+
 
 def test_save_selection(selection: List[int], file_path: str) -> None:
     """Test `save_selection` function."""

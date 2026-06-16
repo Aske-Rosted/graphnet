@@ -141,10 +141,14 @@ class NeutrinoEventMultitaskTransformer_v3(GNN):
         elif bias == "scalar":
             bias_dim = 1
         else:
-            raise ValueError("bias must be one of 'vector', 'head' or 'scalar'")
+            raise ValueError(
+                "bias must be one of 'vector', 'head' or 'scalar'"
+            )
 
         if self.n_rel > 0:
-            self.rel_pos = SpacetimeEncoder(bias_dim,apply_sin_emb=embed_bias,out_dim=bias_dim)
+            self.rel_pos = SpacetimeEncoder(
+                bias_dim, apply_sin_emb=embed_bias, out_dim=bias_dim
+            )
 
         assert (
             self.n_rel < n_attention_blocks
@@ -241,7 +245,7 @@ class NeutrinoEventMultitaskTransformer_v3(GNN):
                 x = torch.cat([tokens, x], 1)
 
         # extract the task tokens from the output of the last ESA block
-        x = x[:, n_shrd:n_cls + n_shrd]
+        x = x[:, n_shrd : n_cls + n_shrd]
 
         if self.token_multiplier > 1:
             # reshape the output to (batch_size, n_tasks, token_multiplier*hidden_dim)

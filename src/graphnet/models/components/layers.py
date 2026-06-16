@@ -500,15 +500,19 @@ class Attention_rel(LightningModule):
                     rel_bias = rp
                 elif rp.dim() == 4 and rp.shape[-1] == 1:
                     # (B, N, N, 1) -> squeeze -> (B, N, N) -> expand to heads
-                    rel_bias = rp.squeeze(-1).unsqueeze(1).expand(
-                        -1, self.num_heads, -1, -1
+                    rel_bias = (
+                        rp.squeeze(-1)
+                        .unsqueeze(1)
+                        .expand(-1, self.num_heads, -1, -1)
                     )
                 elif rp.dim() == 4 and rp.shape[-1] == self.num_heads:
                     # (B, N, N, H) -> (B, H, N, N)
                     rel_bias = rp.permute(0, 3, 1, 2)
                 elif rp.dim() == 3:
                     # (B, N, N) -> expand to heads
-                    rel_bias = rp.unsqueeze(1).expand(-1, self.num_heads, -1, -1)
+                    rel_bias = rp.unsqueeze(1).expand(
+                        -1, self.num_heads, -1, -1
+                    )
                 else:
                     raise ValueError(
                         f"Unsupported rel_pos_bias shape {tuple(rp.shape)}"

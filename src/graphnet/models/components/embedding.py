@@ -205,7 +205,9 @@ class SpacetimeEncoder(LightningModule):
         # seq_length as the projection output dim (i.e. vector per-pair).
         if out_dim is None:
             out_dim = seq_length
-        self.projection = nn.Linear(seq_length if apply_sin_emb else 1, out_dim)
+        self.projection = nn.Linear(
+            seq_length if apply_sin_emb else 1, out_dim
+        )
 
     def forward(
         self,
@@ -222,7 +224,9 @@ class SpacetimeEncoder(LightningModule):
             torch.abs(spacetime_interval)
         )
         if self.apply_sin_emb:
-            spacetime_interval = self.sin_emb(1024 * spacetime_interval.clip(-4, 4))
+            spacetime_interval = self.sin_emb(
+                1024 * spacetime_interval.clip(-4, 4)
+            )
         else:
             spacetime_interval = spacetime_interval.unsqueeze(-1)
         rel_attn = self.projection(spacetime_interval)

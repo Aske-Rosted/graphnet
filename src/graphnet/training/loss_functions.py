@@ -65,9 +65,7 @@ class LossFunction(Model):
             if weights.dim() == 1:
                 weights = weights.unsqueeze(1)
             elif weights.dim() != 2:
-                raise ValueError(
-                    "`weights` must have shape [N] or [N, F]."
-                )
+                raise ValueError("`weights` must have shape [N] or [N, F].")
 
             assert weights.size(0) == elements.size(
                 0
@@ -1069,12 +1067,16 @@ class GaussianLoss(LossFunction):
 
 class spCauchyLoss(LossFunction):
     """Spherical Cauchy loss function.
-    
-    Spherical Cauchy negative log-likelihood loss. Distribution defined in:
-    Kato, S. & McCullagh, P. (2020). Some properties of a Cauchy family on the sphere derived from the Möbius transformations.Bernoulli, 26(4): 3224–3248.  https://arxiv.org/abs/1510.07679
 
-    Regression/MLE framework:
-    Tsagris, M., Papastamoulis, P. & Kato, S. (2025). Directional data analysis using the spherical Cauchy and the Poisson kernel-based distribution. Statistics and Computing, 35:51.  https://arxiv.org/abs/2409.03292
+    Spherical Cauchy negative log-likelihood loss. Distribution defined in:
+    Kato, S. & McCullagh, P. (2020). Some properties of a Cauchy family on the
+    sphere derived from the Möbius transformations.Bernoulli, 26(4): 3224–3248.
+    https://arxiv.org/abs/1510.07679
+
+    Regression/MLE framework: Tsagris, M., Papastamoulis, P. & Kato, S. (2025).
+    Directional data analysis using the spherical Cauchy and the Poisson
+    kernel-based distribution. Statistics and Computing, 35:51.
+    https://arxiv.org/abs/2409.03292
     """
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
@@ -1082,19 +1084,26 @@ class spCauchyLoss(LossFunction):
         assert target.dim() == 2
         assert prediction.size(0) == target.size(0)
 
-        dim = prediction.size(1) - 1 # last dimensions is the norm of the predicted vector, which is used to calculate the concentration parameter rho
+        dim = (
+            prediction.size(1) - 1
+        )  # last dimensions is the norm of the predicted vector, which is used to calculate the concentration parameter rho
         assert dim >= 1
         assert target.size(1) == dim
 
         mu = prediction[:, :dim]
-        rho = prediction[:, dim] / (1.0 + prediction[:, dim]) # concentration parameter in [0, 1)
-        dot = (mu * target).sum(dim=-1) # cosine similarity between predicted direction and target direction
+        rho = prediction[:, dim] / (
+            1.0 + prediction[:, dim]
+        )  # concentration parameter in [0, 1)
+        dot = (mu * target).sum(
+            dim=-1
+        )  # cosine similarity between predicted direction and target direction
         alpha = (dim - 1) / 2.0
         log_numer = alpha * torch.log(1.0 - rho**2 + 1e-7)
         denom = (1.0 - 2.0 * rho * dot + rho**2).clamp(min=1e-7)
         log_denom = (alpha + 1.0) * torch.log(denom)
         log_prob = log_numer - log_denom
-        return -log_prob 
+        return -log_prob
+
 
 class HeterocedasticGaussianLoss(LossFunction):
     """Heteroscedastic Gaussian loss function.

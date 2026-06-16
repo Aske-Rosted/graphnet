@@ -365,7 +365,9 @@ class EasySyntax(Model):
             local_outputs = {}
         else:
             local_outputs = {
-                key: torch.cat([out[key] for out in outputs], dim=0).numpy().flatten()
+                key: torch.cat([out[key] for out in outputs], dim=0)
+                .numpy()
+                .flatten()
                 for key in outputs[0].keys()
             }
 

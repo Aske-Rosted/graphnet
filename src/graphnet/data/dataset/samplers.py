@@ -292,6 +292,7 @@ class LenMatchBatchSampler(BatchSampler, Logger):
             if len(batch) > 0 and not self.drop_last:
                 yield batch
 
+
 class WeightedRandomSampler(Sampler[int], Logger):
     """A `Sampler` that samples events weighted by a SQLite column.
 
@@ -480,7 +481,9 @@ class WeightedRandomSampler(Sampler[int], Logger):
         median_occurrence = float(np.median(counts))
         p95_occurrence = float(np.percentile(counts, 95))
         coverage = float(n_unique / len(self._weights_np))
-        repeat_fraction = float((self.num_samples - n_unique) / self.num_samples)
+        repeat_fraction = float(
+            (self.num_samples - n_unique) / self.num_samples
+        )
         singleton_fraction = float(np.mean(counts == 1))
         counts_desc = np.sort(counts)[::-1]
         top1_share = float(counts_desc[:1].sum() / self.num_samples)
