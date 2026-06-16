@@ -441,6 +441,7 @@ class Attention_rel(LightningModule):
         self.num_heads = num_heads
         head_dim = attn_head_dim or input_dim // num_heads
         all_head_dim = head_dim * self.num_heads
+        self.head_dim = head_dim
         self.scale = qk_scale or head_dim**-0.5
 
         self.proj_q = nn.Linear(input_dim, all_head_dim, bias=False)
@@ -483,9 +484,36 @@ class Attention_rel(LightningModule):
 
         q = q * self.scale
         attn = q @ k.transpose(-2, -1)
-        if rel_pos_bias is not None:
-            bias = torch.einsum("bhic,bijc->bhij", q, rel_pos_bias)
-            attn = attn + bias
+
+        use_value_modulation = False
+        rp = rel_pos_bias
+        if rp is not None:
+            # Case A: full vector per-pair (B, N, N, head_dim)
+            if rp.dim() == 4 and rp.shape[-1] == self.head_dim:
+                bias_logits = torch.einsum("bhic,bijc->bhij", q, rp)
+                attn = attn + bias_logits
+                use_value_modulation = True
+            else:
+                # Normalize scalar/per-head shapes to (B, H, N, N)
+                if rp.dim() == 4 and rp.shape[1] == self.num_heads:
+                    # (B, H, N, N)
+                    rel_bias = rp
+                elif rp.dim() == 4 and rp.shape[-1] == 1:
+                    # (B, N, N, 1) -> squeeze -> (B, N, N) -> expand to heads
+                    rel_bias = rp.squeeze(-1).unsqueeze(1).expand(
+                        -1, self.num_heads, -1, -1
+                    )
+                elif rp.dim() == 4 and rp.shape[-1] == self.num_heads:
+                    # (B, N, N, H) -> (B, H, N, N)
+                    rel_bias = rp.permute(0, 3, 1, 2)
+                elif rp.dim() == 3:
+                    # (B, N, N) -> expand to heads
+                    rel_bias = rp.unsqueeze(1).expand(-1, self.num_heads, -1, -1)
+                else:
+                    raise ValueError(
+                        f"Unsupported rel_pos_bias shape {tuple(rp.shape)}"
+                    )
+                attn = attn + rel_bias
         if key_padding_mask is not None:
             assert (
                 key_padding_mask.dtype == torch.float32
@@ -506,8 +534,9 @@ class Attention_rel(LightningModule):
         attn = self.attn_drop(attn)
 
         x = (attn @ v).transpose(1, 2)
-        if rel_pos_bias is not None:
-            x = x + torch.einsum("bhij,bijc->bihc", attn, rel_pos_bias)
+        if use_value_modulation:
+            # add vector-valued relative contribution to values
+            x = x + torch.einsum("bhij,bijc->bihc", attn, rp)
         x = x.reshape(batch_size, event_length, -1)
         x = self.proj(x)
         x = self.proj_drop(x)

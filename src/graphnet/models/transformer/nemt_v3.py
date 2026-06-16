@@ -35,6 +35,8 @@ class NeutrinoEventMultitaskTransformer_v3(GNN):
         token_multiplier: int = 1,
         out_dim: Optional[int] = None,
         cross_attention: list = [],
+        bias: str = "vector",
+        embed_bias: bool = True,
     ):
         """Construct `NeutrinoEventMultiTaskTransformer`.
 
@@ -48,6 +50,8 @@ class NeutrinoEventMultitaskTransformer_v3(GNN):
             num_register_tokens: The number of register tokens.
             scaled_emb: Whether to scale the sinusoidal positional embeddings.
             n_features: The number of features in the input data.
+            bias: The type of bias to use in the attention mechanism. Can be "vector", "head" or "scalar". "vector" means each head has a different bias vector, "head" means each head has a different scalar bias, and "scalar" means all heads share the same scalar bias.
+            embed_bias: Whether to use sinusoidal positional in the relative position bias. If False, the relative position bias will be learned directly from the spacetime interval without sinusoidal embedding.
         """
         self.inject_cls_after = inject_cls_after
         tot_out = out_dim if out_dim is not None else hidden_dim
@@ -130,8 +134,17 @@ class NeutrinoEventMultitaskTransformer_v3(GNN):
         ), "hidden_dim must be divisible by num_heads"
 
         self.n_rel = n_rel
+        if bias == "vector":
+            bias_dim = hidden_dim // num_heads
+        elif bias == "head":
+            bias_dim = num_heads
+        elif bias == "scalar":
+            bias_dim = 1
+        else:
+            raise ValueError("bias must be one of 'vector', 'head' or 'scalar'")
+
         if self.n_rel > 0:
-            self.rel_pos = SpacetimeEncoder(hidden_dim // num_heads)
+            self.rel_pos = SpacetimeEncoder(bias_dim,apply_sin_emb=embed_bias,out_dim=bias_dim)
 
         assert (
             self.n_rel < n_attention_blocks
