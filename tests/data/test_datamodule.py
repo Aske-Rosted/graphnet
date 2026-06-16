@@ -5,19 +5,35 @@ import os
 from typing import List, Any, Dict, Tuple
 import pandas as pd
 import sqlite3
+from shutil import copyfile
 import pytest
 from glob import glob
 from torch.utils.data import SequentialSampler
 import numpy as np
+import torch
 
 from graphnet.constants import EXAMPLE_DATA_DIR
 from graphnet.data.constants import FEATURES, TRUTH
-from graphnet.data.dataset import SQLiteDataset, ParquetDataset
+from graphnet.data.dataset import (
+    Dataset,
+    SQLiteDataset,
+    ParquetDataset,
+    WeightedRandomSampler,
+)
+from graphnet.data.dataloader import DataLoader
 from graphnet.data.datamodule import GraphNeTDataModule
 from graphnet.models.detector import IceCubeDeepCore
 from graphnet.models.graphs import KNNGraph
 from graphnet.models.graphs.nodes import NodesAsPulses
 from graphnet.training.utils import save_selection
+
+
+graph_definition = KNNGraph(
+    detector=IceCubeDeepCore(),
+    node_definition=NodesAsPulses(),
+    nb_nearest_neighbours=8,
+    input_feature_names=FEATURES.DEEPCORE,
+)
 
 
 def get_dataset_size() -> int:
@@ -107,6 +123,135 @@ def file_path(tmpdir: str) -> str:
     """Return a file path."""
     return os.path.join(tmpdir, "selection.csv")
 
+
+def _get_event_nos(db_path: str, truth_table: str) -> List[int]:
+    with sqlite3.connect(db_path) as conn:
+        return pd.read_sql(f"SELECT event_no FROM {truth_table}", conn)[
+            "event_no"
+        ].tolist()
+
+
+def _make_weighted_db(
+    source_db: str,
+    target_db: str,
+    truth_table: str,
+    weight_table: str,
+    weights: Dict[int, float],
+) -> None:
+    copyfile(source_db, target_db)
+    df = pd.DataFrame(
+        {
+            "event_no": list(weights.keys()),
+            "weight": list(weights.values()),
+        }
+    )
+    with sqlite3.connect(target_db) as conn:
+        df.to_sql(weight_table, conn, index=False, if_exists="replace")
+
+
+def test_weighted_sampler_respects_selection_and_shuffle(tmp_path: str) -> None:
+    """Test weighted sampling on a selected SQLite subset."""
+    source_db = os.path.join(
+        EXAMPLE_DATA_DIR, "sqlite", "prometheus", "prometheus-events.db"
+    )
+    target_db = os.path.join(tmp_path, "weighted.db")
+    truth_table = "mc_truth"
+    weight_table = "sampling_weights"
+    event_nos = _get_event_nos(source_db, truth_table)
+    selection = event_nos[:4]
+    weights = {event_no: float(ix + 1) for ix, event_no in enumerate(event_nos)}
+    _make_weighted_db(source_db, target_db, truth_table, weight_table, weights)
+
+    dataset_kwargs = {
+        "truth_table": truth_table,
+        "pulsemaps": "total",
+        "truth": TRUTH.PROMETHEUS,
+        "features": FEATURES.PROMETHEUS,
+        "path": target_db,
+        "graph_definition": graph_definition,
+        "selection": selection,
+        "loss_weight_table": weight_table,
+        "loss_weight_column": "weight",
+    }
+
+    loader = DataLoader(
+        dataset=SQLiteDataset(**dataset_kwargs),
+        batch_size=1,
+        shuffle=True,
+        sampler=WeightedRandomSampler,
+        num_workers=1,
+    )
+
+    assert isinstance(loader.sampler, WeightedRandomSampler)
+    expected = np.asarray([1.0, 2.0, 3.0, 4.0]) / 10.0
+    np.testing.assert_allclose(loader.sampler._weights.numpy(), expected)
+
+
+def test_weighted_sampler_supports_ensemble_dataset(tmp_path: str) -> None:
+    """Test weighted sampling across multiple SQLite files."""
+    source_db = os.path.join(
+        EXAMPLE_DATA_DIR, "sqlite", "prometheus", "prometheus-events.db"
+    )
+    truth_table = "mc_truth"
+    weight_table = "sampling_weights"
+    event_nos = _get_event_nos(source_db, truth_table)
+
+    db_a = os.path.join(tmp_path, "a.db")
+    db_b = os.path.join(tmp_path, "b.db")
+    _make_weighted_db(
+        source_db,
+        db_a,
+        truth_table,
+        weight_table,
+        {event_no: float(ix + 1) for ix, event_no in enumerate(event_nos)},
+    )
+    _make_weighted_db(
+        source_db,
+        db_b,
+        truth_table,
+        weight_table,
+        {
+            event_no: float(10 * (ix + 1))
+            for ix, event_no in enumerate(event_nos)
+        },
+    )
+
+    selection_a = event_nos[:3]
+    selection_b = event_nos[3:5]
+
+    dataset_a = SQLiteDataset(
+        truth_table=truth_table,
+        pulsemaps="total",
+        truth=TRUTH.PROMETHEUS,
+        features=FEATURES.PROMETHEUS,
+        path=db_a,
+        graph_definition=graph_definition,
+        loss_weight_table=weight_table,
+        loss_weight_column="weight",
+        selection=selection_a,
+    )
+    dataset_b = SQLiteDataset(
+        truth_table=truth_table,
+        pulsemaps="total",
+        truth=TRUTH.PROMETHEUS,
+        features=FEATURES.PROMETHEUS,
+        path=db_b,
+        graph_definition=graph_definition,
+        loss_weight_table=weight_table,
+        loss_weight_column="weight",
+        selection=selection_b,
+    )
+
+    loader = DataLoader(
+        dataset=Dataset.concatenate([dataset_a, dataset_b]),
+        batch_size=1,
+        num_workers=1,
+        sampler=WeightedRandomSampler,
+    )
+    assert isinstance(loader.sampler, WeightedRandomSampler)
+
+    expected = np.asarray([1.0, 2.0, 3.0, 40.0, 50.0]) / 96.0
+    np.testing.assert_allclose(loader.sampler._weights.numpy(), expected)
 
 def test_save_selection(selection: List[int], file_path: str) -> None:
     """Test `save_selection` function."""
