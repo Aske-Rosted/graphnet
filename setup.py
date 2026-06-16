@@ -26,7 +26,7 @@ INSTALL_REQUIRES = [
     "timer>=0.2",
     "tqdm>=4.64",
     "wandb>=0.12",
-    "polars >=0.19",
+    "polars[rtcompat]==1.39.0",
     "torchscale==0.2.0",
     "h5py>= 3.7.0",
 ]
@@ -54,7 +54,7 @@ EXTRAS_REQUIRE = {
         "torch-cluster>=1.6",
         "torch-scatter>=2.0",
         "torch-sparse>=0.6",
-        "torch-geometric>=2.3",
+        "torch-geometric==2.7.0",
         "pytorch-lightning>=2.0",
     ],
 }

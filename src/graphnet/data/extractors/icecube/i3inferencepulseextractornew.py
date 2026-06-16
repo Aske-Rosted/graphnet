@@ -44,6 +44,7 @@ class I3InferencePulseExtractorNew(I3Extractor):
         time_charge_percentiles: float = [1, 3, 6, 10, 15, 25, 50, 80],
         pulse_labeling: bool = True,
         afterpulse_cutoff: float = 4000.0,  # 4 microseconds
+        calibration_errata_exclusion: bool = False,
     ):
         """Construct I3FeatureExtractor.
 
@@ -62,6 +63,7 @@ class I3InferencePulseExtractorNew(I3Extractor):
         self._pulse_labeling = pulse_labeling
         # Cutoff For Pulses from DOM First Hit
         self._afterpulse_cutoff = afterpulse_cutoff
+        self._calibration_errata_exclusion = calibration_errata_exclusion
 
         self._drop_at_end = [
             "in_saturation_window",
@@ -333,11 +335,17 @@ class I3InferencePulseExtractorNewIceCube86(I3InferencePulseExtractorNew):
 
         evt_pulses["charge_temp"] = evt_pulses["charge"]
 
-        evt_pulses.loc[
-            (evt_pulses["in_saturation_window"].astype(int) == 1)
-            | (evt_pulses["in_calibration_errata"].astype(int) == 1),
-            "charge_temp",
-        ] = 0
+        if self._calibration_errata_exclusion:
+            evt_pulses.loc[
+                (evt_pulses["in_saturation_window"].astype(int) == 1)
+                | (evt_pulses["in_calibration_errata"].astype(int) == 1),
+                "charge_temp",
+            ] = 0
+        else:
+            evt_pulses.loc[
+                (evt_pulses["in_saturation_window"].astype(int) == 1),
+                "charge_temp",
+            ] = 0
         evt_pulses["dom_qtot_exc"] = evt_pulses.groupby(
             ["string", "dom_number"]
         )["charge_temp"].transform("sum")

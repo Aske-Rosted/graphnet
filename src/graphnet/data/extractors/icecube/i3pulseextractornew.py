@@ -163,8 +163,8 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
             calibration_errata = frame.Get("CalibrationErrata")
 
         # Process MCPulses Information
-        particle_pdg = frame['PolyplopiaPrimary'].pdg_encoding
         if self._training_data:
+            particle_pdg = frame['PolyplopiaPrimary'].pdg_encoding
             if (np.abs(particle_pdg) not in [12,14,16]) & (self._pulse_labeling):
                 mc_labeled_pulses, leading = self.get_mc_pulse_info(
                     frame, 
@@ -455,23 +455,27 @@ class I3PulseExtractorNewIceCube86(I3PulseExtractorNew):
             bright_dom = (pl.col('dom_qtot')/frame['HQTOT'].value).ge(0.4).cast(pl.Int32)
         )
 
-        if (np.abs(particle_pdg) not in [12, 14, 16]) and self._pulse_labeling:
+        if self._training_data:
+            if (np.abs(particle_pdg) not in [12, 14, 16]) and self._pulse_labeling:
 
-            reco_pulses_labeled = label_reco_pulses(
-                reco_pulses=min_times,
-                mc_pulses=mc_labeled_pulses,
-            )
-
-            hit_types = ["charge", "energy", "primary"]
-
-            for hit_type in hit_types:
-                reco_pulses_final = self.label_training_targets(
-                    leading_muon=hit_type,
-                    pulses=reco_pulses_labeled,
+                reco_pulses_labeled = label_reco_pulses(
+                    reco_pulses=min_times,
+                    mc_pulses=mc_labeled_pulses,
                 )
 
+                hit_types = ["charge", "energy", "primary"]
+
+                for hit_type in hit_types:
+                    reco_pulses_final = self.label_training_targets(
+                        leading_muon=hit_type,
+                        pulses=reco_pulses_labeled,
+                    )
+
+            else:
+                reco_pulses_final = min_times
         else:
             reco_pulses_final = min_times
+
 
         if self._training_data:
             reco_pulses_final = reco_pulses_final.drop([

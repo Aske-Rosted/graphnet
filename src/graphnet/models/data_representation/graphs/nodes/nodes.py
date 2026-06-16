@@ -1112,7 +1112,7 @@ class NodesAsPulsesBundle(NodeDefinition):
         self.important_features = [
             feat
             for feat in input_feature_names
-            if feat.startswith("charge_after_")
+            if feat.startswith("time_charge_")
         ]
 
     def _define_output_feature_names(
@@ -1141,5 +1141,5 @@ class NodesAsPulsesBundle(NodeDefinition):
                 graph[:, self.feature_indexes[feature]] = x[
                     :, self.feature_indexes[feature]
                 ]
-
+                
         return graph
