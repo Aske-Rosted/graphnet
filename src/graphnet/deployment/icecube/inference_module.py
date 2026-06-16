@@ -417,6 +417,7 @@ class I3ParticleInferenceModule(I3InferenceModule):
         energy: str,
         positions: List[str],
         shift_time: bool = False,
+        statistics_dictionary: Optional[str] = None,
         **kwargs,
     ):
         """Initialize the I3ParticleInferenceModule."""
@@ -432,6 +433,7 @@ class I3ParticleInferenceModule(I3InferenceModule):
         self._energy = self.model_name + "_" + energy
         self._positions = [self.model_name + "_" + pos for pos in positions]
         self._shift_time = shift_time
+        self._statistics_dictionary = statistics_dictionary
         assert (
             len(self._positions) == 3
         ), "positions must be a list of 3 elements"
@@ -466,11 +468,33 @@ class I3ParticleInferenceModule(I3InferenceModule):
 
         if self._shift_time:
             # Shift time to be relative to the first pulse
-            shift_time = self._get_min_time(frame, self._pulsemap)
-            if "CVStatistics" in frame:
-                shift_time -= frame["CVStatistics"].min_pulse_time
-            else:
-                shift_time -= self._get_min_time(frame, "InIcePulses")
+            # The statistics dictionary is optional, so fall back
+            # silently to the pulsemap if it's not found. The pulsemap
+            # itself is required, so its absence is a hard error.
+            shift_time = None
+            if self._statistics_dictionary:
+                if self._statistics_dictionary in frame:
+                    shift_time = frame[
+                        self._statistics_dictionary
+                    ].min_pulse_time
+                else:
+                    self.warning(
+                        f"{self._statistics_dictionary} not found in "
+                        f"frame. Falling back to minimum pulse time "
+                        f"from pulsemap."
+                    )
+
+            if shift_time is None:
+                try:
+                    shift_time = self._get_min_time(
+                        frame, self._pulsemap
+                    )
+                except KeyError as e:
+                    raise KeyError(
+                        f"Tried to get minimum pulse time from "
+                        f"pulsemap '{self._pulsemap}', but it was not "
+                        f"found in frame."
+                    ) from e
             particle.time = data[self._time].value + shift_time
         else:
             particle.time = data[self._time].value
