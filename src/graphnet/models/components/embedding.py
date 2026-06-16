@@ -186,6 +186,8 @@ class SpacetimeEncoder(LightningModule):
     def __init__(
         self,
         seq_length: int = 32,
+        out_dim: Optional[int] = None,
+        apply_sin_emb: bool = True,
     ):
         """Construct `SpacetimeEncoder`.
 
@@ -198,7 +200,12 @@ class SpacetimeEncoder(LightningModule):
         """
         super().__init__()
         self.sin_emb = SinusoidalPosEmb(dim=seq_length)
-        self.projection = nn.Linear(seq_length, seq_length)
+        self.apply_sin_emb = apply_sin_emb
+        # By default preserve previous behaviour: if out_dim is None, use
+        # seq_length as the projection output dim (i.e. vector per-pair).
+        if out_dim is None:
+            out_dim = seq_length
+        self.projection = nn.Linear(seq_length if apply_sin_emb else 1, out_dim)
 
     def forward(
         self,
@@ -211,11 +218,14 @@ class SpacetimeEncoder(LightningModule):
         spacetime_interval = (pos[:, :, None] - pos[:, None, :]).pow(2).sum(
             -1
         ) - ((time[:, :, None] - time[:, None, :]) * (3e4 / 500 * 3e-1)).pow(2)
-        four_distance = torch.sign(spacetime_interval) * torch.sqrt(
+        spacetime_interval = torch.sign(spacetime_interval) * torch.sqrt(
             torch.abs(spacetime_interval)
         )
-        sin_emb = self.sin_emb(1024 * four_distance.clip(-4, 4))
-        rel_attn = self.projection(sin_emb)
+        if self.apply_sin_emb:
+            spacetime_interval = self.sin_emb(1024 * spacetime_interval.clip(-4, 4))
+        else:
+            spacetime_interval = spacetime_interval.unsqueeze(-1)
+        rel_attn = self.projection(spacetime_interval)
         return rel_attn
 
 
