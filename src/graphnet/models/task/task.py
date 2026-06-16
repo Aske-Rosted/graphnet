@@ -349,6 +349,10 @@ class StandardLearnedTask(LearnedTask):
         target = self._transform_target(target)
         if self._loss_weight is not None:
             weights = data[self._loss_weight]
+            if isinstance(w, torch.Tensor):
+                weights = weights.to(device=target.device, dtype=target.dtype)
+            else:
+                weights = torch.as_tensor(w, device=target.device, dtype=target.dtype)
         else:
             weights = None
 
