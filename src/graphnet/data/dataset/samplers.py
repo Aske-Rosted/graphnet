@@ -31,6 +31,7 @@ from typing import (
     Tuple,
     Iterator,
     Sequence,
+    Iterable,
 )
 
 from collections import defaultdict
@@ -38,7 +39,7 @@ from multiprocessing import get_context
 
 import numpy as np
 import torch
-from torch.utils.data import Sampler, BatchSampler
+from torch.utils.data import Sampler, BatchSampler, ConcatDataset
 from graphnet.data.dataset import Dataset
 from graphnet.utilities.logging import Logger
 
@@ -290,3 +291,218 @@ class LenMatchBatchSampler(BatchSampler, Logger):
 
             if len(batch) > 0 and not self.drop_last:
                 yield batch
+
+class WeightedRandomSampler(Sampler[int], Logger):
+    """A `Sampler` that samples events weighted by a SQLite column.
+
+    The sampler reads weights from SQLite once during construction and samples
+    a fresh index sequence on every iteration, so the sampled events are
+    resampled each epoch.
+    """
+
+    def __init__(
+        self,
+        data_source: Dataset,
+        weight_table: Optional[str] = None,
+        weight_column: Optional[str] = None,
+        num_samples: Optional[int] = None,
+        replacement: bool = True,
+        generator: Optional[torch.Generator] = None,
+    ) -> None:
+        """Construct `WeightedRandomSampler`.
+
+        Args:
+            data_source: A GraphNeT `Dataset` or `ConcatDataset` containing
+                SQLite-backed datasets.
+            weight_table: Table containing per-event sampling weights.
+                Defaults to the dataset's configured loss-weight table.
+            weight_column: Column containing per-event sampling weights.
+                Defaults to the dataset's configured loss-weight column.
+            num_samples: Number of samples per epoch. Defaults to
+                len(data_source).
+            replacement: Sample with replacement. Recommended True when
+                oversampling rare energy bins.
+            generator: Optional torch Generator for reproducibility.
+        """
+        self._data_source = data_source
+        self._num_samples = num_samples
+        self._replacement = replacement
+        Logger.__init__(self, class_name=self.__class__.__name__)
+
+        if generator is None:
+            seed = int(torch.empty((), dtype=torch.int64).random_().item())
+            self._generator = torch.Generator()
+            self._generator.manual_seed(seed)
+        else:
+            self._generator = generator
+
+        seed = int(
+            torch.randint(
+                low=0,
+                high=2**63 - 1,
+                size=(1,),
+                generator=self._generator,
+                dtype=torch.int64,
+            ).item()
+        )
+        self._rng = np.random.default_rng(seed)
+
+        self._weights = self._load_weights(weight_table, weight_column)
+
+    @staticmethod
+    def _quote_identifier(name: str) -> str:
+        """Safely quote a SQLite identifier."""
+        return '"' + name.replace('"', '""') + '"'
+
+    def _iter_leaf_datasets(self, dataset: Dataset) -> Iterable[Dataset]:
+        """Yield leaf datasets from nested `ConcatDataset` structures."""
+        if isinstance(dataset, ConcatDataset):
+            for child in dataset.datasets:
+                yield from self._iter_leaf_datasets(child)
+        else:
+            yield dataset
+
+    def _load_weights(
+        self,
+        weight_table: Optional[str],
+        weight_column: Optional[str],
+    ) -> torch.Tensor:
+        """Load and normalize per-event weights from SQLite."""
+        import sqlite3
+        import pandas as pd
+
+        datasets = list(self._iter_leaf_datasets(self._data_source))
+        weights: List[float] = []
+
+        for dataset in datasets:
+            if not hasattr(dataset, "_path") or not isinstance(
+                dataset._path, str
+            ):
+                raise TypeError(
+                    "WeightedRandomSampler currently supports SQLite-backed "
+                    "datasets only."
+                )
+
+            resolved_weight_table = weight_table or getattr(
+                dataset, "_loss_weight_table", None
+            )
+            resolved_weight_column = weight_column or getattr(
+                dataset, "_loss_weight_column", None
+            )
+            if resolved_weight_table is None or resolved_weight_column is None:
+                raise ValueError(
+                    "WeightedRandomSampler requires a weight table and "
+                    "weight column. Pass them explicitly or define "
+                    "loss_weight_table/loss_weight_column on the dataset."
+                )
+
+            with sqlite3.connect(dataset._path) as con:
+                query = (
+                    f"SELECT {self._quote_identifier(dataset._index_column)}, "
+                    f"{self._quote_identifier(resolved_weight_column)} "
+                    f"FROM {self._quote_identifier(resolved_weight_table)}"
+                )
+                df = pd.read_sql(query, con)
+
+            weight_map = dict(
+                zip(
+                    df[dataset._index_column].tolist(),
+                    df[resolved_weight_column].tolist(),
+                )
+            )
+
+            selected_indices = list(getattr(dataset, "_indices"))
+            for index in selected_indices:
+                key = int(index)
+                if key not in weight_map:
+                    raise ValueError(
+                        "Missing sampling weight for event_no "
+                        f"{key} in table {resolved_weight_table}."
+                    )
+                weights.append(float(weight_map[key]))
+
+        # Build a single float32 numpy array and share it with a CPU torch
+        # tensor to avoid multiple large copies in memory. Using float32
+        # halves memory compared with float64 and `torch.from_numpy` does
+        # not copy the buffer.
+        weights_np = np.asarray(weights, dtype=np.float32)
+        if weights_np.size == 0:
+            raise ValueError("WeightedRandomSampler received no events.")
+        total_weight = float(weights_np.sum())
+        if total_weight <= 0:
+            raise ValueError(
+                "WeightedRandomSampler requires strictly positive weights."
+            )
+        weights_np /= total_weight
+
+        # Create a CPU torch tensor that shares memory with the numpy array.
+        weights_tensor = torch.from_numpy(weights_np)
+
+        # Keep a reference to the numpy array for direct numpy-based sampling
+        # without copying, and return the torch tensor for backwards
+        # compatibility with existing tests/code that expect a torch tensor.
+        self._weights_np = weights_np
+        return weights_tensor
+
+    @property
+    def data_source(self) -> Dataset:
+        """Return the data source."""
+        return self._data_source
+
+    @property
+    def num_samples(self) -> int:
+        """Return number of samples per epoch."""
+        if self._num_samples is None:
+            return len(self._data_source)
+        return self._num_samples
+
+    def __len__(self) -> int:
+        """Return number of samples."""
+        return self.num_samples
+
+    def __iter__(self) -> Iterator[int]:
+        """Yield weighted-random indices."""
+        self.info(
+            "Generating weighted samples for a new epoch: "
+            f"num_samples={self.num_samples}, replacement={self._replacement}"
+        )
+        sampled_indices = self._rng.choice(
+            len(self._weights),
+            size=self.num_samples,
+            replace=self._replacement,
+            p=self._weights_np,
+        )
+
+        unique_indices, counts = np.unique(sampled_indices, return_counts=True)
+        n_unique = int(unique_indices.size)
+        max_count = int(counts.max())
+        avg_occurrence = float(counts.mean())
+        median_occurrence = float(np.median(counts))
+        p95_occurrence = float(np.percentile(counts, 95))
+        coverage = float(n_unique / len(self._weights_np))
+        repeat_fraction = float((self.num_samples - n_unique) / self.num_samples)
+        singleton_fraction = float(np.mean(counts == 1))
+        counts_desc = np.sort(counts)[::-1]
+        top1_share = float(counts_desc[:1].sum() / self.num_samples)
+        top5_share = float(
+            counts_desc[: min(5, counts_desc.size)].sum() / self.num_samples
+        )
+        top10_share = float(
+            counts_desc[: min(10, counts_desc.size)].sum() / self.num_samples
+        )
+
+        self.info(
+            "Sample diagnostics: "
+            f"unique_events={n_unique}/{len(self._weights_np)} "
+            f"(coverage={coverage:.4f}), "
+            f"max_repeat={max_count}, "
+            f"avg_occurrence={avg_occurrence:.3f}, "
+            f"median_occurrence={median_occurrence:.3f}, "
+            f"p95_occurrence={p95_occurrence:.3f}, "
+            f"repeat_fraction={repeat_fraction:.4f}, "
+            f"singleton_fraction={singleton_fraction:.4f}, "
+            f"top1_share={top1_share:.4f}, "
+            f"top5_share={top5_share:.4f}, "
+            f"top10_share={top10_share:.4f}"
+        )
+        yield from sampled_indices.tolist()
