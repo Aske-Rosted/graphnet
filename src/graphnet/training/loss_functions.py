@@ -52,13 +52,39 @@ class LossFunction(Model):
             elementwise terms with shape [N,] (if `return_elements = True`).
         """
         elements = self._forward(prediction, target)
+
+        # Normalize to [N, F] so weighting is always elementwise per event.
+        if elements.dim() == 1:
+            elements = elements.unsqueeze(1)
+        elif elements.dim() != 2:
+            raise ValueError(
+                "`_forward` must return a tensor of shape [N] or [N, F]."
+            )
+
         if weights is not None:
+            if weights.dim() == 1:
+                weights = weights.unsqueeze(1)
+            elif weights.dim() != 2:
+                raise ValueError(
+                    "`weights` must have shape [N] or [N, F]."
+                )
+
+            assert weights.size(0) == elements.size(
+                0
+            ), "`weights` must have the same batch dimension as loss terms."
+            assert weights.size(1) in [1, elements.size(1)], (
+                "`weights` second dimension must be 1 or match loss term "
+                "feature dimension."
+            )
             elements = elements * weights
+
         assert elements.size(dim=0) == target.size(
             dim=0
         ), "`_forward` should return elementwise loss terms."
 
-        return elements if return_elements else torch.mean(elements)
+        if return_elements:
+            return elements.squeeze(1) if elements.size(1) == 1 else elements
+        return torch.mean(elements)
 
     @abstractmethod
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
