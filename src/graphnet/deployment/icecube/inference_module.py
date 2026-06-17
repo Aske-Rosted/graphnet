@@ -7,11 +7,10 @@ from typing import List, Union, Optional, TYPE_CHECKING, Dict, Any
 import numpy as np
 from torch_geometric.data import Data, Batch
 from torch.cuda import OutOfMemoryError
-from time import sleep
+from time import sleep, perf_counter
 import torch
 import gc
 import os
-from time import time
 
 
 from graphnet.utilities.config import ModelConfig
@@ -54,6 +53,7 @@ class I3InferenceModule(DeploymentModule):
         batch_size: Optional[int] = 1,
         skip: bool = False,
         inference_speed_check: bool = False,
+        overwrite: bool = True,
     ):
         """General class for inference on I3Frames (physics).
 
@@ -172,7 +172,7 @@ class I3InferenceModule(DeploymentModule):
             self._device = save_device
 
         if self._inference_speed_check is True:
-            write_start = time()
+            write_start = perf_counter()
         # Check dimensions of predictions and prediction columns
         dim = self._check_dimensions(predictions=predictions)
 
@@ -185,7 +185,7 @@ class I3InferenceModule(DeploymentModule):
         self._add_to_frame(frame=frame, data=data)
         del data
         if self._inference_speed_check is True:
-            write_end = time()
+            write_end = perf_counter()
             write_time = write_end - write_start
             #self._logger.info(f"Write time: {write_time:.4f} s\n")
             total_time = data_repr_time + inference_time + write_time
@@ -211,22 +211,22 @@ class I3InferenceModule(DeploymentModule):
         inference_time = -1
         if self._inference_speed_check is True:
             # create log file if it does not exist
-            data_repr_start = time()
+            data_repr_start = perf_counter()
         if not self.multiple_models:
             data = self._create_data_representation(frame=frame).to(
                 self._device
             )
             if self._inference_speed_check is True:
-                data_repr_end = time()
+                data_repr_end = perf_counter()
                 data_repr_time = data_repr_end - data_repr_start
-                inference_start = time()
+                inference_start = perf_counter()
             predictions = self._apply_model(data=data)
         else:
             features = self._extract_feature_array_from_frame(frame=frame)
             if self._inference_speed_check is True:
-                data_repr_end = time()
+                data_repr_end = perf_counter()
                 data_repr_time = data_repr_end - data_repr_start
-                inference_start = time()
+                inference_start = perf_counter()
             model_input_data = []
             for _, graph_definition in enumerate(self._graph_definitions):
                 data = graph_definition(
@@ -240,7 +240,9 @@ class I3InferenceModule(DeploymentModule):
             predictions = self._apply_model(data=model_input_data)
 
         if self._inference_speed_check is True:
-            inference_end = time()
+            if "cuda" in self._device:
+                torch.cuda.synchronize()
+            inference_end = perf_counter()
             inference_time = inference_end - inference_start
             #self._logger.info(
             #    f"Data representation time: {data_repr_time:.4f} s\n"
