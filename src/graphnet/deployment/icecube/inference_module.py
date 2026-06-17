@@ -125,6 +125,7 @@ class I3InferenceModule(DeploymentModule):
         self._num_threads = num_threads
         self._inference_speed_check = inference_speed_check
         self._multiple_models = multiple_models
+        self._overwrite = overwrite
         # Set GCD file for pulsemap extractor
         if gcd_file is not None:
             for i3_extractor in self._i3_extractors:
@@ -386,6 +387,15 @@ class I3InferenceModule(DeploymentModule):
         for key in data.keys():
             if key not in frame:
                 frame.Put(key, data[key])
+            elif self._overwrite:
+                frame.Delete(key)
+                frame.Put(key, data[key])
+            else:
+                self.warning(
+                    f"{key} already exists in frame and "
+                    f"overwrite is set to False. Skipping adding {key} to "
+                    f"frame."
+                )
         return
 
     def _add_runtimes_to_frame(self, frame, runtimes):
@@ -514,6 +524,15 @@ class I3ParticleInferenceModule(I3InferenceModule):
         # Add the particle to the frame
         if particle_name not in frame:
             frame.Put(particle_name, particle)
+        elif self._overwrite:
+            frame.Delete(particle_name)
+            frame.Put(particle_name, particle)
+        else:
+            self.warning(
+                f"{particle_name} already exists in frame and "
+                f"overwrite is set to False. Skipping adding particle to "
+                f"frame."
+            )
 
         # for all the other values in data, add them to an I3Dictionary
         super()._add_to_frame(frame=frame, data=data)
