@@ -512,6 +512,7 @@ class ClusterSummaryFeatures(NodeDefinition):
         charge_label: str = "charge",
         time_label: str = "dom_time",
         total_charge: bool = True,
+        total_charge_fraction: bool = False,
         charge_after_t: List[int] = [10, 50, 100],
         time_of_first_hit: bool = True,
         time_spread: bool = True,
@@ -521,6 +522,7 @@ class ClusterSummaryFeatures(NodeDefinition):
         time_standardization: float = 1e-3,
         order_in_time: bool = True,
         add_counts: bool = False,
+        charge_weighted: bool = False,
     ) -> None:
         """Construct `ClusterSummaryFeatures`.
 
@@ -530,6 +532,8 @@ class ClusterSummaryFeatures(NodeDefinition):
             charge_label: Name of the charge column.
             time_label: Name of the time column.
             total_charge: If True, calculates total charge as feature.
+            total_charge_fraction: If True, adds the cluster's fraction of the
+                total event charge as feature.
             charge_after_t: List of times at which the accumulated charge
                 is calculated as a feature.
             time_of_first_hit: If True, time of first hit is added
@@ -551,6 +555,8 @@ class ClusterSummaryFeatures(NodeDefinition):
                     incorrect results otherwise.
             add_counts: If True, number of log10(event counts per clusters)
                 is added as a feature.
+            charge_weighted: If True, the time std is weighted by the
+                pulse charges.
 
         NOTE: Make sure that either the input data is not already standardized
         or that the `charge_standardization` and `time_standardization`
@@ -569,12 +575,14 @@ class ClusterSummaryFeatures(NodeDefinition):
 
         # feature member variables
         self._total_charge = total_charge
+        self._total_charge_fraction = total_charge_fraction
         self._charge_after_t = charge_after_t
         self._time_of_first_hit = time_of_first_hit
         self._time_spread = time_spread
         self._time_std = time_std
         self._time_after_charge_pct = time_after_charge_pct
         self._add_counts = add_counts
+        self._charge_weighted = charge_weighted
 
         # Base class constructor
         super().__init__(input_feature_names=input_feature_names)
@@ -593,6 +601,8 @@ class ClusterSummaryFeatures(NodeDefinition):
         new_feature_names = deepcopy(self._cluster_on)
         if self._total_charge:
             new_feature_names.append("total_charge")
+        if self._total_charge_fraction:
+            new_feature_names.append("total_charge_fraction")
         for t in self._charge_after_t:
             new_feature_names.append(f"charge_after_{t}ns")
         if self._time_of_first_hit:
@@ -609,8 +619,16 @@ class ClusterSummaryFeatures(NodeDefinition):
 
     def _construct_nodes(self, x: torch.Tensor) -> torch.Tensor:
         """Construct nodes from raw node features ´x´."""
+        if x.shape[0] == 0:
+            return torch.empty(
+                (0, len(self._output_feature_names)),
+                dtype=x.dtype,
+                device=x.device,
+            )
         # Cast to Numpy
         x = x.numpy()
+        # Shift time such that the event starts at 0
+        x[:, self._time_idx] -= np.min(x[:, self._time_idx])
         # Construct clusters with percentile-summarized features
         cluster_class = cluster_and_pad(
             x=x,
@@ -626,6 +644,17 @@ class ClusterSummaryFeatures(NodeDefinition):
         # add total charge
         if self._total_charge:
             cluster_class.add_sum_charge(charge_index=self._charge_idx)
+            cluster_class.clustered_x[:, -1] = self._standardize_features(
+                cluster_class.clustered_x[:, -1],
+                self._charge_standardization,
+            )
+
+        # add fraction of the event charge
+        if self._total_charge_fraction:
+            cluster_class.add_sum_charge(
+                charge_index=self._charge_idx,
+                total_charge=np.nansum(x[:, self._charge_idx]),
+            )
             cluster_class.clustered_x[:, -1] = self._standardize_features(
                 cluster_class.clustered_x[:, -1],
                 self._charge_standardization,
@@ -671,6 +700,11 @@ class ClusterSummaryFeatures(NodeDefinition):
         if self._time_std:
             cluster_class.add_std(
                 columns=[self._time_idx],
+                weights=(
+                    cluster_class._charge_weights
+                    if self._charge_weighted
+                    else 1
+                ),
             )
             cluster_class.clustered_x[:, -1] = self._standardize_features(
                 cluster_class.clustered_x[:, -1],
