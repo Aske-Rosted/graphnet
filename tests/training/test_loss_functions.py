@@ -657,3 +657,165 @@ def test_unbounded_losses_have_no_lower_bound() -> None:
     assert VonMisesFisher3DLoss().lower_bound is None
     assert CauchyLoss(frac=1.0).lower_bound is None
     assert EnsembleLoss([MSELoss(), spCauchyLoss()]).lower_bound is None
+
+
+def test_cauchy_learned_alpha_converges_to_residual_scale() -> None:
+    """A learned alpha converges to the Cauchy scale of the residuals."""
+    torch.manual_seed(0)
+    scales = torch.tensor([0.02, 3.0])
+    residuals = (
+        torch.distributions.Cauchy(0.0, 1.0).sample((20000, 2)) * scales
+    )
+    loss = CauchyLoss(alpha=1.0, frac=0.0, learn_alpha=True, nb_outputs=2)
+    optimizer = torch.optim.Adam(loss.parameters(), lr=0.05)
+    zeros = torch.zeros_like(residuals)
+    for _ in range(400):
+        optimizer.zero_grad()
+        loss(residuals, zeros).backward()
+        optimizer.step()
+    learned = torch.exp(loss.log_alpha[0].detach())
+    assert torch.allclose(learned, scales, rtol=0.05)
+
+
+def test_cauchy_conditioned_alpha_separates_populations() -> None:
+    """Conditioning on a label gives each population its own scale."""
+    torch.manual_seed(0)
+    n = 20000
+    label = (torch.rand(n, 1) > 0.5).float()  # e.g. 1 = track, 0 = cascade
+    scale = torch.where(label > 0.5, 0.01, 1.0)
+    residuals = torch.distributions.Cauchy(0.0, 1.0).sample((n, 1)) * scale
+    target = torch.cat([torch.zeros(n, 1), label], dim=1)
+    loss = CauchyLoss(
+        alpha=0.1, frac=0.0, learn_alpha=True, nb_outputs=1, n_conditions=1
+    )
+    optimizer = torch.optim.Adam(loss.parameters(), lr=0.05)
+    for _ in range(600):
+        optimizer.zero_grad()
+        loss(residuals, target).backward()
+        optimizer.step()
+    base, slope = loss.log_alpha.detach()[:, 0]
+    assert torch.isclose(torch.exp(base), torch.tensor(1.0), rtol=0.1)
+    assert torch.isclose(torch.exp(base + slope), torch.tensor(0.01), rtol=0.1)
+
+
+def test_cauchy_learned_alpha_lower_bound() -> None:
+    """The bound is the batch-mean log(alpha), reached at zero residual."""
+    loss = CauchyLoss(
+        alpha=[0.1, 2.0],
+        frac=0.0,
+        learn_alpha=True,
+        nb_outputs=2,
+        n_conditions=1,
+    )
+    with torch.no_grad():
+        loss.log_alpha[1] = torch.tensor([-1.0, 0.5])
+    values = torch.randn(64, 2)
+    target = torch.cat([values, torch.rand(64, 1)], dim=1)
+    exact = loss(values, target)
+    assert loss.lower_bound is not None
+    assert torch.isclose(exact, torch.tensor(loss.lower_bound), atol=1e-6)
+    off = loss(values + 1.0, target, return_elements=True)
+    assert float(off.mean()) > loss.lower_bound
+
+
+def test_cauchy_groups_of_one_match_ungrouped() -> None:
+    """Singleton groups reproduce the column-wise loss."""
+    torch.manual_seed(0)
+    prediction, target = torch.randn(32, 3), torch.randn(32, 3)
+    plain = CauchyLoss(alpha=0.3, frac=0.0)
+    grouped = CauchyLoss(alpha=0.3, frac=0.0, groups=[[0], [1], [2]])
+    assert torch.allclose(
+        plain(prediction, target, return_elements=True),
+        grouped(prediction, target, return_elements=True),
+    )
+    assert np.isclose(plain.lower_bound, grouped.lower_bound)
+
+
+def test_cauchy_group_is_rotation_invariant() -> None:
+    """Within a group only the length of the residual matters."""
+    alpha = 0.1
+    target = torch.zeros(2, 3)
+    residuals = torch.tensor([[1.0, 0.0, 0.3], [0.6, -0.8, 0.3]])
+    grouped = CauchyLoss(alpha=alpha, frac=0.0, groups=[[0, 1], [2]])
+    loss = grouped(residuals, target, return_elements=True)
+    assert torch.isclose(loss[0], loss[1])
+    expected = (
+        1.5 * np.log1p(1.0 / alpha**2)
+        + np.log1p(0.09 / alpha**2)
+        + 3 * np.log(alpha)
+    ) / 3
+    assert torch.isclose(loss[0], torch.tensor(expected, dtype=torch.float))
+
+    plain = CauchyLoss(alpha=alpha, frac=0.0)(
+        residuals, target, return_elements=True
+    )
+    assert not torch.isclose(plain[0], plain[1])
+
+
+def test_cauchy_group_lower_bound() -> None:
+    """The bound is the size-weighted mean log(alpha), reached when exact."""
+    loss = CauchyLoss(
+        alpha=[0.05, 0.2, 3.0], frac=0.0, groups=[[0, 1], [2], [3]]
+    )
+    values = torch.randn(16, 4)
+    expected = (2 * np.log(0.05) + np.log(0.2) + np.log(3.0)) / 4
+    assert np.isclose(loss.lower_bound, expected)
+    assert torch.isclose(
+        loss(values, values), torch.tensor(expected, dtype=torch.float)
+    )
+    off = loss(values + 0.1, values, return_elements=True)
+    assert (off > expected).all()
+
+
+def test_cauchy_group_learned_alpha_is_likelihood_scale() -> None:
+    """Learned group scales recover those of multivariate Cauchy samples."""
+    torch.manual_seed(0)
+    n = 40000
+    scales = torch.tensor([0.05, 2.0])
+    # d-dimensional Cauchy: normal vector over an independent |normal|
+    pair = torch.randn(n, 2) / torch.randn(n, 1).abs() * scales[0]
+    single = torch.randn(n, 1) / torch.randn(n, 1).abs() * scales[1]
+    residuals = torch.cat([pair, single], dim=1)
+    loss = CauchyLoss(
+        alpha=1.0, frac=0.0, learn_alpha=True, groups=[[0, 1], [2]]
+    )
+    optimizer = torch.optim.Adam(loss.parameters(), lr=0.05)
+    zeros = torch.zeros_like(residuals)
+    for _ in range(400):
+        optimizer.zero_grad()
+        loss(residuals, zeros).backward()
+        optimizer.step()
+    assert torch.allclose(loss.alphas(), scales, rtol=0.05)
+    assert set(loss.monitored_values()) == {"alpha_0", "alpha_1"}
+    assert CauchyLoss(alpha=1.0, frac=0.0).monitored_values() == {}
+
+
+def test_sp_cauchy_fixed_rho_matches_predicted() -> None:
+    """A fixed rho equals the predicted form with k = rho / (1 - rho)."""
+    torch.manual_seed(0)
+    rho = 0.9
+    mu = torch.nn.functional.normalize(torch.randn(64, 3), dim=1)
+    target = torch.nn.functional.normalize(torch.randn(64, 3), dim=1)
+    k = torch.full((64, 1), rho / (1 - rho))
+    fixed = spCauchyLoss(rho=rho)(mu, target, return_elements=True)
+    predicted = spCauchyLoss()(
+        torch.cat([mu, k], dim=1), target, return_elements=True
+    )
+    assert torch.allclose(fixed, predicted, rtol=1e-5)
+
+
+def test_sp_cauchy_fixed_rho_is_chord_cauchy_with_bound() -> None:
+    """The loss is 2 log(1 + chord^2 / alpha^2) above its lower bound."""
+    rho = 0.995
+    loss = spCauchyLoss(rho=rho)
+    alpha_squared = (1 - rho) ** 2 / rho
+    torch.manual_seed(0)
+    mu = torch.nn.functional.normalize(torch.randn(64, 3), dim=1)
+    target = torch.nn.functional.normalize(torch.randn(64, 3), dim=1)
+    chord_squared = ((mu - target) ** 2).sum(dim=1)
+    expected = 2 * torch.log1p(chord_squared / alpha_squared)
+    elements = loss(mu, target, return_elements=True)
+    assert torch.allclose(elements - loss.lower_bound, expected, rtol=1e-4)
+    assert torch.isclose(
+        loss(target, target), torch.tensor(loss.lower_bound), atol=1e-5
+    )

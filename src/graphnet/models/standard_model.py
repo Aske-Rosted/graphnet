@@ -68,9 +68,10 @@ class StandardModel(EasySyntax):
                 losses (e.g. `UncertaintyWeighting`). Its parameters get
                 their own optimizer parameter group without weight decay.
             exclude_from_weight_decay: If True, biases, normalization
-                layers and the parameters listed by the backbone's
-                `no_weight_decay()` are not weight-decayed (relevant for
-                optimizers with decoupled weight decay such as AdamW).
+                layers, the parameters listed by the backbone's
+                `no_weight_decay()` and the parameters of the loss functions
+                are not weight-decayed (relevant for optimizers with
+                decoupled weight decay such as AdamW).
         """
         # Base class constructor
         super().__init__(
@@ -192,6 +193,18 @@ class StandardModel(EasySyntax):
                     batch_size=len(preds[0]),
                     sync_dist=True,
                 )
+            # ... and what the loss functions report, e.g. learned scales.
+            for i, task in enumerate(self._tasks):
+                monitored = task._loss_function.monitored_values()
+                for name, value in monitored.items():
+                    self.log(
+                        f"i_loss_{i}_{name}",
+                        value,
+                        on_step=False,
+                        on_epoch=True,
+                        batch_size=len(preds[0]),
+                        sync_dist=True,
+                    )
             if self.loss_balancing is not None:
                 weights = self.loss_balancing.weights()
                 if weights is not None:
@@ -292,8 +305,15 @@ class StandardModel(EasySyntax):
             self.loss_balancing.on_train_batch_end(self, batch)
 
     def _no_decay_parameter_ids(self) -> Set[int]:
-        """Return ids of biases, norm layers and backbone-listed params."""
+        """Return ids of parameters that should not be weight-decayed.
+
+        Biases, normalization layers, the backbone's `no_weight_decay()`
+        parameters and the parameters of the loss functions (e.g.
+        learned scales).
+        """
         ids: Set[int] = set()
+        for task in self._tasks:
+            ids.update(id(p) for p in task._loss_function.parameters())
         norm_types = (
             torch.nn.LayerNorm,
             torch.nn.modules.batchnorm._BatchNorm,
