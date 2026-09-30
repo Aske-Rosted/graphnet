@@ -819,3 +819,33 @@ def test_sp_cauchy_fixed_rho_is_chord_cauchy_with_bound() -> None:
     assert torch.isclose(
         loss(target, target), torch.tensor(loss.lower_bound), atol=1e-5
     )
+
+
+def test_cauchy_fixed_alpha_can_be_set() -> None:
+    """Setting alpha changes the loss and its bound; learned ones refuse."""
+    loss = CauchyLoss(alpha=0.1, frac=0.0)
+    assert hasattr(loss, "_alpha") and loss.alpha == 0.1
+    loss._alpha = 0.02
+    assert loss.alpha == 0.02
+    values = torch.randn(8, 2)
+    expected = torch.tensor(np.log(0.02), dtype=torch.float)
+    assert np.isclose(loss.lower_bound, float(expected))
+    assert torch.isclose(loss(values, values), expected)
+
+    learned = CauchyLoss(alpha=0.1, frac=0.0, learn_alpha=True, nb_outputs=2)
+    assert not hasattr(learned, "_alpha")
+
+
+def test_sp_cauchy_alpha_maps_to_rho() -> None:
+    """Alpha and rho are related by alpha^2 = (1 - rho)^2 / rho."""
+    loss = spCauchyLoss(rho=0.995)
+    assert np.isclose(loss.alpha, 0.005 / np.sqrt(0.995))
+    narrow_bound = loss.lower_bound
+    loss._alpha = 0.1
+    rho, wide_bound = loss._rho, loss.lower_bound
+    assert rho is not None
+    assert narrow_bound is not None and wide_bound is not None
+    assert np.isclose((1 - rho) ** 2 / rho, 0.01)
+    assert np.isclose(loss.alpha, 0.1)
+    assert wide_bound > narrow_bound
+    assert not hasattr(spCauchyLoss(), "_alpha")
