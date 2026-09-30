@@ -66,6 +66,86 @@ class collator_sequence_buckleting:
         return batch_list
 
 
+class collator_compute_budget_bucketing:
+    """Pack graphs into mini-batches under a padded-compute budget.
+
+    Graphs are sorted by sequence length (`parameter`) and packed greedily;
+    a new mini-batch is started whenever `n_graphs * max_length**gamma` of
+    the current one would exceed `max_compute`. This keeps the padded cost of
+    each mini-batch roughly constant (e.g. `gamma = 2` for attention), so a
+    batch is returned as a variable number of mini-batches.
+
+    NOTE: Graphs with `parameter <= 1` (e.g. single-node events) are
+    dropped.
+    """
+
+    def __init__(
+        self,
+        max_compute: float,
+        parameter: str = "n_pulses",
+        gamma: float = 2.0,
+        verbose: bool = False,
+    ):
+        """Construct `collator_compute_budget_bucketing`.
+
+        Args:
+            max_compute: Budget for `n_graphs * max_length**gamma` per
+                mini-batch. A single graph exceeding it forms its own batch.
+            parameter: Graph attribute holding the sequence length, e.g.
+                `n_pulses` or `n_tokens` (see
+                `GraphDefinition(add_token_count=True)`).
+            gamma: Exponent of the sequence length in the compute estimate.
+            verbose: If True, log the resulting mini-batches.
+        """
+        self.max_compute = max_compute
+        self.parameter = parameter
+        self.gamma = gamma
+        self.verbose = verbose
+
+    def __call__(self, graphs: List[Data]) -> List[Batch]:
+        """Pack `graphs` into mini-batches.
+
+        Args:
+            graphs: A list of Data objects representing the input graphs.
+
+        Returns:
+            A list of Batch objects, ordered by increasing sequence length.
+        """
+        valid_sorted = sorted(
+            (
+                (getattr(g, self.parameter), g)
+                for g in graphs
+                if getattr(g, self.parameter) > 1
+            ),
+            key=lambda x: x[0],
+        )
+
+        batch_list: List[Batch] = []
+        bucket: List[Data] = []
+        bucket_max_length = 0
+        for length, graph in valid_sorted:
+            max_length = max(bucket_max_length, length)
+            compute = (len(bucket) + 1) * max_length**self.gamma
+            if bucket and compute > self.max_compute:
+                batch_list.append(Batch.from_data_list(bucket))
+                bucket, bucket_max_length = [], 0
+            bucket.append(graph)
+            bucket_max_length = max(bucket_max_length, length)
+        if bucket:
+            batch_list.append(Batch.from_data_list(bucket))
+
+        if self.verbose:
+            logger = Logger()
+            logger.info(f"Number of buckets: {len(batch_list)}")
+            for i, batch in enumerate(batch_list):
+                max_length = int(getattr(batch, self.parameter).max())
+                logger.info(
+                    f"Bucket {i}: size={batch.num_graphs}, "
+                    f"max_length={max_length}"
+                )
+        return batch_list
+
+
 # @TODO: Remove in favour of DataLoader{,.from_dataset_config}
 def make_dataloader(
     db: str,

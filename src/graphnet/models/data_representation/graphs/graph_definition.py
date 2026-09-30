@@ -36,6 +36,7 @@ class GraphDefinition(DataRepresentation):
         sort_by: Optional[str] = None,
         repeat_labels: bool = False,
         add_static_features: bool = True,
+        add_token_count: bool = False,
     ):
         """Construct ´GraphDefinition´. The ´detector´ holds.
 
@@ -74,6 +75,9 @@ class GraphDefinition(DataRepresentation):
                 Defaults to False.
             add_static_features: If True, the original features will be
                 added as static attributes to the graph. Defaults to True.
+            add_token_count: If True, the number of nodes is stored as the
+                graph attribute `n_tokens` (e.g. for token-based bucketing
+                with `collator_compute_budget_bucketing`). Defaults to False.
         """
         # Base class constructor
         super().__init__(
@@ -112,6 +116,7 @@ class GraphDefinition(DataRepresentation):
                 raise e
         self._sort_by = sort_by
         self._add_static_features = add_static_features
+        self._add_token_count = add_token_count
 
         # make sure output feature names are set also in node definition
         self._set_output_feature_names(self._input_feature_names)
@@ -181,6 +186,8 @@ class GraphDefinition(DataRepresentation):
                 data,
                 self.output_feature_names,
             )
+        if self._add_token_count:
+            data["n_tokens"] = len(data.x)
         return data
 
     def _add_features_individually(
