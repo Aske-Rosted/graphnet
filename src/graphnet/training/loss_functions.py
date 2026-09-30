@@ -46,6 +46,13 @@ class LossFunction(Model):
         """
         return None
 
+    def monitored_values(self) -> Dict[str, float]:
+        """Return quantities of the loss worth logging during training.
+
+        E.g. the current value of a learned scale. Empty by default.
+        """
+        return {}
+
     @final
     def forward(  # type: ignore[override]
         self,
@@ -937,6 +944,18 @@ class CauchyLoss(LossFunction):
         if self._learn_alpha:
             return torch.exp(self.log_alpha[0].detach())
         return torch.exp(self._fixed_log_alpha)
+
+    def monitored_values(self) -> Dict[str, float]:
+        """Return the learned scales (and their condition slopes)."""
+        if not self._learn_alpha:
+            return {}
+        values = {
+            f"alpha_{i}": float(alpha) for i, alpha in enumerate(self.alphas())
+        }
+        for c, slopes in enumerate(self.log_alpha[1:].detach()):
+            for i, slope in enumerate(slopes):
+                values[f"log_alpha_{i}_slope_{c}"] = float(slope)
+        return values
 
     def _log_alpha(self, conditions: Optional[Tensor], like: Tensor) -> Tensor:
         """Return log(alpha), broadcastable to [N, n_scales]."""
