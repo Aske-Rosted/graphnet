@@ -886,15 +886,10 @@ class CauchyLoss(LossFunction):
             )
 
         n_scales = len(groups) if groups is not None else nb_outputs
-        if isinstance(alpha, (int, float)):
-            log_alpha = torch.full((n_scales or 1,), float(np.log(alpha)))
-        else:
+        self._n_scales = n_scales
+        if not isinstance(alpha, (int, float)):
             assert frac == 0, "One alpha per column requires `frac = 0`."
-            assert n_scales in (None, len(alpha)), (
-                f"Got {len(alpha)} values of alpha for {n_scales} "
-                "groups (columns)."
-            )
-            log_alpha = torch.log(torch.as_tensor(alpha, dtype=torch.float))
+        log_alpha = self._as_log_alpha(alpha)
 
         if learn_alpha:
             assert frac == 0, "`learn_alpha` requires `frac = 0`."
@@ -906,9 +901,44 @@ class CauchyLoss(LossFunction):
             self.log_alpha = torch.nn.Parameter(parameter)
         else:
             assert n_conditions == 0, "Conditions require `learn_alpha`."
+            self._fixed_alpha = alpha
             self._fixed_log_alpha = log_alpha
         if frac == 0:
             self._last_bound = self._bound(log_alpha.unsqueeze(0))
+
+    def _as_log_alpha(self, alpha: Union[float, List[float]]) -> Tensor:
+        """Return log(alpha) with one entry per group (column)."""
+        if isinstance(alpha, (int, float)):
+            return torch.full((self._n_scales or 1,), float(np.log(alpha)))
+        assert self._n_scales in (None, len(alpha)), (
+            f"Got {len(alpha)} values of alpha for {self._n_scales} "
+            "groups (columns)."
+        )
+        return torch.log(torch.as_tensor(alpha, dtype=torch.float))
+
+    @property
+    def alpha(self) -> Union[float, List[float]]:
+        """Return the fixed scale(s).
+
+        The fixed scale can be set during training, e.g. to anneal it
+        from a wide to a narrow value. Not available for a learned
+        scale.
+        """
+        if self._learn_alpha:
+            raise AttributeError("The scale is learned; see `alphas()`.")
+        return self._fixed_alpha
+
+    @alpha.setter
+    def alpha(self, alpha: Union[float, List[float]]) -> None:
+        if self._learn_alpha:
+            raise AttributeError("The scale is learned and cannot be set.")
+        self._fixed_alpha = alpha
+        self._fixed_log_alpha = self._as_log_alpha(alpha)
+        if self._frac == 0:
+            self._last_bound = self._bound(self._fixed_log_alpha.unsqueeze(0))
+
+    # Name of the attribute before the scale became a property.
+    _alpha = alpha
 
     def _sizes(self, log_alpha: Tensor) -> Tensor:
         """Return the number of columns of each scale."""
@@ -1090,6 +1120,30 @@ class spCauchyLoss(LossFunction):
         assert rho is None or 0 <= rho < 1, "`rho` must be in [0, 1)."
         self._rho = rho
         self._dim = dim
+
+    @property
+    def alpha(self) -> float:
+        """Return the scale of the equivalent Cauchy loss on the chord.
+
+        `alpha**2 = (1 - rho)**2 / rho` for a fixed `rho`, approximately the
+        angular scale in radians. Setting it changes `rho`, e.g. to anneal
+        the loss from a wide to a narrow scale. Not available for a
+        predicted concentration.
+        """
+        if self._rho is None:
+            raise AttributeError("The concentration is predicted.")
+        return float((1 - self._rho) / np.sqrt(self._rho))
+
+    @alpha.setter
+    def alpha(self, alpha: float) -> None:
+        if self._rho is None:
+            raise AttributeError("The concentration is predicted.")
+        # k (1 + k) = 1 / alpha^2 with k = rho / (1 - rho)
+        k = 0.5 * (np.sqrt(1 + 4 / alpha**2) - 1)
+        self._rho = float(k / (1 + k))
+
+    # Same attribute name as the scale of `CauchyLoss`.
+    _alpha = alpha
 
     @property
     def lower_bound(self) -> Optional[float]:
