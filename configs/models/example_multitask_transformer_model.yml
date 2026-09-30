@@ -38,7 +38,11 @@ arguments:
         input_feature_names: [dom_x, dom_y, dom_z, dom_time, charge]
       class_name: EdgelessGraph
   split: [[64, 64, 64], [0, 1, [2, [0, 1]]]]
-  learned_multitask_weights: 0
+  loss_balancing:
+    ModelConfig:
+      arguments: {lr_scale: 20.0}
+      class_name: UncertaintyWeighting
+  exclude_from_weight_decay: true
   optimizer_class: '!class torch.optim AdamW'
   optimizer_kwargs: {lr: 5.0e-05}
   tasks:

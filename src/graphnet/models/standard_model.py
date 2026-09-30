@@ -1,6 +1,6 @@
 """Standard model class(es)."""
 
-from typing import Dict, Iterator, List, Optional, Tuple, Union, Type
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple, Union, Type
 import torch
 from torch import Tensor
 from torch_geometric.data import Data
@@ -10,7 +10,7 @@ from graphnet.models.gnn.gnn import GNN
 from graphnet.models import Model
 from .easy_model import EasySyntax
 from graphnet.models.task import StandardLearnedTask
-from graphnet.models.task.multitask_utils import LossWeightBalancing
+from graphnet.models.task.loss_balancing import LossBalancing
 from graphnet.models.data_representation import (
     GraphDefinition,
     DataRepresentation,
@@ -40,7 +40,8 @@ class StandardModel(EasySyntax):
         scheduler_class: Optional[type] = None,
         scheduler_kwargs: Optional[Dict] = None,
         scheduler_config: Optional[Dict] = None,
-        learned_multitask_weights: int = -1,
+        loss_balancing: Optional[LossBalancing] = None,
+        exclude_from_weight_decay: bool = False,
     ) -> None:
         """Construct `StandardModel`.
 
@@ -63,9 +64,13 @@ class StandardModel(EasySyntax):
             scheduler_class: Learning-rate scheduler class.
             scheduler_kwargs: Keyword arguments passed to `scheduler_class`.
             scheduler_config: Lightning scheduler configuration.
-            learned_multitask_weights: If not -1, weigh the task losses with
-                learned uncertainties (`LossWeightBalancing`), active from
-                this epoch on.
+            loss_balancing: Optional `LossBalancing` combining the task
+                losses (e.g. `UncertaintyWeighting`). Its parameters get
+                their own optimizer parameter group without weight decay.
+            exclude_from_weight_decay: If True, biases, normalization
+                layers and the parameters listed by the backbone's
+                `no_weight_decay()` are not weight-decayed (relevant for
+                optimizers with decoupled weight decay such as AdamW).
         """
         # Base class constructor
         super().__init__(
@@ -133,12 +138,23 @@ class StandardModel(EasySyntax):
                 " dimension."
             )
 
-        self.loss_weight_balancing: Optional[LossWeightBalancing] = None
-        if learned_multitask_weights != -1:
-            self.loss_weight_balancing = LossWeightBalancing(
-                n_tasks=len(self._tasks),
-                late_activation=learned_multitask_weights,
-            )
+        self._exclude_from_weight_decay = exclude_from_weight_decay
+        self.loss_balancing = loss_balancing
+        if self.loss_balancing is not None:
+            self.loss_balancing.setup(self._tasks, self._detached_tasks())
+
+    def _detached_tasks(self) -> List[bool]:
+        """Return whether each task's input is detached from the backbone."""
+        detached = [task._detach_backbone for task in self._tasks]
+        for i, indices in enumerate(self._split_indices):
+            if (
+                isinstance(indices, list)
+                and len(indices) == 2
+                and indices[0] is None
+                and isinstance(indices[1], list)
+            ):
+                detached[i] = True
+        return detached
 
     def compute_loss(
         self, preds: Tensor, data: List[Data], verbose: bool = False
@@ -158,11 +174,13 @@ class StandardModel(EasySyntax):
             task.compute_loss(pred, data_merged)
             for task, pred in zip(self._tasks, preds)
         ]
-        if self.loss_weight_balancing is not None:
-            losses = self.loss_weight_balancing(losses, self.current_epoch)
+        # Unbalanced task losses, e.g. for balancers updating after a step
+        self._last_task_losses = torch.stack(
+            [loss.detach() for loss in losses]
+        )
 
         if not self.training:
-            # Log the individual task losses during validation.
+            # Log the individual (unbalanced) task losses during validation.
             for i, loss in enumerate(losses):
                 self.log(
                     f"i_loss_{i}",
@@ -174,6 +192,22 @@ class StandardModel(EasySyntax):
                     batch_size=len(preds[0]),
                     sync_dist=True,
                 )
+            if self.loss_balancing is not None:
+                weights = self.loss_balancing.weights()
+                if weights is not None:
+                    tasks = self.loss_balancing.balanced_tasks
+                    for i, weight in zip(tasks, weights):
+                        self.log(
+                            f"loss_weight_{i}",
+                            weight,
+                            on_step=False,
+                            on_epoch=True,
+                            batch_size=len(preds[0]),
+                            sync_dist=True,
+                        )
+
+        if self.loss_balancing is not None:
+            losses = self.loss_balancing(losses, self.current_epoch)
 
         if verbose:
             self.info(f"{losses}")
@@ -250,22 +284,74 @@ class StandardModel(EasySyntax):
         loss = self.compute_loss(preds, batch)
         return loss
 
-    def _optimizer_parameters(self) -> Union[Iterator, List[Dict]]:
-        """Return the parameters passed to the optimizer.
+    def on_train_batch_end(
+        self, outputs: Any, batch: Any, batch_idx: int
+    ) -> None:
+        """Let the loss balancing update after the optimizer step."""
+        if self.loss_balancing is not None:
+            self.loss_balancing.on_train_batch_end(self, batch)
 
-        The loss-balancing uncertainties get their own parameter group
-        with the learning rate scaled down by two orders of magnitude.
+    def _no_decay_parameter_ids(self) -> Set[int]:
+        """Return ids of biases, norm layers and backbone-listed params."""
+        ids: Set[int] = set()
+        norm_types = (
+            torch.nn.LayerNorm,
+            torch.nn.modules.batchnorm._BatchNorm,
+            torch.nn.GroupNorm,
+        )
+        for module in self.modules():
+            if isinstance(module, norm_types):
+                ids.update(id(p) for p in module.parameters())
+        for name, param in self.named_parameters():
+            if name.endswith(".bias"):
+                ids.add(id(param))
+        if hasattr(self.backbone, "no_weight_decay"):
+            listed = set(self.backbone.no_weight_decay())
+            for name, param in self.backbone.named_parameters():
+                if name.split(".")[0] in listed or name in listed:
+                    ids.add(id(param))
+        return ids
+
+    def _optimizer_parameters(self) -> Union[Iterator, List[Dict]]:
+        """Return the parameter groups passed to the optimizer.
+
+        The loss-balancing parameters form their own group with the options
+        of `LossBalancing.param_group_options` (no weight decay, lr scale).
+        With `exclude_from_weight_decay`, biases, normalization layers and
+        the backbone's `no_weight_decay()` parameters form a group without
+        weight decay.
         """
-        if self.loss_weight_balancing is None:
+        balancing: List[torch.nn.Parameter] = []
+        if self.loss_balancing is not None:
+            balancing = list(self.loss_balancing.parameters())
+        if not balancing and not self._exclude_from_weight_decay:
             return super()._optimizer_parameters()
-        balancing = list(self.loss_weight_balancing.parameters())
+
         balancing_ids = {id(p) for p in balancing}
-        others = [p for p in self.parameters() if id(p) not in balancing_ids]
-        lr = self._optimizer_kwargs.get("lr", 1e-3)
-        return [
-            {"params": others},
-            {"params": balancing, "lr": lr * 1e-2},
-        ]
+        no_decay_ids = (
+            self._no_decay_parameter_ids()
+            if self._exclude_from_weight_decay
+            else set()
+        )
+        decay: List[torch.nn.Parameter] = []
+        no_decay: List[torch.nn.Parameter] = []
+        for param in self.parameters():
+            if id(param) in balancing_ids:
+                continue
+            (no_decay if id(param) in no_decay_ids else decay).append(param)
+
+        groups: List[Dict] = [{"params": decay}]
+        if no_decay:
+            groups.append({"params": no_decay, "weight_decay": 0.0})
+        if balancing:
+            assert self.loss_balancing is not None
+            groups.append(
+                {
+                    "params": balancing,
+                    **self.loss_balancing.param_group_options,
+                }
+            )
+        return groups
 
     def validate_tasks(self) -> None:
         """Verify that self._tasks contain compatible elements."""
