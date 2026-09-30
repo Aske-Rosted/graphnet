@@ -577,18 +577,22 @@ class cluster_and_pad:
         times: List[int],
         location: Optional[int] = None,
     ) -> np.ndarray:
-        """Add the cumulative sum of values after certain time.
+        """Add the values accumulated within given times of the first pulse.
 
-        NOTE: the time is counted from the first pulse of the sensor.
-        Make sure that the data is also sorted by time and be aware of
-        the standardization of the time column.
+        For each time `t` in `times`, the summarized values of all pulses
+        with `time < time_of_first_pulse + t` are summed (e.g. the charge
+        collected in the first `t` ns of the sensor). If all pulses fall
+        inside the window, this is the total over the sensor.
+
+        NOTE: Be aware of the standardization of the time column; `times`
+        must be given in the same units.
 
         Args:
             time_index: Index of the time column in the padded tensor
             summarization_indices: List of column indices that defines
-                features that will be summarized with percentiles.
-            times: List of times after which the accumulated value
-                is calculated
+                features that will be accumulated.
+            times: List of time windows, measured from the first pulse of
+                each sensor, within which values are accumulated.
             location: Location to insert the accumulated values in the
                       clustered tensor defaults to adding at the end
         Altered:
@@ -601,36 +605,21 @@ class cluster_and_pad:
         if not hasattr(self, "_time_first_pulse"):
             self._calculate_time_first_pulse(time_index)
 
-        # Create array with threshold times
-        tmp_times = (
-            np.tile(
-                np.array(times),
-                (len(self._time_first_pulse[:, np.newaxis]), 1),
-            )
-            + self._time_first_pulse[:, np.newaxis]
+        # Window ends per cluster and time, shape [n_clusters, n_times]
+        window_ends = (
+            self._time_first_pulse[:, np.newaxis] + np.asarray(times)[None]
         )
-
-        # Create a mask for the times
-        mask = (
-            self._padded_x[:, :, time_index][:, np.newaxis, :]
-            >= tmp_times[:, :, np.newaxis]
+        # Pulses inside each window, shape [n_clusters, n_times, n_pulses];
+        # padding (NaN) compares as False.
+        inside = (
+            self._padded_x[:, np.newaxis, :, time_index]
+            < window_ends[:, :, np.newaxis]
         )
-
-        selections = np.argmax(
-            mask,
-            axis=2,
-        )
-        selections += (np.arange(len(self._counts)) * self._padded_x.shape[1])[
-            :, np.newaxis
-        ]
-        selections = (
-            self._padded_x[:, :, summarization_indices]
-            .cumsum(axis=1)
-            .reshape(-1, len(summarization_indices))[selections]
-        )
-        selections = selections.transpose(0, 2, 1).reshape(
-            len(self.clustered_x), -1
-        )
+        values = np.nan_to_num(self._padded_x[:, :, summarization_indices])
+        # [n_clusters, n_features, n_times], flattened feature-major
+        selections = np.einsum(
+            "ctp,cpf->cft", inside.astype(values.dtype), values
+        ).reshape(len(self.clustered_x), -1)
 
         # Add the selections to the clustered tensor
         self._add_column(selections, location)

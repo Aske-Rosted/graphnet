@@ -5,6 +5,7 @@ import pandas as pd
 import sqlite3
 import torch
 from graphnet.models.graphs.nodes import PercentileClusters
+from graphnet.models.data_representation import ClusterSummaryFeatures
 from graphnet.constants import EXAMPLE_DATA_DIR
 
 
@@ -81,3 +82,33 @@ def test_percentile_cluster() -> None:
             except AssertionError as e:
                 print(f"Percentile {percentile} does not match.")
                 raise e
+
+
+def test_cluster_summary_charge_after_t() -> None:
+    """Charge within t of the first pulse, including full-window DOMs."""
+    names = ["dom_x", "dom_y", "dom_z", "dom_time", "charge"]
+    # DOM A: pulses at 0/2/4 ns (1, 2, 3 PE); DOM B: 0/50/200 ns (1 PE each)
+    pulses = torch.tensor(
+        [
+            [0.0, 0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 2.0, 2.0],
+            [0.0, 0.0, 0.0, 4.0, 3.0],
+            [1.0, 0.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 50.0, 1.0],
+            [1.0, 0.0, 0.0, 200.0, 1.0],
+        ],
+        dtype=torch.float64,
+    )
+    node_definition = ClusterSummaryFeatures(
+        cluster_on=names[:3],
+        input_feature_names=names,
+        charge_after_t=[10, 100, 500],
+        time_after_charge_pct=[],
+        charge_standardization=1.0,
+    )
+    feature_names = node_definition._output_feature_names
+    nodes = node_definition(pulses).numpy()
+    columns = [
+        feature_names.index(f"charge_after_{t}ns") for t in (10, 100, 500)
+    ]
+    assert np.allclose(nodes[:, columns], [[6, 6, 6], [1, 2, 3]])
