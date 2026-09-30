@@ -401,7 +401,8 @@ class cluster_and_pad:
 
         # Summarize the charge at different percentiles
         selections = np.argmax(
-            charge_cumsum[:, :, np.newaxis] >= (np.array(percentiles) / 100),
+            charge_cumsum[:, :, np.newaxis]
+            >= (np.array(percentiles) / 100) - 1e-9,
             axis=1,
         )
         selections += (np.arange(len(self._counts)) * self._padded_x.shape[1])[
@@ -488,9 +489,11 @@ class cluster_and_pad:
         """
         if not hasattr(self, "_charge_sum"):
             self._calculate_charge_sum(charge_index)
+        # Never modify the cached sum: later summaries normalize by it.
+        charge_sum = self._charge_sum
         if total_charge is not None:
-            self._charge_sum = self._charge_sum / total_charge
-        self._add_column(self._charge_sum, location)
+            charge_sum = charge_sum / total_charge
+        self._add_column(charge_sum, location)
         # update the cluster names
         if self._input_names is not None:
             new_name = [self._input_names[charge_index] + "_sum"]

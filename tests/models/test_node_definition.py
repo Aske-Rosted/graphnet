@@ -1,6 +1,6 @@
 """Unit tests for node definitions."""
 
-from typing import Any
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
@@ -180,3 +180,34 @@ def test_cluster_summary_charge_after_t() -> None:
         feature_names.index(f"charge_after_{t}ns") for t in (10, 100, 500)
     ]
     assert np.allclose(nodes[:, columns], [[6, 6, 6], [1, 2, 3]])
+
+
+def test_cluster_summary_charge_percentile_times() -> None:
+    """Charge-percentile times do not depend on `total_charge_fraction`."""
+    kwargs: Dict[str, Any] = dict(
+        cluster_on=_NAMES[:3],
+        input_feature_names=_NAMES,
+        charge_after_t=[],
+        time_after_charge_pct=[1, 50, 100],
+        time_standardization=1.0,
+    )
+    plain = ClusterSummaryFeatures(**kwargs)
+    with_fraction = ClusterSummaryFeatures(
+        total_charge_fraction=True, **kwargs
+    )
+    names = plain._output_feature_names
+    columns = [names.index(f"time_after_charge_pct{p}") for p in (1, 50, 100)]
+    first = plain(_PULSES).numpy()[:, names.index("time_of_first_hit")]
+    times = plain(_PULSES).numpy()[:, columns] - first[:, None]
+
+    # A: 1/2/3 PE at 0/2/4 ns -> 50% reached at 2 ns (3 of 6 PE);
+    # B: 1 PE each at 0/50/200 ns -> 50% reached at 50 ns.
+    assert np.allclose(times, [[0, 2, 4], [0, 50, 200]])
+    fraction_names = with_fraction._output_feature_names
+    fraction_columns = [
+        fraction_names.index(f"time_after_charge_pct{p}") for p in (1, 50, 100)
+    ]
+    assert np.allclose(
+        with_fraction(_PULSES).numpy()[:, fraction_columns],
+        plain(_PULSES).numpy()[:, columns],
+    )
