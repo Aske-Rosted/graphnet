@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 import pytest
 import torch
 from torch import Tensor
-from torch_geometric.data import Data
+from torch_geometric.data import Batch, Data
 
 from graphnet.data.constants import FEATURES
 from graphnet.models import StandardModel
@@ -15,6 +15,7 @@ from graphnet.models.gnn.gnn import GNN
 from graphnet.models.graphs import KNNGraph
 from graphnet.models.graphs.nodes import NodesAsPulses
 from graphnet.models.task.loss_balancing import (
+    FAMO,
     LossBalancing,
     UncertaintyWeighting,
 )
@@ -294,3 +295,75 @@ def test_task_head_and_loss_run_in_float32_under_autocast() -> None:
     assert loss.dtype == torch.float32
     # Same as a full-precision evaluation of the (bf16-rounded) input
     assert torch.allclose(pred, task(x.bfloat16().float()))
+
+
+def test_famo_gradient_weights() -> None:
+    """The model gradient of task i is weighted by z_i / (c D_i)."""
+    famo = FAMO(lower_bounds=[0.0, 0.0, 0.0])
+    _balanced_model(famo)
+    with torch.no_grad():
+        famo.logits.copy_(torch.tensor([0.3, -0.2, 0.1]))
+    losses = [torch.tensor(v, requires_grad=True) for v in (0.5, 2.0, 4.0)]
+    torch.stack(famo(losses, epoch=0)).sum().backward()
+
+    d = torch.tensor([0.5, 2.0, 4.0])
+    z = torch.softmax(famo.logits, dim=0)
+    c = (z / d).sum()
+    grads = torch.stack([loss.grad for loss in losses])
+    assert torch.allclose(grads, z / (c * d), rtol=1e-5)
+
+
+def test_famo_logit_gradient_matches_autograd() -> None:
+    """The logit update direction is J_softmax^T delta."""
+    famo = FAMO(lower_bounds=[0.0, 0.0, 0.0], lr=0.0, weight_decay=0.0)
+    _balanced_model(famo)
+    logits = torch.tensor([0.3, -0.2, 0.1], requires_grad=True)
+    with torch.no_grad():
+        famo.logits.copy_(logits)
+    prev, new = torch.tensor([1.0, 2.0, 3.0]), torch.tensor([0.5, 1.9, 2.0])
+    delta = torch.log(prev) - torch.log(new)
+    (expected,) = torch.autograd.grad(
+        torch.softmax(logits, 0), logits, grad_outputs=delta
+    )
+    famo._update(prev, new)
+    # Adam's first step moves each logit by -lr * sign(grad); check m instead
+    assert torch.allclose(famo._adam_m / 0.1, expected, atol=1e-6)
+
+
+def test_famo_shifts_weight_to_slow_tasks() -> None:
+    """A task that improves less than the others gains weight."""
+    famo = FAMO(lower_bounds=[0.0, 0.0, 0.0])
+    _balanced_model(famo)
+    prev = torch.tensor([1.0, 1.0, 1.0])
+    for _ in range(20):
+        famo._update(prev, torch.tensor([0.5, 0.5, 0.95]))
+    z = famo.weights()
+    assert z[2] > z[0] and torch.isclose(z[0], z[1])
+
+
+@pytest.mark.parametrize("update_on", ["same_batch", "next_batch"])
+def test_famo_updates_during_training(update_on: str) -> None:
+    """Training with FAMO updates the task weights after steps."""
+    from pytorch_lightning import Trainer
+
+    famo = FAMO(update_on=update_on, lower_bounds=[0.0, 0.0, 0.0])
+    model = _balanced_model(famo)
+    events = [
+        Data(x=torch.zeros(2, 1), energy=torch.rand(1)) for _ in range(12)
+    ]
+    loader = torch.utils.data.DataLoader(
+        events,  # type: ignore[arg-type]
+        batch_size=3,
+        collate_fn=lambda g: [Batch.from_data_list(g)],
+    )
+    trainer = Trainer(
+        max_steps=4,
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+        enable_model_summary=False,
+        accelerator="cpu",
+    )
+    trainer.fit(model, loader)
+    assert int(famo._adam_step) >= 3
+    assert not torch.allclose(famo.weights(), torch.full((3,), 1 / 3))

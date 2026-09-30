@@ -156,10 +156,8 @@ class StandardModel(EasySyntax):
                 detached[i] = True
         return detached
 
-    def compute_loss(
-        self, preds: Tensor, data: List[Data], verbose: bool = False
-    ) -> Tensor:
-        """Compute and sum losses across tasks."""
+    def _task_losses(self, preds: Tensor, data: List[Data]) -> List[Tensor]:
+        """Return the (unbalanced) loss of each task."""
         data_merged = {}
         target_labels_merged = list(set(self.target_labels))
         for label in target_labels_merged:
@@ -170,10 +168,16 @@ class StandardModel(EasySyntax):
                     [d[task._loss_weight] for d in data], dim=0
                 )
 
-        losses = [
+        return [
             task.compute_loss(pred, data_merged)
             for task, pred in zip(self._tasks, preds)
         ]
+
+    def compute_loss(
+        self, preds: Tensor, data: List[Data], verbose: bool = False
+    ) -> Tensor:
+        """Compute and sum losses across tasks."""
+        losses = self._task_losses(preds, data)
         # Unbalanced task losses, e.g. for balancers updating after a step
         self._last_task_losses = torch.stack(
             [loss.detach() for loss in losses]
