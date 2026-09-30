@@ -1,8 +1,9 @@
 """Base `Dataloader` class(es) used in `graphnet`."""
 
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 import torch.utils.data
+from torch.utils.data import Sampler
 from torch_geometric.data import Batch, Data
 
 from graphnet.data.dataset import Dataset, EnsembleDataset
@@ -35,9 +36,32 @@ class DataLoader(torch.utils.data.DataLoader):
         persistent_workers: bool = True,
         collate_fn: Callable = collate_fn,
         prefetch_factor: int = 2,
+        sampler: Optional[Union[Sampler, Type[Sampler]]] = None,
+        sampler_kwargs: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
-        """Construct `DataLoader`."""
+        """Construct `DataLoader`.
+
+        Args:
+            dataset: Dataset to load from.
+            batch_size: Number of events per batch.
+            shuffle: Whether to shuffle the events. Ignored if a `sampler`
+                is given.
+            num_workers: Number of data loading worker processes.
+            persistent_workers: Keep workers alive between epochs.
+            collate_fn: Function merging a list of graphs into a batch.
+            prefetch_factor: Batches prefetched per worker.
+            sampler: A `Sampler` instance, or a `Sampler` class that is
+                constructed as `sampler(dataset, **sampler_kwargs)` (useful
+                with `from_dataset_config`, where each selection gets its own
+                sampler).
+            sampler_kwargs: Keyword arguments for a `sampler` class.
+            **kwargs: Passed to `torch.utils.data.DataLoader`.
+        """
+        if isinstance(sampler, type):
+            sampler = sampler(dataset, **(sampler_kwargs or {}))
+        if sampler is not None:
+            shuffle = False
         # Base class constructor
         super().__init__(
             dataset,
@@ -47,6 +71,7 @@ class DataLoader(torch.utils.data.DataLoader):
             collate_fn=collate_fn,
             persistent_workers=persistent_workers,
             prefetch_factor=prefetch_factor,
+            sampler=sampler,
             **kwargs,
         )
 
