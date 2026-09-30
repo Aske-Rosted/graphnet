@@ -53,18 +53,31 @@ class StringSelectionResolver(Logger):
         index_column: str,
         seed: Optional[int] = None,
         use_cache: bool = True,
+        use_super_selection: bool = False,
     ):
-        """Construct `StringSelectionResolver`."""
+        """Construct `StringSelectionResolver`.
+
+        Args:
+            dataset: Dataset the selection is resolved against.
+            index_column: Name of the event index column.
+            seed: Seed for random sub-sampling selections.
+            use_cache: Whether to cache resolved indices and values on disk.
+            use_super_selection: If True, the selection is passed to the
+                dataset's query (e.g. as an SQL `WHERE` clause) instead of
+                being evaluated with `pandas.DataFrame.query`. Caching is
+                then disabled.
+        """
         self._dataset = dataset
         self._index_column = index_column
         self._seed = seed
-        self._use_cache = use_cache
+        self._use_super_selection = use_super_selection
+        self._use_cache = use_cache and not use_super_selection
 
         # Base class constructor
         super().__init__(name=__name__, class_name=self.__class__.__name__)
 
     # Public method(s)
-    def resolve(self, selection: str) -> List[int]:
+    def resolve(self, selection: str, verbose: bool = True) -> List[int]:
         """Resolve selection as string to list of indicies.
 
         Selections are expected to have pandas.DataFrame.query-compatible
@@ -72,7 +85,8 @@ class StringSelectionResolver(Logger):
         fixed number of events to randomly sample, e.g., ``` "10000 random
         events ~ event_no % 5 > 0" "20% random events ~ event_no % 5 > 0" ```
         """
-        self.info(f"Resolving selection: {selection}")
+        if verbose:
+            self.info(f"Resolving selection: {selection}")
 
         # (Opt.) Load cached indices, if available.
         index_cache_path = self._get_index_cache_path(selection)
@@ -221,6 +235,9 @@ class StringSelectionResolver(Logger):
                 data=self._dataset.query_table(
                     self._dataset.truth_table,
                     list(variables),
+                    selection=(
+                        selection if self._use_super_selection else None
+                    ),
                 ),
                 columns=list(variables),
             )
@@ -229,8 +246,10 @@ class StringSelectionResolver(Logger):
         if self._use_cache and not os.path.exists(values_cache_path):
             self._save_values_cache(df_values, values_cache_path)
 
-        df_selection = df_values.query(selection)
-        return df_selection
+        if self._use_super_selection:
+            # Already applied by the dataset query.
+            return df_values
+        return df_values.query(selection)
 
     def _get_random_state(self, selection: str) -> Optional[int]:
         random_state: Optional[int] = None

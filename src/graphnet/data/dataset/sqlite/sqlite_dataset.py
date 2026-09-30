@@ -43,14 +43,28 @@ class SQLiteDataset(Dataset):
         self._remove_missing_columns()
         self._close_connection()
 
+    def _from_clause(self, table: Union[str, List[str]]) -> str:
+        """Return the FROM clause for `table`.
+
+        A list of tables is joined on the index column.
+        """
+        if isinstance(table, str):
+            return table
+        assert len(table) > 0, "At least one table is required."
+        return f"{' JOIN '.join(table)} USING({self._index_column})"
+
     def query_table(
         self,
-        table: str,
+        table: Union[str, List[str]],
         columns: Union[List[str], str],
         sequential_index: Optional[int] = None,
         selection: Optional[str] = None,
     ) -> List[Tuple[Any, ...]]:
-        """Query table at a specific index, optionally with some selection."""
+        """Query table at a specific index, optionally with some selection.
+
+        `table` may be a list of tables, which are joined on the index
+        column.
+        """
         # Check(s)
         if isinstance(columns, list):
             columns = ", ".join(columns)
@@ -73,7 +87,7 @@ class SQLiteDataset(Dataset):
                 )
 
             result = self._conn.execute(
-                f"SELECT {columns} FROM {table} WHERE "
+                f"SELECT {columns} FROM {self._from_clause(table)} WHERE "
                 f"{combined_selections}"
             ).fetchall()
         except sqlite3.OperationalError as e:
@@ -86,7 +100,9 @@ class SQLiteDataset(Dataset):
     def _get_all_indices(self) -> List[int]:
         self._establish_connection(0)
         indices = pd.read_sql_query(
-            f"SELECT {self._index_column} FROM {self._truth_table}", self._conn
+            f"SELECT {self._index_column} FROM "
+            f"{self._from_clause(self._truth_table)}",
+            self._conn,
         )
         self._close_connection()
         return indices.values.ravel().tolist()
