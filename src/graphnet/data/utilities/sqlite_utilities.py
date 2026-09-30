@@ -138,7 +138,7 @@ def create_table(
     database_path: str,
     *,
     index_column: str = "event_no",
-    default_type: str = "NOT NULL",
+    default_type: Union[str, Dict[str, str]] = "NOT NULL",
     integer_primary_key: bool = True,
 ) -> None:
     """Create a table.
@@ -148,7 +148,8 @@ def create_table(
         table_name: Name of the table.
         database_path: Path to the database.
         index_column: Name of the index column.
-        default_type: The type used for all non-index columns.
+        default_type: The type used for all non-index columns, or a
+            dictionary mapping column names to types.
         integer_primary_key: Whether or not to create the `index_column` with
             the `INTEGER PRIMARY KEY` type. Such a column is required to have
             unique, integer values for each row. This is appropriate when the
@@ -159,15 +160,24 @@ def create_table(
     """
     # Prepare column names and types
     query_columns = []
-    for column in columns:
-        type_ = default_type
-        if column == index_column:
-            if integer_primary_key:
-                type_ = "INTEGER PRIMARY KEY NOT NULL"
-            else:
-                type_ = "NOT NULL"
 
-        query_columns.append(f"{column} {type_}")
+    for column in columns:
+        if isinstance(default_type, str):
+            type_ = default_type
+            if column == index_column:
+                if integer_primary_key:
+                    type_ = "INTEGER PRIMARY KEY NOT NULL"
+                else:
+                    type_ = "NOT NULL"
+            query_columns.append(f"{column} {type_}")
+        elif isinstance(default_type, dict):
+            query_columns.append(
+                f"{column} {default_type.get(column, 'NOT NULL')}"
+            )
+        else:
+            raise ValueError(
+                "`default_type` must be either a string or a dictionary."
+            )
     query_columns_string = ", ".join(query_columns)
 
     # Run SQL code
@@ -206,3 +216,278 @@ def create_table_and_save_to_sql(
             integer_primary_key=integer_primary_key,
         )
     save_to_sql(df, table_name=table_name, database_path=database_path)
+
+
+def get_first_pulse_times(
+    database_path: str,
+    pulses_table_name: str = "SRTInIcePulses",
+    time_column: str = "dom_time",
+    index_column: str = "event_no",
+) -> pd.DataFrame:
+    """Get the first pulse time for each event.
+
+    Args:
+        database_path: Path to the database.
+        pulses_table_name: Name of the pulses table.
+        time_column: Name of the time column in the pulses table.
+        index_column: Name of the index column in the pulses table.
+
+    Returns:
+        DataFrame with two columns: `event_no` and `first_pulse_time`.
+    """
+    query = (
+        f"SELECT {index_column}, MIN({time_column}) AS first_pulse_time "
+        f"FROM {pulses_table_name} "
+        f"GROUP BY {index_column};"
+    )
+    return query_database(database_path, query)
+
+
+def add_first_pulse_time_to_truth(
+    database_path: str,
+    truth_table_name: str = "truth",
+    pulses_table_name: str = "SRTInIcePulses",
+    time_column: str = "dom_time",
+    index_column: str = "event_no",
+    force: bool = False,
+) -> None:
+    """Add the first pulse time to the truth table.
+
+    Args:
+        database_path: Path to the database.
+        truth_table_name: Name of the truth table.
+        pulses_table_name: Name of the pulses table.
+        time_column: Name of the time column in the pulses table.
+        index_column: Name of the index column in both tables.
+        force: Whether to overwrite `first_pulse_time` if it already exists.
+    """
+    # Get first pulse times
+    df = get_first_pulse_times(
+        database_path=database_path,
+        pulses_table_name=pulses_table_name,
+        time_column=time_column,
+        index_column=index_column,
+    )
+    print(f"Finished getting first pulse times for {len(df)} events.")
+    # Create temporary table for first pulse times
+    temp_table_name = "temp_first_pulse_times"
+
+    query = f"DROP TABLE IF EXISTS {temp_table_name};"
+    run_sql_code(database_path, query)
+
+    create_table(
+        columns=["event_no", "first_pulse_time"],
+        table_name=temp_table_name,
+        database_path=database_path,
+        index_column=index_column,
+        default_type="FLOAT",
+        integer_primary_key=True,
+    )
+    print(f"Created temporary table {temp_table_name} for first pulse times.")
+    # Save first pulse times to temporary table
+    save_to_sql(
+        df=df,
+        table_name=temp_table_name,
+        database_path=database_path,
+    )
+
+    # Create the column and update it in the truth table remove if already exists
+    query = (
+        f"ALTER TABLE {truth_table_name} "
+        f"ADD COLUMN first_pulse_time FLOAT;"
+    )
+    print(f"Adding column 'first_pulse_time' to {truth_table_name}.")
+
+    try:
+        run_sql_code(database_path, query)
+    except sqlite3.OperationalError as e:
+        if "duplicate column name: first_pulse_time" in str(e):
+            if not force:
+                print(
+                    "Column 'first_pulse_time' already exists in "
+                    f"{truth_table_name}. Use `force=True` to overwrite it."
+                )
+                return
+            else:
+                # if column already exists we have to remake the entire table since sqlite does not support dropping columns
+                drop_column(
+                    database_path=database_path,
+                    table_name=truth_table_name,
+                    column_name="first_pulse_time",
+                )
+                run_sql_code(database_path, query)
+        else:
+            raise e
+    query = (
+        f"UPDATE {truth_table_name} "
+        f"SET first_pulse_time = (SELECT first_pulse_time "
+        f"FROM {temp_table_name} "
+        f"WHERE {temp_table_name}.{index_column} = {truth_table_name}.{index_column});"
+    )
+
+    run_sql_code(database_path, query)
+    print(
+        f"Updated {truth_table_name} with first pulse times from {temp_table_name}."
+    )
+    # Drop the temporary table
+    query = f"DROP TABLE IF EXISTS {temp_table_name};"
+    print(f"Dropping temporary table {temp_table_name}.")
+    run_sql_code(database_path, query)
+
+
+def add_starting(
+    database_path: str,
+    truth_table_name: str = "truth",
+    containment_column: str = "containment_type",
+    index_column: str = "event_no",
+    force: bool = False,
+) -> None:
+    """Add the starting to the truth table.
+
+    Args:
+        database_path: Path to the database.
+        truth_table_name: Name of the truth table.
+        containment_column: Column holding the containment type enum.
+        index_column: Name of the index column in both tables.
+        force: Whether to overwrite the 'starting' column if it already exists.
+    """
+    # mapping from containment enum to starting
+    map_dict = {
+        1: 0,  # no intersect: not starting
+        2: 0,  # through-going: not starting
+        3: 1,  # contained: starting
+        4: 1,  # tau-to-mu: starting
+        5: 1,  # uncontained-starting: starting
+        6: 0,  # stopping: not starting
+        7: 0,  # decayed: not starting
+        8: 0,  # through-going bundle: not starting
+        9: 0,  # stopping bundle: not starting
+        10: 1,  # partial-contained: starting
+    }
+
+    containment_type_query = (
+        f"SELECT {index_column}, {containment_column} "
+        f"FROM {truth_table_name};"
+    )
+
+    containment_df = query_database(database_path, containment_type_query)
+
+    # convert containment type to starting using map_dict
+    temp = containment_df[containment_column]
+    # NA mask
+    na_mask = (
+        containment_df[containment_column].isna()
+        | containment_df[containment_column].isnull()
+    )
+    #
+    containment_df["starting"] = containment_df[containment_column]
+    containment_df.loc[~na_mask, "starting"] = temp[~na_mask].map(map_dict)
+
+    temp_table_name = "temp_starting"
+    query = f"DROP TABLE IF EXISTS {temp_table_name};"
+    run_sql_code(database_path, query)
+
+    create_table(
+        columns=[index_column, "starting"],
+        table_name=temp_table_name,
+        database_path=database_path,
+        index_column=index_column,
+        default_type="INTEGER",
+        integer_primary_key=True,
+    )
+
+    print(f"Created temporary table {temp_table_name} for starting.")
+    # Save starting to temporary table
+    save_to_sql(
+        df=containment_df[[index_column, "starting"]],
+        table_name=temp_table_name,
+        database_path=database_path,
+    )
+    # Create the column and update it in the truth table remove if already exists
+    query = f"ALTER TABLE {truth_table_name} " f"ADD COLUMN starting INTEGER;"
+    print(f"Adding column 'starting' to {truth_table_name}.")
+
+    try:
+        run_sql_code(database_path, query)
+    except sqlite3.OperationalError as e:
+        if "duplicate column name: starting" in str(e):
+            if not force:
+                raise RuntimeError(
+                    "Column 'starting' already exists in "
+                    f"{truth_table_name}. Use `force=True` to overwrite it."
+                )
+            else:
+                # if column already exists we have to remake the entire table since sqlite does not support dropping columns
+                drop_column(
+                    database_path=database_path,
+                    table_name=truth_table_name,
+                    column_name="starting",
+                )
+                run_sql_code(database_path, query)
+
+        else:
+            raise e
+
+    query = (
+        f"UPDATE {truth_table_name} "
+        f"SET starting = (SELECT starting "
+        f"FROM {temp_table_name} "
+        f"WHERE {temp_table_name}.{index_column} = {truth_table_name}.{index_column});"
+    )
+
+    run_sql_code(database_path, query)
+    print(f"Updated {truth_table_name} with starting from {temp_table_name}.")
+    # Drop the temporary table
+    query = f"DROP TABLE IF EXISTS {temp_table_name};"
+    print(f"Dropping temporary table {temp_table_name}.")
+    run_sql_code(database_path, query)
+
+
+def drop_column(
+    database_path: str,
+    table_name: str,
+    column_name: str,
+) -> None:
+    """Drop a column from a table in the database."""
+    # Get the current columns of the table
+    # drop intermediate table if it already exists this can happen if this process was interrupted.
+    query = f"DROP TABLE IF EXISTS {table_name}_new;"
+    run_sql_code(database_path, query)
+
+    query = f"PRAGMA table_info({table_name});"
+    columns_info = query_database(database_path, query)
+    columns = columns_info["name"].tolist()
+
+    if column_name not in columns:
+        print(f"Column {column_name} does not exist in {table_name}.")
+        return
+
+    # Create a new table without the column to be dropped
+    new_columns = [col for col in columns if col != column_name]
+    new_table_name = f"{table_name}_new"
+
+    # Get the types of the columns
+    type_dict = dict(zip(columns_info["name"], columns_info["type"]))
+
+    create_table(
+        columns=new_columns,
+        table_name=new_table_name,
+        database_path=database_path,
+        index_column="event_no",
+        default_type=type_dict,
+        integer_primary_key=True,
+    )
+
+    # Copy data from the old table to the new table
+    columns_string = ", ".join(new_columns)
+    query = (
+        f"INSERT INTO {new_table_name} ({columns_string}) "
+        f"SELECT {columns_string} FROM {table_name};"
+    )
+    run_sql_code(database_path, query)
+
+    # Drop the old table and rename the new table to the original name
+    query = f"DROP TABLE {table_name};"
+    run_sql_code(database_path, query)
+    query = f"ALTER TABLE {new_table_name} RENAME TO {table_name};"
+    run_sql_code(database_path, query)
