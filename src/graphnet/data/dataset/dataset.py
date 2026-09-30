@@ -169,9 +169,10 @@ class Dataset(
 
         if isinstance(cfg["path"], list):
             sources = []
-            for path in cfg["path"]:
+            for i, path in enumerate(cfg["path"]):
                 cfg["path"] = path
-                sources.append(source._dataset_class(**cfg))
+                # Log the selection once rather than for every file.
+                sources.append(source._dataset_class(**cfg, verbose=i == 0))
             source = EnsembleDataset(sources)
             return source
         else:
@@ -249,7 +250,7 @@ class Dataset(
         data_representation: Optional[DataRepresentation] = None,
         node_truth: Optional[List[str]] = None,
         index_column: str = "event_no",
-        truth_table: str = "truth",
+        truth_table: Union[str, List[str]] = "truth",
         node_truth_table: Optional[str] = None,
         string_selection: Optional[List[int]] = None,
         selection: Optional[Union[str, List[int], List[List[int]]]] = None,
@@ -259,6 +260,8 @@ class Dataset(
         loss_weight_default_value: Optional[float] = None,
         seed: Optional[int] = None,
         labels: Optional[Dict[str, Any]] = None,
+        use_super_selection: bool = False,
+        verbose: bool = True,
     ):
         """Construct Dataset.
 
@@ -277,7 +280,8 @@ class Dataset(
             index_column: Name of the column in the input files that contains
                 unique indicies to identify and map events across tables.
             truth_table: Name of the table containing event-level truth
-                information.
+                information, or a list of such tables, which are joined on
+                `index_column` (supported by `SQLiteDataset`).
             node_truth_table: Name of the table containing node-level truth
                 information.
             string_selection: Subset of strings for which data should be read
@@ -306,6 +310,11 @@ class Dataset(
                 events ~ event_no % 5 > 0"`).
             data_representation: Method that defines the data representation.
             labels: Dictionary of labels to be added to the dataset.
+            use_super_selection: If True, string selections are evaluated by
+                the dataset's query (e.g. as an SQL `WHERE` clause) instead
+                of with `pandas.DataFrame.query`, allowing backend functions
+                such as `exp` or `abs`. Disables the selection cache.
+            verbose: Whether to log the resolved selection.
 
             graph_definition: Method that defines the graph representation.
                 NOTE: DEPRECATED Use `data_representation` instead.
@@ -356,6 +365,7 @@ class Dataset(
 
         self._data_representation = deepcopy(data_representation)
         self._labels = labels
+        self._use_super_selection = use_super_selection
         if data_representation is None:
             self._string_column = None
         else:
@@ -412,6 +422,7 @@ class Dataset(
             self,
             index_column=index_column,
             seed=seed,
+            use_super_selection=self._use_super_selection,
         )
 
         if self._labels is not None:
@@ -427,7 +438,7 @@ class Dataset(
             self._indices = self._get_all_indices()
         elif isinstance(selection, str):
             self._indices = self._resolve_string_selection_to_indices(
-                selection
+                selection, verbose=verbose
             )
         else:
             self._indices = selection
@@ -442,8 +453,8 @@ class Dataset(
         return self._path
 
     @property
-    def truth_table(self) -> str:
-        """Name of the table containing event-level truth information."""
+    def truth_table(self) -> Union[str, List[str]]:
+        """Name(s) of the table(s) containing event-level truth."""
         return self._truth_table
 
     # DEPRECATION PROPERTY: REMOVE AT 2.0 LAUNCH
@@ -481,7 +492,7 @@ class Dataset(
     @abstractmethod
     def query_table(
         self,
-        table: str,
+        table: Union[str, List[str]],
         columns: Union[List[str], str],
         sequential_index: Optional[int] = None,
         selection: Optional[str] = None,
@@ -541,7 +552,7 @@ class Dataset(
 
     # Internal method(s)
     def _resolve_string_selection_to_indices(
-        self, selection: str
+        self, selection: str, verbose: bool = True
     ) -> List[int]:
         """Resolve selection as string to list of indices.
 
@@ -550,7 +561,9 @@ class Dataset(
         fixed number of events to randomly sample, e.g., ``` "10000 random
         events ~ event_no % 5 > 0" "20% random events ~ event_no % 5 > 0" ```
         """
-        return self._string_selection_resolver.resolve(selection)
+        return self._string_selection_resolver.resolve(
+            selection, verbose=verbose
+        )
 
     def _remove_missing_columns(self) -> None:
         """Remove columns that are not present in the input file.
@@ -598,22 +611,25 @@ class Dataset(
     def _check_missing_columns(
         self,
         columns: List[str],
-        table: str,
+        table: Union[str, List[str]],
     ) -> List[str]:
-        """Return a list missing columns in `table`."""
+        """Return a list missing columns in `table`.
+
+        For a list of (joined) tables, a column counts as missing if it
+        is found in none of them.
+        """
+        key = table if isinstance(table, str) else ", ".join(table)
         for column in columns:
             try:
                 self.query_table(
                     table=table, columns=[column], sequential_index=0
                 )
             except ColumnMissingException:
-                if table not in self._missing_variables:
-                    self._missing_variables[table] = []
-                self._missing_variables[table].append(column)
+                self._missing_variables.setdefault(key, []).append(column)
             except IndexError:
                 self.warning(f"Dataset contains no entries for {column}")
 
-        return self._missing_variables.get(table, [])
+        return self._missing_variables.get(key, [])
 
     def _query(
         self, sequential_index: int
