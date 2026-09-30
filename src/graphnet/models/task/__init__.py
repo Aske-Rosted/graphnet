@@ -3,6 +3,7 @@
 from .task import (
     Task,
     IdentityTask,
+    IdentityTaskWithUncertainty,
     StandardLearnedTask,
     StandardFlowTask,
 )
