@@ -230,6 +230,47 @@ class BinaryCrossEntropyLoss(LossFunction):
             )
 
 
+class FocalBinaryCrossEntropyLoss(BinaryCrossEntropyLoss):
+    """Compute the focal binary cross entropy loss.
+
+    Down-weights well-classified examples by a factor `(1 - p_t)**gamma`
+    and balances the two classes with `alpha`, following Lin et al.,
+    "Focal Loss for Dense Object Detection" (https://arxiv.org/abs/1708.02002).
+    """
+
+    def __init__(
+        self,
+        gamma: float = 2.0,
+        alpha: float = 0.25,
+        from_logits: bool = False,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        """Construct FocalBinaryCrossEntropyLoss.
+
+        Args:
+            gamma: Focusing parameter. `gamma = 0` recovers the (alpha
+                weighted) binary cross entropy.
+            alpha: Weight of the positive class; the negative class is
+                weighted by `1 - alpha`.
+            from_logits: Whether the predictions are logits (raw scores)
+                rather than probabilities.
+        """
+        super().__init__(from_logits, *args, **kwargs)
+        self._gamma = gamma
+        self._alpha = alpha
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        bce = super()._forward(prediction, target)
+        probability = prediction.float()
+        if self._from_logits:
+            probability = torch.sigmoid(probability)
+        target = target.float()
+        alpha_t = self._alpha * target + (1 - self._alpha) * (1 - target)
+        p_t = probability * target + (1 - probability) * (1 - target)
+        return alpha_t * (1 - p_t) ** self._gamma * bce
+
+
 class LogCMK(torch.autograd.Function):
     """MIT License.
 
@@ -690,3 +731,111 @@ class NegCosLoss(LossFunction):
         orig_norm = torch.nn.functional.normalize(target, dim=1)
         elements = -(reco_norm * orig_norm).sum(dim=1)
         return elements
+
+
+class CauchyLoss(LossFunction):
+    """Cauchy (Lorentzian) loss with optional heteroscedastic uncertainty.
+
+    The homoscedastic term is `log(1 + (|x - y| / alpha)**2) + log(alpha)`
+    with a fixed scale `alpha`. If the prediction carries more columns than
+    the target, the extra columns are read as per-element scales `sigma` and
+    enter the heteroscedastic term `log(1 + (|x - y| / sigma)**2) +
+    log(sigma)`. `frac` blends the two: 0 is purely homoscedastic, 1 purely
+    heteroscedastic.
+    """
+
+    def __init__(
+        self,
+        alpha: float = 1.0,
+        frac: float = 1.0,
+        **kwargs: Any,
+    ) -> None:
+        """Construct CauchyLoss.
+
+        Args:
+            alpha: Fixed scale of the homoscedastic term.
+            frac: Weight of the heteroscedastic term; the homoscedastic term
+                is weighted by `1 - frac`.
+        """
+        super().__init__(**kwargs)
+        self._alpha = alpha
+        self._frac = frac
+
+    def _homoscedastic(self, prediction: Tensor, target: Tensor) -> Tensor:
+        return (1 - self._frac) * torch.mean(
+            torch.log1p((torch.abs(prediction - target) / self._alpha) ** 2)
+            + np.log(self._alpha),
+            dim=-1,
+        )
+
+    def _heteroscedastic(
+        self, prediction: Tensor, target: Tensor, uncertainty: Tensor
+    ) -> Tensor:
+        return self._frac * torch.mean(
+            torch.log1p((torch.abs(prediction - target) / uncertainty) ** 2)
+            + torch.log(uncertainty),
+            dim=-1,
+        )
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        """Implement loss calculation."""
+        assert prediction.dim() == 2
+        if target.dim() != prediction.dim():
+            target = target.squeeze(1)
+
+        # Columns beyond the target width are per-element scales.
+        uncertainty = prediction[:, target.size(1) :]
+        prediction = prediction[:, : target.size(1)]
+        assert prediction.size() == target.size(), (
+            f"Prediction size {prediction.size()} and target size "
+            f"{target.size()} do not match."
+        )
+
+        if self._frac == 0:
+            if uncertainty.shape[1] > 0:
+                self.warning_once(
+                    "Uncertainty columns are provided but `frac` is 0; "
+                    "they are ignored."
+                )
+            return self._homoscedastic(prediction, target)
+
+        uncertainty = torch.clamp(uncertainty, min=1e-6)
+        if self._frac == 1:
+            return self._heteroscedastic(prediction, target, uncertainty)
+        return self._homoscedastic(prediction, target) + self._heteroscedastic(
+            prediction, target, uncertainty
+        )
+
+
+class spCauchyLoss(LossFunction):
+    """Spherical Cauchy negative log-likelihood.
+
+    The prediction holds a direction `mu` (first `d` columns) and a
+    non-negative magnitude `k` (last column), mapped to the concentration
+    `rho = k / (1 + k)` in `[0, 1)`.
+
+    Distribution: Kato, S. & McCullagh, P. (2020), "Some properties of a
+    Cauchy family on the sphere derived from the Möbius transformations",
+    Bernoulli 26(4), https://arxiv.org/abs/1510.07679. Regression framework:
+    Tsagris, M., Papastamoulis, P. & Kato, S. (2025), Statistics and
+    Computing 35:51, https://arxiv.org/abs/2409.03292.
+    """
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        assert prediction.dim() == 2
+        assert target.dim() == 2
+        assert prediction.size(0) == target.size(0)
+
+        # Last column is the magnitude that sets the concentration rho.
+        dim = prediction.size(1) - 1
+        assert dim >= 1
+        assert target.size(1) == dim
+
+        mu = prediction[:, :dim]
+        rho = prediction[:, dim] / (1.0 + prediction[:, dim])
+        dot = (mu * target).sum(dim=-1)
+        alpha = (dim - 1) / 2.0
+        log_numer = alpha * torch.log(1.0 - rho**2 + 1e-7)
+        denom = (1.0 - 2.0 * rho * dot + rho**2).clamp(min=1e-7)
+        log_denom = (alpha + 1.0) * torch.log(denom)
+        return -(log_numer - log_denom)
