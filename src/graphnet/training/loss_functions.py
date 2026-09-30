@@ -9,6 +9,7 @@ from typing import Any, Optional, Union, List, Dict
 
 import numpy as np
 import scipy.special
+import scipy.stats
 import torch
 from torch import Tensor
 from torch import nn
@@ -867,6 +868,7 @@ class CauchyLoss(LossFunction):
         self._learn_alpha = learn_alpha
         self._n_conditions = n_conditions
         self._last_bound: Optional[float] = None
+        self._residual_scales: Optional[Tensor] = None
 
         self._group_index: Optional[Tensor] = None
         self._group_size: Optional[Tensor] = None
@@ -976,9 +978,21 @@ class CauchyLoss(LossFunction):
         return torch.exp(self._fixed_log_alpha)
 
     def monitored_values(self) -> Dict[str, float]:
-        """Return the learned scales (and their condition slopes)."""
+        """Return the scales worth following during training.
+
+        For a fixed scale: `residual_scale_<i>`, the Cauchy scale of the
+        residuals of group (column) `i` in the most recent batch, estimated
+        from their median. It shows which fixed `alpha` would match the
+        current residuals. For a learned scale: the scales (and their
+        condition slopes).
+        """
         if not self._learn_alpha:
-            return {}
+            if self._residual_scales is None:
+                return {}
+            return {
+                f"residual_scale_{i}": float(scale)
+                for i, scale in enumerate(self._residual_scales)
+            }
         values = {
             f"alpha_{i}": float(alpha) for i, alpha in enumerate(self.alphas())
         }
@@ -1019,6 +1033,8 @@ class CauchyLoss(LossFunction):
                 .index_add_(1, self._group_index.to(squared.device), squared)
             )
         sizes = self._sizes(log_alpha)
+        if not self._learn_alpha:
+            self._residual_scales = self._scale_estimate(squared, sizes)
         terms = (1 + sizes) / 2 * torch.log1p(
             squared * torch.exp(-2 * log_alpha)
         ) + sizes * log_alpha
@@ -1032,6 +1048,19 @@ class CauchyLoss(LossFunction):
                 / n_columns
             )
         return (1 - self._frac) * terms.sum(dim=-1) / n_columns
+
+    @staticmethod
+    def _scale_estimate(squared: Tensor, sizes: Tensor) -> Tensor:
+        """Estimate the Cauchy scale of each group from the median residual.
+
+        For a `d`-dimensional Cauchy distribution with scale `alpha`,
+        `|r|**2 / (d * alpha**2)` follows an F(d, 1) distribution.
+        """
+        with torch.no_grad():
+            median = squared.detach().float().median(dim=0).values.cpu()
+            d = sizes.cpu().expand(median.shape[0]).double().numpy()
+            reference = d * scipy.stats.f.ppf(0.5, d, 1)
+            return torch.sqrt(median / torch.as_tensor(reference).float())
 
     def _heteroscedastic(
         self, prediction: Tensor, target: Tensor, uncertainty: Tensor
