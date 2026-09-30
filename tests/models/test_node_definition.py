@@ -230,3 +230,27 @@ def test_cluster_summary_charge_weighted_time_std() -> None:
     mean = np.sum(w * t) / w.sum()
     expected_a = np.sqrt(np.sum(w * (t - mean) ** 2) / w.sum())
     assert np.allclose(std, [expected_a, np.std([0.0, 50.0, 200.0])])
+
+
+def test_cluster_summary_reference_time_is_charge_weighted() -> None:
+    """Times are relative to the charge-weighted median of the event."""
+    # One bright DOM (100 PE at 0 ns) and two faint ones (1 PE at 100/200 ns)
+    pulses = torch.tensor(
+        [
+            [0.0, 0.0, 0.0, 0.0, 100.0],
+            [1.0, 0.0, 0.0, 100.0, 1.0],
+            [2.0, 0.0, 0.0, 200.0, 1.0],
+        ],
+        dtype=torch.float64,
+    )
+    node_definition = ClusterSummaryFeatures(
+        cluster_on=_NAMES[:3],
+        input_feature_names=_NAMES,
+        charge_after_t=[],
+        time_after_charge_pct=[],
+        time_standardization=1.0,
+    )
+    first_hit = node_definition(pulses).numpy()[
+        :, node_definition._output_feature_names.index("time_of_first_hit")
+    ]
+    assert np.allclose(first_hit, [0.0, 100.0, 200.0])

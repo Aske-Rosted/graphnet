@@ -339,19 +339,21 @@ class cluster_and_pad:
             / self._charge_sum[:, np.newaxis]
         )
 
-    def _calculate_reference_time(self, time_index: int) -> np.ndarray:
-        """Calculate the charge weighted median time of the whole event."""
+    def _calculate_reference_time(
+        self, time_index: int, charge_index: int
+    ) -> None:
+        """Calculate the charge weighted median time of the whole event.
+
+        Each pulse is weighted by its charge, so bright sensors dominate
+        (rather than every sensor counting equally).
+        """
         assert not hasattr(
             self, "_reference_time"
         ), "Reference time has already been calculated, \
             re-calculation is not allowed"
-        assert hasattr(
-            self, "_charge_weights"
-        ), "Charge weights has not been calculated, \
-            please run calculate_charge_weights"
         self._reference_time = weighted_median(
             values=self._padded_x[:, :, time_index].flatten(),
-            weights=self._charge_weights.flatten(),
+            weights=self._padded_x[:, :, charge_index].flatten(),
         )
 
     def _calculate_time_first_pulse(self, time_index: int) -> np.ndarray:
@@ -663,7 +665,7 @@ class cluster_and_pad:
                 if not hasattr(self, "_charge_sum"):
                     self._calculate_charge_sum(charge_index)
                 self._calculate_charge_weights(charge_index)
-            self._calculate_reference_time(time_index)
+            self._calculate_reference_time(time_index, charge_index)
         return self._reference_time
 
 
