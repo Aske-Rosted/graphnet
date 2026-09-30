@@ -1,16 +1,16 @@
 """Suggested Model subclass that enables simple user syntax."""
 
-from collections import OrderedDict
-from typing import Any, Dict, Iterator, List, Optional, Union, Type
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union, Type
 
 import numpy as np
 import torch
+import torch.distributed as dist
 from pytorch_lightning import Callback, Trainer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from torch import Tensor
 from torch.nn import ModuleList
 from torch.optim import Adam
-from torch.utils.data import DataLoader, SequentialSampler
+from torch.utils.data import DataLoader
 from torch_geometric.data import Data
 import pandas as pd
 from pytorch_lightning.loggers import Logger as LightningLogger
@@ -69,6 +69,7 @@ class EasySyntax(Model):
         self._scheduler_class = scheduler_class
         self._scheduler_kwargs = scheduler_kwargs or dict()
         self._scheduler_config = scheduler_config or dict()
+        self._predict_attributes: List[str] = []
         self._log_on_step = log_on_step
         self._log_on_epoch = log_on_epoch
 
@@ -311,21 +312,55 @@ class EasySyntax(Model):
                 task.train_eval()
         return self
 
-    def predict(
+    def predict_step(
+        self,
+        batch: Union[Data, List[Data]],
+        batch_idx: int,
+        dataloader_idx: int = 0,
+    ) -> Tuple[List[Tensor], Dict[str, Tensor]]:
+        """Return predictions and requested attributes for `batch`.
+
+        The attributes listed in `_predict_attributes` are read from the same
+        batch as the predictions, so they stay aligned with them regardless
+        of sampling, shuffling or events dropped by the `collate_fn`.
+        Event-level attributes are repeated per node for node-level
+        predictions.
+        """
+        batches = [batch] if isinstance(batch, Data) else list(batch)
+        predictions = self(batches)
+
+        n_rows = int(predictions[0].shape[0]) if len(predictions) else 0
+        n_nodes = sum(int(b.num_nodes) for b in batches)
+        n_events = sum(int(b.num_graphs) for b in batches)
+        node_level = n_rows == n_nodes and n_nodes != n_events
+
+        attributes: Dict[str, Tensor] = {}
+        for attr in self._predict_attributes:
+            values = []
+            for b in batches:
+                value = torch.as_tensor(b[attr]).detach().cpu().reshape(-1)
+                if node_level and len(value) == b.num_graphs:
+                    counts = torch.bincount(b.batch, minlength=b.num_graphs)
+                    value = value.repeat_interleave(counts.cpu())
+                values.append(value)
+            attributes[attr] = torch.cat(values)
+        return predictions, attributes
+
+    def _predict(
         self,
         dataloader: DataLoader,
-        gpus: Optional[Union[List[int], int]] = None,
-        distribution_strategy: Optional[str] = "auto",
+        additional_attributes: List[str],
+        gpus: Optional[Union[List[int], int]],
+        distribution_strategy: Optional[str],
         **trainer_kwargs: Any,
-    ) -> List[Tensor]:
-        """Return predictions for `dataloader`."""
+    ) -> Tuple[List[np.ndarray], Dict[str, np.ndarray]]:
+        """Run inference and gather predictions and attributes."""
         self.inference()
         self.train(mode=False)
 
         callbacks = self._create_default_callbacks(
             val_dataloader=None,
         )
-
         inference_trainer = self._construct_trainer(
             gpus=gpus,
             distribution_strategy=distribution_strategy,
@@ -333,15 +368,62 @@ class EasySyntax(Model):
             **trainer_kwargs,
         )
 
-        predictions_list = inference_trainer.predict(self, dataloader)
-        assert len(predictions_list), "Got no predictions"
+        self._predict_attributes = list(additional_attributes)
+        try:
+            outputs = inference_trainer.predict(self, dataloader) or []
+        finally:
+            self._predict_attributes = []
 
-        nb_outputs = len(predictions_list[0])
-        predictions: List[Tensor] = [
-            torch.cat([preds[ix] for preds in predictions_list], dim=0)
-            for ix in range(nb_outputs)
-        ]
-        return predictions
+        predictions: List[np.ndarray] = []
+        attributes: Dict[str, np.ndarray] = {}
+        if len(outputs) > 0:
+            nb_outputs = len(outputs[0][0])
+            predictions = [
+                torch.cat([out[0][ix] for out in outputs], dim=0)
+                .detach()
+                .cpu()
+                .numpy()
+                for ix in range(nb_outputs)
+            ]
+            attributes = {
+                attr: torch.cat([out[1][attr] for out in outputs]).numpy()
+                for attr in additional_attributes
+            }
+
+        # In distributed inference each rank only holds its own shard.
+        if dist.is_available() and dist.is_initialized():
+            shards: List[Any] = [None] * dist.get_world_size()
+            dist.all_gather_object(shards, (predictions, attributes))
+            shards = [shard for shard in shards if len(shard[0]) > 0]
+            if len(shards) > 0:
+                predictions = [
+                    np.concatenate([shard[0][ix] for shard in shards])
+                    for ix in range(len(shards[0][0]))
+                ]
+                attributes = {
+                    attr: np.concatenate([shard[1][attr] for shard in shards])
+                    for attr in additional_attributes
+                }
+
+        assert len(predictions), "Got no predictions"
+        return predictions, attributes
+
+    def predict(
+        self,
+        dataloader: DataLoader,
+        gpus: Optional[Union[List[int], int]] = None,
+        distribution_strategy: Optional[str] = "auto",
+        **trainer_kwargs: Any,
+    ) -> List[Tensor]:
+        """Return predictions for `dataloader`, one tensor per task."""
+        predictions, _ = self._predict(
+            dataloader,
+            additional_attributes=[],
+            gpus=gpus,
+            distribution_strategy=distribution_strategy,
+            **trainer_kwargs,
+        )
+        return [torch.from_numpy(pred) for pred in predictions]
 
     def predict_as_dataframe(
         self,
@@ -356,105 +438,41 @@ class EasySyntax(Model):
         """Return predictions for `dataloader` as a DataFrame.
 
         Include `additional_attributes` as additional columns in the output
-        DataFrame.
+        DataFrame. The attributes are collected together with the
+        predictions, so any sampler, `collate_fn` or distributed strategy
+        may be used.
         """
         if prediction_columns is None:
             prediction_columns = self.prediction_labels
+        additional_attributes = list(additional_attributes or [])
 
-        if additional_attributes is None:
-            additional_attributes = []
-        assert isinstance(additional_attributes, list)
-
-        if (
-            not isinstance(dataloader.sampler, SequentialSampler)
-            and additional_attributes
-        ):
-            print(dataloader.sampler)
-            raise UserWarning(
-                "DataLoader has a `sampler` that is not `SequentialSampler`, "
-                "indicating that shuffling is enabled. Using "
-                "`predict_as_dataframe` with `additional_attributes` assumes "
-                "that the sequence of batches in `dataloader` are "
-                "deterministic. Either call this method a `dataloader` which "
-                "doesn't resample batches; or do not request "
-                "`additional_attributes`."
-            )
         self.info(f"Column names for predictions are: \n {prediction_columns}")
-        predictions_torch = self.predict(
-            dataloader=dataloader,
+        predictions_list, attributes = self._predict(
+            dataloader,
+            additional_attributes=additional_attributes,
             gpus=gpus,
             distribution_strategy=distribution_strategy,
             **trainer_kwargs,
         )
-        predictions = (
-            torch.cat(predictions_torch, dim=1).detach().cpu().numpy()
+        predictions = np.concatenate(
+            [pred.reshape(len(pred), -1) for pred in predictions_list], axis=1
         )
         assert len(prediction_columns) == predictions.shape[1], (
             f"Number of provided column names ({len(prediction_columns)}) and "
             f"number of output columns ({predictions.shape[1]}) don't match."
         )
 
-        # Check if predictions are on event- or pulse-level
-        pulse_level_predictions = len(predictions) > len(dataloader.dataset)
-
-        # Get additional attributes
-        attributes: Dict[str, List[np.ndarray]] = OrderedDict(
-            [(attr, []) for attr in additional_attributes]
-        )
-        for batch in dataloader:
-            for attr in attributes:
-                attribute = batch[attr]
-                if isinstance(attribute, torch.Tensor):
-                    attribute = attribute.detach().cpu().numpy()
-
-                # Check if node level predictions
-                # If true, additional attributes are repeated
-                # to make dimensions fit
-                if pulse_level_predictions:
-                    if len(attribute) < np.sum(
-                        batch.n_pulses.detach().cpu().numpy()
-                    ):
-                        attribute = np.repeat(
-                            attribute, batch.n_pulses.detach().cpu().numpy()
-                        )
-                attributes[attr].extend(attribute)
-
-        # Confirm that attributes match length of predictions
-        skip_attributes = []
-        for attr in attributes.keys():
-            try:
-                assert len(attributes[attr]) == len(predictions)
-            except AssertionError:
+        results = pd.DataFrame(predictions, columns=prediction_columns)
+        for attr, values in attributes.items():
+            if len(values) != len(results):
                 self.warning_once(
-                    "Could not automatically adjust length"
-                    f" of additional attribute '{attr}' to match length of"
-                    f" predictions.This error can be caused by heavy"
-                    " disagreement between number of examples in the"
-                    " dataset vs. actual events in the dataloader, e.g. "
-                    " heavy filtering of events in `collate_fn` passed to"
-                    " `dataloader`. This can also be caused by requesting"
-                    " pulse-level attributes for `Task`s that produce"
+                    f"Length of additional attribute '{attr}' ({len(values)})"
+                    f" does not match the predictions ({len(results)}), e.g."
+                    " because pulse-level attributes were requested for"
                     " event-level predictions. Attribute skipped."
                 )
-                skip_attributes.append(attr)
-
-        # Remove bad attributes
-        for attr in skip_attributes:
-            attributes.pop(attr)
-            additional_attributes.remove(attr)
-
-        data = np.concatenate(
-            [predictions]
-            + [
-                np.asarray(values)[:, np.newaxis]
-                for values in attributes.values()
-            ],
-            axis=1,
-        )
-
-        results = pd.DataFrame(
-            data, columns=prediction_columns + additional_attributes
-        )
+                continue
+            results[attr] = values
         return results
 
     def _create_default_callbacks(
