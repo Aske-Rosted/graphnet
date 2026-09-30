@@ -1,10 +1,13 @@
 """Unit tests for node definitions."""
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import sqlite3
 import torch
 from graphnet.models.graphs.nodes import PercentileClusters
+from graphnet.models.data_representation import ClusterSummaryFeatures
 from graphnet.constants import EXAMPLE_DATA_DIR
 
 
@@ -81,3 +84,69 @@ def test_percentile_cluster() -> None:
             except AssertionError as e:
                 print(f"Percentile {percentile} does not match.")
                 raise e
+
+
+_NAMES = ["dom_x", "dom_y", "dom_z", "dom_time", "charge"]
+# Two DOMs: A with pulses at 1000/1002/1004 ns (1, 2, 3 PE),
+# B with pulses at 1000/1050/1200 ns (1 PE each).
+_PULSES = torch.tensor(
+    [
+        [0.0, 0.0, 0.0, 1000.0, 1.0],
+        [0.0, 0.0, 0.0, 1002.0, 2.0],
+        [0.0, 0.0, 0.0, 1004.0, 3.0],
+        [1.0, 0.0, 0.0, 1000.0, 1.0],
+        [1.0, 0.0, 0.0, 1050.0, 1.0],
+        [1.0, 0.0, 0.0, 1200.0, 1.0],
+    ],
+    dtype=torch.float64,
+)
+
+
+def _summary(**kwargs: Any) -> ClusterSummaryFeatures:
+    return ClusterSummaryFeatures(
+        cluster_on=_NAMES[:3],
+        input_feature_names=_NAMES,
+        charge_after_t=[],
+        time_after_charge_pct=[],
+        **kwargs,
+    )
+
+
+def test_cluster_summary_total_charge_fraction() -> None:
+    """The fraction column is log10(cluster charge / event charge)."""
+    node_definition = _summary(total_charge_fraction=True)
+    names = node_definition._output_feature_names
+    nodes = node_definition(_PULSES).numpy()
+
+    fraction = nodes[:, names.index("total_charge_fraction")]
+    assert np.allclose(10**fraction, [6 / 9, 3 / 9])
+    assert np.allclose(nodes[:, names.index("total_charge")], np.log10([6, 3]))
+
+
+def test_cluster_summary_charge_weighted_changes_time_std() -> None:
+    """Charge weighting changes the time std of unevenly charged DOMs."""
+    plain = _summary()
+    weighted = _summary(charge_weighted=True)
+    idx = plain._output_feature_names.index("time_std")
+    assert not np.allclose(
+        plain(_PULSES).numpy()[:, idx], weighted(_PULSES).numpy()[:, idx]
+    )
+
+
+def test_cluster_summary_is_invariant_to_event_time_offset() -> None:
+    """Features do not depend on when the event happened."""
+    node_definition = _summary(
+        total_charge_fraction=True, charge_weighted=True
+    )
+    shifted = _PULSES.clone()
+    shifted[:, 3] += 5e4
+    assert np.allclose(
+        node_definition(_PULSES).numpy(), node_definition(shifted).numpy()
+    )
+
+
+def test_cluster_summary_empty_event() -> None:
+    """An event without pulses gives an empty node set."""
+    node_definition = _summary(total_charge_fraction=True)
+    nodes = node_definition(torch.zeros((0, 5), dtype=torch.float64))
+    assert nodes.shape == (0, len(node_definition._output_feature_names))

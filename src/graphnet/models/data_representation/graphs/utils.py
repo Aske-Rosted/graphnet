@@ -332,10 +332,8 @@ class cluster_and_pad:
             self, "_charge_weights"
         ), "Charge weights have already been calculated, \
             re-calculation is not allowed"
-        assert hasattr(
-            self, "_charge_sum"
-        ), "Charge sum has not been calculated, \
-            please run calculate_charge_sum"
+        if not hasattr(self, "_charge_sum"):
+            self._calculate_charge_sum(charge_index)
         self._charge_weights = (
             self._padded_x[:, :, charge_index]
             / self._charge_sum[:, np.newaxis]
@@ -478,15 +476,26 @@ class cluster_and_pad:
             self._add_column_names(new_name, location)
 
     def add_sum_charge(
-        self, charge_index: int, location: Optional[int] = None
+        self,
+        charge_index: int,
+        location: Optional[int] = None,
+        total_charge: Optional[float] = None,
     ) -> np.ndarray:
-        """Add the sum of the charge to the summarization features."""
+        """Add the sum of the charge to the summarization features.
+
+        If `total_charge` is given, the sum is divided by it (i.e. the
+        cluster's fraction of `total_charge` is added).
+        """
         if not hasattr(self, "_charge_sum"):
             self._calculate_charge_sum(charge_index)
+        if total_charge is not None:
+            self._charge_sum = self._charge_sum / total_charge
         self._add_column(self._charge_sum, location)
         # update the cluster names
         if self._input_names is not None:
             new_name = [self._input_names[charge_index] + "_sum"]
+            if total_charge is not None:
+                new_name = [self._input_names[charge_index] + "_sum_fraction"]
             self._add_column_names(new_name, location)
 
     def add_std(
@@ -502,8 +511,11 @@ class cluster_and_pad:
                     deviation.
             location: Location to insert the standard deviation in the
                       clustered tensor defaults to adding at the end
-            weights: Optional weights to be applied to the standard deviation
+            weights: Optional weights to be applied to the standard deviation,
+                either a scalar or an array of shape [n_clusters, n_pulses].
         """
+        if isinstance(weights, np.ndarray):
+            weights = weights[:, :, np.newaxis]
         self._add_column(
             np.nanstd(self._padded_x[:, :, columns] * weights, axis=1),
             location,
