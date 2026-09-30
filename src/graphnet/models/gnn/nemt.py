@@ -52,6 +52,8 @@ class NeutrinoEventMultitaskTransformer(GNN):
         out_dim: Optional[int] = None,
         cross_attention: Optional[List[int]] = None,
         embed_bias: bool = True,
+        spacetime_time_index: int = 3,
+        spacetime_time_scale: float = 3e4 / 500 * 3e-1,
     ):
         """Construct `NeutrinoEventMultitaskTransformer`.
 
@@ -80,6 +82,14 @@ class NeutrinoEventMultitaskTransformer(GNN):
                 updated by a gated token-only attention block.
             embed_bias: If True, the space-time interval is sinusoidally
                 embedded before its projection to the relative bias.
+            spacetime_time_index: Node-feature column used as time in the
+                relative space-time bias (columns 0-2 are the positions).
+                E.g. for `ClusterSummaryFeatures` this is the column of
+                `time_of_first_hit`.
+            spacetime_time_scale: Light travel distance per unit of the
+                time column, in units of the position columns (see
+                `SpacetimeEncoder`). E.g. 0.6 for times in microseconds and
+                positions in units of 500 m.
         """
         cross_attention = list(cross_attention or [])
         tot_out = (out_dim if out_dim is not None else hidden_dim) * n_tasks
@@ -154,7 +164,11 @@ class NeutrinoEventMultitaskTransformer(GNN):
         head_dim = hidden_dim // num_heads
         if n_rel > 0:
             self.rel_pos = SpacetimeEncoder(
-                head_dim, apply_sin_emb=embed_bias, out_dim=head_dim
+                head_dim,
+                apply_sin_emb=embed_bias,
+                out_dim=head_dim,
+                time_index=spacetime_time_index,
+                time_scale=spacetime_time_scale,
             )
 
         self.task_out: Optional[nn.Module] = None

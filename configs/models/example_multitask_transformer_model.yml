@@ -13,6 +13,9 @@ arguments:
         out_dim: 64
         cross_attention: [2, 3]
         embed_bias: false
+        # time_of_first_hit (microseconds) in the node features below
+        spacetime_time_index: 7
+        spacetime_time_scale: 0.6
       class_name: NeutrinoEventMultitaskTransformer
   data_representation:
     ModelConfig:

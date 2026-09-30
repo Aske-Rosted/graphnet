@@ -188,6 +188,8 @@ class SpacetimeEncoder(LightningModule):
         seq_length: int = 32,
         out_dim: Optional[int] = None,
         apply_sin_emb: bool = True,
+        time_index: int = 3,
+        time_scale: float = 3e4 / 500 * 3e-1,
     ):
         """Construct `SpacetimeEncoder`.
 
@@ -202,10 +204,19 @@ class SpacetimeEncoder(LightningModule):
             apply_sin_emb: If False, the (unclipped) space-time interval is
                 projected directly instead of through the sinusoidal
                 embedding.
+            time_index: Column of the input holding time; columns 0-2 are
+                the positions.
+            time_scale: Factor converting a difference of the time column
+                into the units of the position columns, i.e. the light travel
+                distance per time unit. The default suits the IceCube
+                Kaggle scaling (time in units of 3e4 ns, positions in units
+                of 500 m, c = 0.3 m/ns).
         """
         super().__init__()
         self.sin_emb = SinusoidalPosEmb(dim=seq_length)
         self.apply_sin_emb = apply_sin_emb
+        self.time_index = time_index
+        self.time_scale = time_scale
         self.projection = nn.Linear(
             seq_length if apply_sin_emb else 1,
             seq_length if out_dim is None else out_dim,
@@ -218,10 +229,10 @@ class SpacetimeEncoder(LightningModule):
     ) -> Tensor:
         """Forward pass."""
         pos = x[:, :, :3]
-        time = x[:, :, 3]
+        time = x[:, :, self.time_index]
         spacetime_interval = (pos[:, :, None] - pos[:, None, :]).pow(2).sum(
             -1
-        ) - ((time[:, :, None] - time[:, None, :]) * (3e4 / 500 * 3e-1)).pow(2)
+        ) - ((time[:, :, None] - time[:, None, :]) * self.time_scale).pow(2)
         four_distance = torch.sign(spacetime_interval) * torch.sqrt(
             torch.abs(spacetime_interval)
         )
