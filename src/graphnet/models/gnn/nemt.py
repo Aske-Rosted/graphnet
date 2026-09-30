@@ -29,9 +29,10 @@ class NeutrinoEventMultitaskTransformer(GNN):
     `n_tasks` task tokens (and optionally `shared_tokens` shared tokens) are
     prepended to the sequence. After each block listed in `cross_attention`,
     the tokens are additionally updated by a token-only attention block through
-    a learned gate. The task tokens of the final block are projected to
-    `out_dim` and concatenated, giving `n_tasks * out_dim` outputs that can be
-    routed to tasks with `StandardModel(split=...)`.
+    a learned gate, `t + sigmoid(g) * (block(t) - t)`. The task tokens of the
+    final block are projected to `out_dim` and concatenated, giving
+    `n_tasks * out_dim` outputs that can be routed to tasks with
+    `StandardModel(split=...)`.
     """
 
     def __init__(
@@ -228,11 +229,11 @@ class NeutrinoEventMultitaskTransformer(GNN):
             if i in self.cross_attention:
                 idx = self.cross_attention.index(i)
                 token_part, x = x[:, :n_tokens], x[:, n_tokens:]
+                # Gated residual update: interpolate between the tokens and
+                # the output of the token-only block.
                 gate = torch.sigmoid(self.gates[idx])
-                token_part = (
-                    token_part
-                    * gate
-                    * (self.xTAMS[idx](token_part) - token_part)
+                token_part = token_part + gate * (
+                    self.xTAMS[idx](token_part) - token_part
                 )
                 x = torch.cat([token_part, x], 1)
 

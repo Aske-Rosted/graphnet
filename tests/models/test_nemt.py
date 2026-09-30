@@ -103,3 +103,21 @@ def test_spacetime_encoder_uses_configured_time_column() -> None:
     interval = encoder(x)[0, :, :, 0]
     # Timelike separation: -(1 * 0.6)
     assert torch.allclose(interval, torch.tensor([[0.0, -0.6], [-0.6, 0.0]]))
+
+
+def test_closed_gate_leaves_tokens_unchanged() -> None:
+    """With the gates closed, the token-only blocks have no effect."""
+    net = _net()
+    batch = _batch([5, 9])
+    with torch.no_grad():
+        for gate in net.gates:
+            gate.fill_(-1e4)
+        reference = net(batch)
+        for i in range(len(net.xTAMS)):
+            net.xTAMS[i] = _RandomBlock()
+        assert torch.allclose(net(batch), reference)
+
+
+class _RandomBlock(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.randn_like(x) * 100
