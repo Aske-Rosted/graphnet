@@ -8,7 +8,11 @@ from torch import Tensor
 from torch.autograd import grad
 
 from graphnet.training.loss_functions import (
+    BinaryCrossEntropyLoss,
+    CauchyLoss,
+    FocalBinaryCrossEntropyLoss,
     LogCoshLoss,
+    spCauchyLoss,
     VonMisesFisherLoss,
     VonMisesFisher3DLoss,
 )
@@ -482,3 +486,120 @@ def test_vmf3d_loss_fp32_high_kappa_small_angle() -> None:
     assert torch.all(torch.isfinite(elements))
     elements.sum().backward()
     assert torch.all(torch.isfinite(prediction_extreme.grad))
+
+
+@pytest.mark.parametrize("from_logits", [True, False])
+def test_focal_bce_reduces_to_weighted_bce(from_logits: bool) -> None:
+    """With gamma=0 the focal loss is the alpha-weighted BCE."""
+    torch.manual_seed(0)
+    logits = torch.randn(64, 1)
+    prediction = logits if from_logits else torch.sigmoid(logits)
+    target = torch.randint(0, 2, (64, 1)).float()
+    alpha = 0.3
+
+    focal = FocalBinaryCrossEntropyLoss(
+        gamma=0.0, alpha=alpha, from_logits=from_logits
+    )
+    bce = BinaryCrossEntropyLoss(from_logits=from_logits)
+    alpha_t = alpha * target + (1 - alpha) * (1 - target)
+    expected = alpha_t * bce(prediction, target, return_elements=True)
+
+    assert torch.allclose(
+        focal(prediction, target, return_elements=True), expected, atol=1e-6
+    )
+
+
+def test_focal_bce_logits_match_probabilities() -> None:
+    """Logit and probability inputs give the same focal loss."""
+    torch.manual_seed(0)
+    logits = torch.randn(64, 1)
+    target = torch.randint(0, 2, (64, 1)).float()
+
+    from_logits = FocalBinaryCrossEntropyLoss(from_logits=True)
+    from_probs = FocalBinaryCrossEntropyLoss(from_logits=False)
+
+    assert torch.allclose(
+        from_logits(logits, target, return_elements=True),
+        from_probs(torch.sigmoid(logits), target, return_elements=True),
+        atol=1e-5,
+    )
+
+
+def test_focal_bce_down_weights_easy_examples() -> None:
+    """A confident correct prediction is penalised less than by BCE."""
+    target = torch.ones(1, 1)
+    prediction = torch.tensor([[0.95]])
+    focal = FocalBinaryCrossEntropyLoss(gamma=2.0, alpha=0.5)
+    bce = BinaryCrossEntropyLoss()
+
+    assert focal(prediction, target) < 0.5 * bce(prediction, target)
+
+
+def test_cauchy_homoscedastic_closed_form() -> None:
+    """With frac=0 the loss is log(1 + (r/alpha)^2) + log(alpha)."""
+    alpha = 0.5
+    prediction = torch.tensor([[0.0, 1.0], [2.0, -1.0]])
+    target = torch.tensor([[0.5, 1.0], [0.0, 0.0]])
+    residual = (prediction - target).abs()
+    expected = torch.mean(
+        torch.log1p((residual / alpha) ** 2) + np.log(alpha), dim=-1
+    )
+
+    loss = CauchyLoss(alpha=alpha, frac=0.0)
+    assert torch.allclose(
+        loss(prediction, target, return_elements=True), expected
+    )
+
+
+def test_cauchy_heteroscedastic_uses_extra_columns() -> None:
+    """With frac=1 the columns after the target width are the scales."""
+    prediction = torch.tensor([[1.0, 2.0]])  # value, scale
+    target = torch.tensor([[0.0]])
+    expected = torch.log1p(torch.tensor(0.25)) + np.log(2.0)
+
+    loss = CauchyLoss(frac=1.0)
+    assert torch.allclose(loss(prediction, target), expected)
+
+
+def test_sp_cauchy_prefers_aligned_confident_prediction() -> None:
+    """The loss decreases towards the target and grows when confidently off."""
+    target = torch.tensor([[0.0, 0.0, 1.0]])
+    aligned = torch.tensor([[0.0, 0.0, 1.0, 10.0]])
+    orthogonal = torch.tensor([[1.0, 0.0, 0.0, 10.0]])
+    vague = torch.tensor([[1.0, 0.0, 0.0, 0.1]])
+    loss = spCauchyLoss()
+
+    assert loss(aligned, target) < loss(orthogonal, target)
+    assert loss(vague, target) < loss(orthogonal, target)
+
+
+@pytest.mark.parametrize("k", [0.3, 2.0, 10.0])
+def test_sp_cauchy_density_is_normalized(k: float) -> None:
+    """Exp(-loss) / (4 pi) integrates to one over the sphere (d = 3)."""
+    n = 400_000
+    i = torch.arange(n, dtype=torch.float64) + 0.5
+    z = 1 - 2 * i / n
+    phi = torch.pi * (1 + 5**0.5) * i
+    r = torch.sqrt(1 - z**2)
+    points = torch.stack([r * torch.cos(phi), r * torch.sin(phi), z], dim=1)
+    mu = torch.tensor([0.0, 0.0, 1.0]).expand(n, 3)
+    prediction = torch.cat([mu, torch.full((n, 1), k)], dim=1)
+
+    loss = spCauchyLoss()(prediction, points.float(), return_elements=True)
+    integral = torch.exp(-loss.double()).mean()  # mean over uniform points
+    assert torch.isclose(
+        integral, torch.tensor(1.0, dtype=torch.float64), rtol=1e-3
+    )
+
+
+def test_sp_cauchy_large_concentration_is_finite() -> None:
+    """Very confident predictions give finite losses and gradients."""
+    target = torch.tensor([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0]])
+    prediction = torch.tensor(
+        [[0.0, 0.0, 1.0, 1e8], [0.0, 0.0, 1.0, 1e8]], requires_grad=True
+    )
+    loss = spCauchyLoss()(prediction, target, return_elements=True)
+    loss.sum().backward()
+    assert torch.isfinite(loss).all()
+    assert torch.isfinite(prediction.grad).all()
+    assert loss[0] < loss[1]

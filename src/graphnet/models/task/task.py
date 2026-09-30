@@ -26,6 +26,11 @@ if has_jammy_flows_package():
     import jammy_flows
 
 
+def _identity(x: Union[Tensor, Data]) -> Union[Tensor, Data]:
+    """Return `x` unchanged; default (picklable) task transform."""
+    return x
+
+
 class Task(Model):
     """Base class for Tasks in GraphNeT."""
 
@@ -110,13 +115,15 @@ class Task(Model):
         self._inference = False
         self._loss_weight = loss_weight
 
+        # Named identity rather than lambdas, so that tasks stay picklable
+        # (e.g. for multi-process data loading and DDP spawning).
         self._transform_prediction_training: Callable[[Tensor], Tensor] = (
-            lambda x: x
+            _identity
         )
         self._transform_prediction_inference: Callable[[Tensor], Tensor] = (
-            lambda x: x
+            _identity
         )
-        self._transform_target: Callable[[Tensor], Tensor] = lambda x: x
+        self._transform_target: Callable[[Tensor], Tensor] = _identity
         self._validate_and_set_transforms(
             transform_prediction_and_target,
             transform_target,
@@ -236,6 +243,7 @@ class LearnedTask(Task):
         hidden_size: int,
         loss_function: "LossFunction",
         disable_affine: bool = False,
+        detach_backbone: bool = False,
         **task_kwargs: Any,
     ):
         """Construct `LearnedTask`.
@@ -249,6 +257,9 @@ class LearnedTask(Task):
                             `hidden_size` to `nb_inputs` with an identity.
                             Use when the upstream model already produces
                             an output of the right dimensionality.
+            detach_backbone: If True, the task input is detached, such that
+                            this task's loss does not propagate gradients
+                            into the model producing it.
         """
         # Base class constructor
         super().__init__(**task_kwargs)
@@ -260,6 +271,7 @@ class LearnedTask(Task):
             self._affine: torch.nn.Module = Identity()
         else:
             self._affine = Linear(hidden_size, self.nb_inputs)
+        self._detach_backbone = detach_backbone
 
     @abstractmethod
     def _forward(  # type: ignore
@@ -290,6 +302,8 @@ class LearnedTask(Task):
         meet target dimensions.
         """
         self._regularisation_loss = 0  # Reset
+        if self._detach_backbone:
+            x = x.detach()
         x = self._affine(x)
         x = self._forward(x=x)
         return self._transform_prediction(x)
@@ -338,7 +352,11 @@ class StandardLearnedTask(LearnedTask):
         )
         target = self._transform_target(target)
         if self._loss_weight is not None:
-            weights = data[self._loss_weight]
+            weights = torch.as_tensor(
+                data[self._loss_weight],
+                device=target.device,
+                dtype=target.dtype,
+            )
         else:
             weights = None
         loss = (

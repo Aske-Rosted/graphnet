@@ -1,7 +1,7 @@
 """Suggested Model subclass that enables simple user syntax."""
 
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional, Union, Type
+from typing import Any, Dict, Iterator, List, Optional, Union, Type
 
 import numpy as np
 import torch
@@ -233,10 +233,14 @@ class EasySyntax(Model):
             label for task in self._tasks for label in task._prediction_labels
         ]
 
+    def _optimizer_parameters(self) -> Union[Iterator, List[Dict]]:
+        """Return the parameters (or parameter groups) to optimize."""
+        return self.parameters()
+
     def configure_optimizers(self) -> Dict[str, Any]:
         """Configure the model's optimizer(s)."""
         optimizer = self._optimizer_class(
-            self.parameters(), **self._optimizer_kwargs
+            self._optimizer_parameters(), **self._optimizer_kwargs
         )
         config = {
             "optimizer": optimizer,

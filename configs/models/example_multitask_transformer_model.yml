@@ -1,0 +1,82 @@
+arguments:
+  backbone:
+    ModelConfig:
+      arguments:
+        n_attention_blocks: 4
+        n_rel: 1
+        inject_cls_after: 1
+        hidden_dim: 128
+        num_heads: 4
+        n_features: 15
+        n_tasks: 3
+        shared_tokens: 3
+        out_dim: 64
+        cross_attention: [2, 3]
+        embed_bias: false
+        # time_of_first_hit (microseconds) in the node features below
+        spacetime_time_index: 7
+        spacetime_time_scale: 0.6
+      class_name: NeutrinoEventMultitaskTransformer
+  data_representation:
+    ModelConfig:
+      arguments:
+        detector:
+          ModelConfig:
+            arguments: {replace_with_identity: [dom_time, charge]}
+            class_name: IceCube86
+        dtype: torch.float32
+        node_definition:
+          ModelConfig:
+            arguments:
+              cluster_on: [dom_x, dom_y, dom_z]
+              input_feature_names: [dom_x, dom_y, dom_z, dom_time, charge]
+              charge_after_t: [10, 100, 500]
+              time_after_charge_pct: [1, 5, 10, 50, 95]
+              time_spread: false
+              add_counts: true
+            class_name: ClusterSummaryFeatures
+        input_feature_names: [dom_x, dom_y, dom_z, dom_time, charge]
+      class_name: EdgelessGraph
+  split: [[64, 64, 64], [0, 1, [2, [0, 1]]]]
+  learned_multitask_weights: 0
+  optimizer_class: '!class torch.optim AdamW'
+  optimizer_kwargs: {lr: 5.0e-05}
+  tasks:
+  - ModelConfig:
+      arguments:
+        hidden_size: 64
+        loss_function:
+          ModelConfig:
+            arguments: {from_logits: true}
+            class_name: FocalBinaryCrossEntropyLoss
+        loss_weight: null
+        prediction_labels: [trackness]
+        target_labels: [trackness]
+        transform_inference: '!lambda x: torch.sigmoid(x)'
+      class_name: BinaryClassificationTaskLogits
+  - ModelConfig:
+      arguments:
+        hidden_size: 64
+        loss_function:
+          ModelConfig:
+            arguments: {alpha: 0.04, frac: 0.0}
+            class_name: CauchyLoss
+        loss_weight: null
+        prediction_labels: [energy_pred]
+        target_labels: energy
+        transform_inference: '!lambda x: torch.sinh(x * torch.pi)'
+        transform_target: '!lambda x: torch.arcsinh(x) / torch.pi'
+      class_name: EnergyReconstruction
+  - ModelConfig:
+      arguments:
+        hidden_size: 192
+        loss_function:
+          ModelConfig:
+            arguments: {}
+            class_name: spCauchyLoss
+        loss_weight: null
+        prediction_labels: [dir_x_pred, dir_y_pred, dir_z_pred, dir_norm]
+        target_labels: [dir_x, dir_y, dir_z]
+        scaling: true
+      class_name: DirectionReconstructionWithKappa
+class_name: StandardModel
