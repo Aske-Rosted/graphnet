@@ -834,6 +834,7 @@ def test_cauchy_fixed_alpha_can_be_set() -> None:
 
     learned = CauchyLoss(alpha=0.1, frac=0.0, learn_alpha=True, nb_outputs=2)
     assert not hasattr(learned, "_alpha")
+    assert not hasattr(CauchyLoss(frac=1.0), "_alpha")
 
 
 def test_sp_cauchy_alpha_maps_to_rho() -> None:
