@@ -436,6 +436,41 @@ class IdentityTask(StandardLearnedTask):
         return x
 
 
+class IdentityTaskWithUncertainty(IdentityTask):
+    """Identity task that also predicts a positive scale for each output.
+
+    The task returns `nb_outputs` values followed by `nb_outputs` scales
+    (uncertainties), e.g. for the heteroscedastic term of `CauchyLoss`. The
+    scale is the exponential of the raw output, so that the raw output is
+    the log-scale and the scale starts out of order one.
+    """
+
+    def __init__(
+        self,
+        nb_outputs: int,
+        target_labels: Union[List[str], Any],
+        *args: Any,
+        **kwargs: Any,
+    ):
+        """Construct IdentityTaskWithUncertainty.
+
+        Args:
+            nb_outputs: Number of predicted values; the task has twice as
+                many outputs.
+            target_labels: Target label(s).
+        """
+        super().__init__(2 * nb_outputs, target_labels, *args, **kwargs)
+        self._nb_values = nb_outputs
+        self._default_prediction_labels = [
+            f"target_{i}_pred" for i in range(nb_outputs)
+        ] + [f"target_{i}_scale" for i in range(nb_outputs)]
+
+    def _forward(self, x: Union[Tensor, Data]) -> Tensor:  # type: ignore
+        values = x[:, : self._nb_values]
+        log_scale = x[:, self._nb_values :].clamp(min=-20.0, max=20.0)
+        return torch.cat([values, torch.exp(log_scale)], dim=1)
+
+
 class StandardFlowTask(Task):
     """A `Task` for `NormalizingFlow`s in GraphNeT.
 
