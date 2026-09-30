@@ -810,9 +810,17 @@ class CauchyLoss(LossFunction):
 class spCauchyLoss(LossFunction):
     """Spherical Cauchy negative log-likelihood.
 
-    The prediction holds a direction `mu` (first `d` columns) and a
-    non-negative magnitude `k` (last column), mapped to the concentration
-    `rho = k / (1 + k)` in `[0, 1)`.
+    The prediction holds a direction `mu` (first `d` columns, unit norm) and
+    a non-negative magnitude `k` (last column), mapped to the concentration
+    `rho = k / (1 + k)` in `[0, 1)`. The spherical Cauchy density on the unit
+    sphere in `d` dimensions is
+
+        f(x) = C_d * ((1 - rho^2) / (1 + rho^2 - 2 rho mu.x))^(d - 1),
+
+    with a constant `C_d` independent of `rho`. In terms of `k` the ratio is
+    `(1 + 2k) / (1 + 2k(1 + k)(1 - mu.x))`, which is evaluated directly to
+    stay accurate for large `k` (where `1 - rho` underflows). The constant is
+    omitted from the loss.
 
     Distribution: Kato, S. & McCullagh, P. (2020), "Some properties of a
     Cauchy family on the sphere derived from the Möbius transformations",
@@ -828,14 +836,16 @@ class spCauchyLoss(LossFunction):
 
         # Last column is the magnitude that sets the concentration rho.
         dim = prediction.size(1) - 1
-        assert dim >= 1
+        assert dim > 1
         assert target.size(1) == dim
 
+        prediction = prediction.float()
         mu = prediction[:, :dim]
-        rho = prediction[:, dim] / (1.0 + prediction[:, dim])
-        dot = (mu * target).sum(dim=-1)
-        alpha = (dim - 1) / 2.0
-        log_numer = alpha * torch.log(1.0 - rho**2 + 1e-7)
-        denom = (1.0 - 2.0 * rho * dot + rho**2).clamp(min=1e-7)
-        log_denom = (alpha + 1.0) * torch.log(denom)
-        return -(log_numer - log_denom)
+        k = prediction[:, dim]
+        one_minus_dot = (1.0 - (mu * target.float()).sum(dim=-1)).clamp(
+            min=0.0
+        )
+        log_density = torch.log1p(2.0 * k) - torch.log1p(
+            2.0 * k * (1.0 + k) * one_minus_dot
+        )
+        return -(dim - 1) * log_density
