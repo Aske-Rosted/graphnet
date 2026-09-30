@@ -514,15 +514,22 @@ class cluster_and_pad:
                     deviation.
             location: Location to insert the standard deviation in the
                       clustered tensor defaults to adding at the end
-            weights: Optional weights to be applied to the standard deviation,
-                either a scalar or an array of shape [n_clusters, n_pulses].
+            weights: Either a scalar that scales the columns, or per-pulse
+                weights of shape [n_clusters, n_pulses], in which case the
+                weighted standard deviation
+                sqrt(sum(w * (x - mean_w)**2) / sum(w)) is added.
         """
+        x = self._padded_x[:, :, columns]
         if isinstance(weights, np.ndarray):
-            weights = weights[:, :, np.newaxis]
-        self._add_column(
-            np.nanstd(self._padded_x[:, :, columns] * weights, axis=1),
-            location,
-        )
+            w = np.where(np.isnan(x), 0.0, weights[:, :, np.newaxis])
+            x = np.nan_to_num(x)
+            w_sum = w.sum(axis=1)
+            mean = (w * x).sum(axis=1) / w_sum
+            variance = (w * (x - mean[:, None, :]) ** 2).sum(axis=1) / w_sum
+            std = np.sqrt(variance)
+        else:
+            std = np.nanstd(x * weights, axis=1)
+        self._add_column(std, location)
         if self._input_names is not None:
             new_names = [self._input_names[i] + "_std" for i in columns]
             self._add_column_names(new_names, location)

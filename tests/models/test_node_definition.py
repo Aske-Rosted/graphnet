@@ -211,3 +211,22 @@ def test_cluster_summary_charge_percentile_times() -> None:
         with_fraction(_PULSES).numpy()[:, fraction_columns],
         plain(_PULSES).numpy()[:, columns],
     )
+
+
+def test_cluster_summary_charge_weighted_time_std() -> None:
+    """Charge-weighted time std is the weighted spread around the mean."""
+    node_definition = ClusterSummaryFeatures(
+        cluster_on=_NAMES[:3],
+        input_feature_names=_NAMES,
+        charge_after_t=[],
+        time_after_charge_pct=[],
+        time_standardization=1.0,
+        charge_weighted=True,
+    )
+    std = node_definition(_PULSES).numpy()[
+        :, node_definition._output_feature_names.index("time_std")
+    ]
+    t, w = np.array([0.0, 2.0, 4.0]), np.array([1.0, 2.0, 3.0])
+    mean = np.sum(w * t) / w.sum()
+    expected_a = np.sqrt(np.sum(w * (t - mean) ** 2) / w.sum())
+    assert np.allclose(std, [expected_a, np.std([0.0, 50.0, 200.0])])
