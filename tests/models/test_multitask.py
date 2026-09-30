@@ -14,13 +14,16 @@ from graphnet.models.detector.icecube import IceCube86
 from graphnet.models.gnn.gnn import GNN
 from graphnet.models.graphs import KNNGraph
 from graphnet.models.graphs.nodes import NodesAsPulses
-from graphnet.models.task.multitask_utils import LossWeightBalancing
+from graphnet.models.task.loss_balancing import (
+    LossBalancing,
+    UncertaintyWeighting,
+)
 from graphnet.models.task.reconstruction import (
     DirectionReconstruction,
     DirectionReconstructionWithKappa,
     EnergyReconstruction,
 )
-from graphnet.training.loss_functions import MSELoss
+from graphnet.training.loss_functions import CauchyLoss, MSELoss
 
 
 class _ConstantBackbone(GNN):
@@ -95,36 +98,150 @@ def test_split_validates_sizes() -> None:
         )
 
 
-def test_loss_weight_balancing() -> None:
-    """Losses pass through before activation and are reweighted after."""
-    balancing = LossWeightBalancing(n_tasks=2, late_activation=1)
-    losses = [torch.tensor(0.5), torch.tensor(2.0)]
-    assert balancing(losses, epoch=0) == losses
+class _TokenBackbone(_ConstantBackbone):
+    """Constant backbone with a token, a norm layer and no_weight_decay."""
 
-    with torch.no_grad():
-        balancing.noise_params[1].fill_(1.0)
-    weighted = balancing(losses, epoch=1)
-    softplus = torch.nn.functional.softplus
-    assert torch.isclose(weighted[0], softplus(losses[0]))
-    assert torch.isclose(
-        weighted[1], torch.exp(torch.tensor(-1.0)) * softplus(losses[1]) + 0.5
+    def __init__(self, nb_outputs: int):
+        super().__init__(nb_outputs)
+        self.tokens = torch.nn.Parameter(torch.zeros(nb_outputs))
+        self.norm = torch.nn.LayerNorm(nb_outputs)
+
+    def no_weight_decay(self) -> set:
+        return {"tokens"}
+
+
+def _mixed_tasks() -> List[EnergyReconstruction]:
+    """Cauchy (bound log 0.1), MSE (bound 0), heteroscedastic (none)."""
+    losses = [CauchyLoss(alpha=0.1, frac=0.0), MSELoss(), CauchyLoss(frac=1)]
+    return [
+        EnergyReconstruction(
+            hidden_size=h, target_labels="energy", loss_function=loss
+        )
+        for h, loss in zip([2, 2, 6], losses)
+    ]
+
+
+def _balanced_model(
+    balancing: LossBalancing, split_last_detached: bool = True
+) -> StandardModel:
+    last = [None, [0, 1, 2]] if split_last_detached else [0, 1, 2]
+    return StandardModel(
+        data_representation=_graph_definition(),
+        backbone=_TokenBackbone(nb_outputs=6),
+        tasks=_mixed_tasks(),
+        split=[[2, 2, 2], [0, 1, last]],
+        optimizer_class=torch.optim.AdamW,
+        optimizer_kwargs={"lr": 1e-3},
+        loss_balancing=balancing,
     )
 
 
-def test_learned_multitask_weights_param_groups() -> None:
-    """Balancing parameters get their own group with a reduced lr."""
+def test_uncertainty_weighting_uses_lower_bounds() -> None:
+    """Balanced terms use L - L_min; tasks without a bound pass through."""
+    balancing = UncertaintyWeighting()
+    _balanced_model(balancing)
+    assert balancing.balanced_tasks == [0, 1]
+
+    losses = [torch.tensor(0.5), torch.tensor(2.0), torch.tensor(-7.0)]
+    with torch.no_grad():
+        balancing.log_variances.copy_(torch.tensor([0.0, 1.0]))
+    out = balancing(losses, epoch=0)
+    expected_0 = 0.5 - torch.log(torch.tensor(0.1))
+    assert torch.isclose(out[0], expected_0)
+    assert torch.isclose(out[1], torch.exp(torch.tensor(-1.0)) * 2.0 + 0.5)
+    assert out[2] is losses[2]
+
+
+def test_uncertainty_weighting_start_epoch_and_overrides() -> None:
+    """Before `start_epoch` losses pass through; overrides replace bounds."""
+    balancing = UncertaintyWeighting(
+        start_epoch=2, lower_bounds=[None, -1.0, 0.0]
+    )
+    _balanced_model(balancing)
+    assert balancing.balanced_tasks == [0, 1, 2]
+    losses = [torch.tensor(1.0), torch.tensor(1.0), torch.tensor(1.0)]
+    assert balancing(losses, epoch=1) == losses
+    out = balancing(losses, epoch=2)
+    assert torch.isclose(out[1], torch.tensor(2.0))  # 1 - (-1)
+
+
+def test_uncertainty_weights_converge_to_inverse_excess() -> None:
+    """For fixed losses the weights settle at 1 / (2 (L - L_min))."""
+    balancing = UncertaintyWeighting(lower_bounds=[0.0, 0.0, 0.0])
+    _balanced_model(balancing)
+    losses = [torch.tensor(0.5), torch.tensor(2.0), torch.tensor(8.0)]
+    optimizer = torch.optim.Adam(balancing.parameters(), lr=0.05)
+    for _ in range(2000):
+        optimizer.zero_grad()
+        torch.stack(balancing(losses, epoch=0)).sum().backward()
+        optimizer.step()
+    expected = torch.tensor([1.0, 0.25, 0.0625])
+    assert torch.allclose(balancing.weights(), expected, rtol=1e-2)
+
+
+def test_unbounded_shared_task_warns(monkeypatch: Any) -> None:
+    """A shared task without a lower bound triggers a warning."""
+    messages: List[str] = []
+    monkeypatch.setattr(
+        LossBalancing, "warning", lambda self, msg: messages.append(msg)
+    )
+    _balanced_model(UncertaintyWeighting(), split_last_detached=True)
+    assert messages == []
+    _balanced_model(UncertaintyWeighting(), split_last_detached=False)
+    assert len(messages) == 1 and "Task 2" in messages[0]
+
+
+def test_balancing_and_weight_decay_param_groups() -> None:
+    """Balancing params and excluded params get groups without decay."""
+    balancing = UncertaintyWeighting(lr_scale=20.0)
     model = StandardModel(
         data_representation=_graph_definition(),
-        backbone=_ConstantBackbone(nb_outputs=4),
-        tasks=_energy_tasks([4, 4]),
-        optimizer_kwargs={"lr": 1e-3},
-        learned_multitask_weights=0,
+        backbone=_TokenBackbone(nb_outputs=6),
+        tasks=_mixed_tasks(),
+        split=[[2, 2, 2], [0, 1, [None, [0, 1, 2]]]],
+        optimizer_class=torch.optim.AdamW,
+        optimizer_kwargs={"lr": 1e-3, "weight_decay": 0.01},
+        loss_balancing=balancing,
+        exclude_from_weight_decay=True,
     )
     groups = model.configure_optimizers()["optimizer"].param_groups
-    assert len(groups) == 2
-    assert groups[0]["lr"] == pytest.approx(1e-3)
-    assert groups[1]["lr"] == pytest.approx(1e-5)
-    assert len(groups[1]["params"]) == 2
+    assert [g["weight_decay"] for g in groups] == [0.01, 0.0, 0.0]
+    assert groups[2]["lr"] == pytest.approx(2e-2)
+    assert groups[2]["params"] == [balancing.log_variances]
+
+    backbone = model.backbone
+    no_decay = {id(p) for p in groups[1]["params"]}
+    assert id(backbone.tokens) in no_decay
+    assert id(backbone.norm.weight) in no_decay
+    assert id(model._tasks[0]._affine.bias) in no_decay
+    assert id(backbone.weight) not in no_decay
+    assert id(model._tasks[0]._affine.weight) not in no_decay
+
+
+@pytest.mark.parametrize(
+    "scheduler_class, scheduler_kwargs",
+    [
+        (torch.optim.lr_scheduler.LambdaLR, {"lr_lambda": lambda e: 0.9**e}),
+        (torch.optim.lr_scheduler.StepLR, {"step_size": 2, "gamma": 0.5}),
+    ],
+)
+def test_lr_scale_survives_scheduler(
+    scheduler_class: Any, scheduler_kwargs: Dict[str, Any]
+) -> None:
+    """A group's lr stays lr_scale times the scheduled lr."""
+    model = _balanced_model(UncertaintyWeighting(lr_scale=20.0))
+    model._scheduler_class = scheduler_class
+    model._scheduler_kwargs = scheduler_kwargs
+    config = model.configure_optimizers()
+    optimizer = config["optimizer"]
+    scheduler = config["lr_scheduler"]["scheduler"]
+    for _ in range(6):
+        main, balancing = optimizer.param_groups[0], optimizer.param_groups[-1]
+        assert balancing["lr"] == pytest.approx(20.0 * main["lr"])
+        assert main["lr"] == pytest.approx(scheduler.get_last_lr()[0])
+        optimizer.step()
+        model.lr_scheduler_step(scheduler, None)
+    assert optimizer.param_groups[0]["lr"] < 1e-3
 
 
 def test_detach_backbone() -> None:

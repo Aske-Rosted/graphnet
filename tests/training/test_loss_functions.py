@@ -10,8 +10,14 @@ from torch.autograd import grad
 from graphnet.training.loss_functions import (
     BinaryCrossEntropyLoss,
     CauchyLoss,
+    EnsembleLoss,
     FocalBinaryCrossEntropyLoss,
     LogCoshLoss,
+    LossFunction,
+    MAELoss,
+    MSELoss,
+    NegCosLoss,
+    RMSELoss,
     spCauchyLoss,
     VonMisesFisherLoss,
     VonMisesFisher3DLoss,
@@ -603,3 +609,51 @@ def test_sp_cauchy_large_concentration_is_finite() -> None:
     assert torch.isfinite(loss).all()
     assert torch.isfinite(prediction.grad).all()
     assert loss[0] < loss[1]
+
+
+@pytest.mark.parametrize(
+    "loss",
+    [
+        MAELoss(),
+        MSELoss(),
+        RMSELoss(),
+        LogCoshLoss(),
+        NegCosLoss(),
+        CauchyLoss(alpha=0.04, frac=0.0),
+        CauchyLoss(alpha=3.0, frac=0.0),
+        EnsembleLoss([MSELoss(), CauchyLoss(alpha=0.1, frac=0.0)], [2.0, 1.0]),
+    ],
+)
+def test_lower_bound_holds_and_is_reached(loss: LossFunction) -> None:
+    """The loss never goes below its bound and reaches it when exact."""
+    torch.manual_seed(0)
+    target = torch.randn(256, 3)
+    prediction = target + torch.randn(256, 3)
+    bound = loss.lower_bound
+    assert bound is not None
+    elements = loss(prediction, target, return_elements=True)
+    assert (elements >= bound - 1e-6).all()
+    assert torch.isclose(loss(target, target), torch.tensor(bound), atol=1e-6)
+
+
+@pytest.mark.parametrize("from_logits", [True, False])
+def test_binary_cross_entropy_lower_bound(from_logits: bool) -> None:
+    """(Focal) BCE is bounded by 0 and approaches it for confident hits."""
+    target = torch.tensor([[0.0], [1.0]])
+    confident = torch.tensor([[-30.0], [30.0]])
+    if not from_logits:
+        confident = torch.sigmoid(confident)
+    for loss in (
+        BinaryCrossEntropyLoss(from_logits=from_logits),
+        FocalBinaryCrossEntropyLoss(from_logits=from_logits),
+    ):
+        assert loss.lower_bound == 0.0
+        assert 0.0 <= float(loss(confident, target)) < 1e-6
+
+
+def test_unbounded_losses_have_no_lower_bound() -> None:
+    """Losses with a predicted concentration or scale report None."""
+    assert spCauchyLoss().lower_bound is None
+    assert VonMisesFisher3DLoss().lower_bound is None
+    assert CauchyLoss(frac=1.0).lower_bound is None
+    assert EnsembleLoss([MSELoss(), spCauchyLoss()]).lower_bound is None
