@@ -23,6 +23,7 @@ from graphnet.models.task.reconstruction import (
     DirectionReconstructionWithKappa,
     EnergyReconstruction,
 )
+from graphnet.models.task.task import IdentityTaskWithUncertainty
 from graphnet.training.loss_functions import CauchyLoss, MSELoss
 
 
@@ -218,6 +219,25 @@ def test_balancing_and_weight_decay_param_groups() -> None:
     assert id(model._tasks[0]._affine.weight) not in no_decay
 
 
+def test_loss_parameters_are_not_weight_decayed() -> None:
+    """A learned loss scale joins the group without weight decay."""
+    loss = CauchyLoss(alpha=0.1, frac=0.0, learn_alpha=True, nb_outputs=1)
+    task = EnergyReconstruction(
+        hidden_size=2, target_labels="energy", loss_function=loss
+    )
+    model = StandardModel(
+        data_representation=_graph_definition(),
+        backbone=_TokenBackbone(nb_outputs=2),
+        tasks=[task],
+        optimizer_class=torch.optim.AdamW,
+        optimizer_kwargs={"lr": 1e-3, "weight_decay": 0.01},
+        exclude_from_weight_decay=True,
+    )
+    groups = model.configure_optimizers()["optimizer"].param_groups
+    assert [g["weight_decay"] for g in groups] == [0.01, 0.0]
+    assert id(loss.log_alpha) in {id(p) for p in groups[1]["params"]}
+
+
 @pytest.mark.parametrize(
     "scheduler_class, scheduler_kwargs",
     [
@@ -272,6 +292,33 @@ def test_direction_tasks() -> None:
     scaled = DirectionReconstructionWithKappa(scaling=True, **kw)._forward(x)
     assert torch.allclose(scaled[:, :3], plain[:, :3])
     assert torch.allclose(scaled[:, 3], plain[:, 3] + plain[:, 3] ** 2)
+
+
+def test_identity_task_with_uncertainty() -> None:
+    """Values pass through; scales are positive and start at one."""
+    task = IdentityTaskWithUncertainty(
+        nb_outputs=2,
+        target_labels=["a", "b"],
+        hidden_size=4,
+        loss_function=CauchyLoss(frac=1.0),
+    )
+    assert task.nb_inputs == 4
+    assert task.default_prediction_labels == [
+        "target_0_pred",
+        "target_1_pred",
+        "target_0_scale",
+        "target_1_scale",
+    ]
+    x = torch.tensor([[1.0, -2.0, 0.0, -1.0]])
+    out = task._forward(x)
+    assert torch.allclose(out[:, :2], x[:, :2])
+    assert torch.allclose(out[:, 2:], torch.exp(x[:, 2:]))
+
+    pred = task(torch.randn(8, 4))
+    data = Data(a=torch.randn(8), b=torch.randn(8))
+    loss = task.compute_loss(pred, data)
+    assert torch.isfinite(loss)
+    assert task._loss_function.lower_bound is None
 
 
 def test_tasks_are_picklable() -> None:
