@@ -85,6 +85,7 @@ class collator_compute_budget_bucketing:
         parameter: str = "n_pulses",
         gamma: float = 2.0,
         verbose: bool = False,
+        drop_slices: bool = False,
     ):
         """Construct `collator_compute_budget_bucketing`.
 
@@ -96,7 +97,17 @@ class collator_compute_budget_bucketing:
                 `GraphDefinition(add_token_count=True)`).
             gamma: Exponent of the sequence length in the compute estimate.
             verbose: If True, log the resulting mini-batches.
+            drop_slices: If True, the mini-batches do not keep the
+                bookkeeping needed to split them into graphs again
+                (`Batch.to_data_list`, indexing). It consists of two
+                tensors per attribute and mini-batch, i.e. about two thirds
+                of all tensors, each of which is a separate shared-memory
+                mapping when passed from a loader worker. With many small
+                mini-batches these can exhaust the mappings of a process
+                (`vm.max_map_count`: "unable to mmap ... Cannot allocate
+                memory").
         """
+        self.drop_slices = drop_slices
         self.max_compute = max_compute
         self.parameter = parameter
         self.gamma = gamma
@@ -127,12 +138,12 @@ class collator_compute_budget_bucketing:
             max_length = max(bucket_max_length, length)
             compute = (len(bucket) + 1) * max_length**self.gamma
             if bucket and compute > self.max_compute:
-                batch_list.append(Batch.from_data_list(bucket))
+                batch_list.append(self._collate(bucket))
                 bucket, bucket_max_length = [], 0
             bucket.append(graph)
             bucket_max_length = max(bucket_max_length, length)
         if bucket:
-            batch_list.append(Batch.from_data_list(bucket))
+            batch_list.append(self._collate(bucket))
 
         if self.verbose:
             logger = Logger()
@@ -144,6 +155,13 @@ class collator_compute_budget_bucketing:
                     f"max_length={max_length}"
                 )
         return batch_list
+
+    def _collate(self, graphs: List[Data]) -> Batch:
+        """Collate `graphs` into one mini-batch."""
+        batch = Batch.from_data_list(graphs)
+        if self.drop_slices:
+            batch._slice_dict, batch._inc_dict = {}, {}
+        return batch
 
 
 # @TODO: Remove in favour of DataLoader{,.from_dataset_config}
