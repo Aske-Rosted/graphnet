@@ -786,6 +786,8 @@ def test_cauchy_group_learned_alpha_is_likelihood_scale() -> None:
         loss(residuals, zeros).backward()
         optimizer.step()
     assert torch.allclose(loss.alphas(), scales, rtol=0.05)
+    assert set(loss.monitored_values()) == {"alpha_0", "alpha_1"}
+    assert CauchyLoss(alpha=1.0, frac=0.0).monitored_values() == {}
 
 
 def test_sp_cauchy_fixed_rho_matches_predicted() -> None:
