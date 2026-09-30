@@ -923,11 +923,13 @@ class CauchyLoss(LossFunction):
         """Return the fixed scale(s).
 
         The fixed scale can be set during training, e.g. to anneal it
-        from a wide to a narrow value. Not available for a learned
-        scale.
+        from a wide to a narrow value. Not available for a learned scale
+        or a purely predicted one (`frac = 1`).
         """
         if self._learn_alpha:
             raise AttributeError("The scale is learned; see `alphas()`.")
+        if self._frac == 1:
+            raise AttributeError("The scale is predicted; alpha is unused.")
         return self._fixed_alpha
 
     @alpha.setter
