@@ -30,6 +30,22 @@ class LossFunction(Model):
         """Construct `LossFunction`, saving model config."""
         super().__init__(**kwargs)
 
+    @property
+    def lower_bound(self) -> Optional[float]:
+        """Return a lower bound of the (unweighted, averaged) loss, if known.
+
+        The bound is the value the loss cannot go below for any prediction
+        and target, e.g. 0 for squared errors. It is used to measure how far
+        a task is from its best possible loss, e.g. for balancing several
+        losses. `None` means that no finite bound is known, as for
+        likelihoods with a predicted concentration or width, which can
+        become arbitrarily confident.
+
+        NOTE: With per-event `weights`, the bound scales with the mean
+        weight.
+        """
+        return None
+
     @final
     def forward(  # type: ignore[override]
         self,
@@ -67,6 +83,11 @@ class LossFunction(Model):
 class MAELoss(LossFunction):
     """Mean absolute error loss."""
 
+    @property
+    def lower_bound(self) -> float:
+        """Return 0; the loss is non-negative."""
+        return 0.0
+
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Implement loss calculation."""
         return torch.mean(torch.abs(prediction - target), dim=-1)
@@ -74,6 +95,11 @@ class MAELoss(LossFunction):
 
 class MSELoss(LossFunction):
     """Mean squared error loss."""
+
+    @property
+    def lower_bound(self) -> float:
+        """Return 0; the loss is non-negative."""
+        return 0.0
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Implement loss calculation."""
@@ -112,6 +138,11 @@ class LogCoshLoss(LossFunction):
         See [https://github.com/keras-team/keras/blob/v2.6.0/keras/losses.py#L1580-L1617] # noqa: E501
         """
         return x + softplus(-2.0 * x) - np.log(2.0)
+
+    @property
+    def lower_bound(self) -> float:
+        """Return 0; the loss is non-negative."""
+        return 0.0
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Implement loss calculation."""
@@ -159,6 +190,11 @@ class CrossEntropyLoss(LossFunction):
             )
 
         self._loss = nn.CrossEntropyLoss(reduction="none")
+
+    @property
+    def lower_bound(self) -> float:
+        """Return 0; the loss is non-negative."""
+        return 0.0
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Transform outputs to angle and prepare prediction."""
@@ -218,6 +254,11 @@ class BinaryCrossEntropyLoss(LossFunction):
         """
         super().__init__(*args, **kwargs)
         self._from_logits = from_logits
+
+    @property
+    def lower_bound(self) -> float:
+        """Return 0; the loss is non-negative."""
+        return 0.0
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         if self._from_logits:
@@ -518,6 +559,11 @@ class VonMisesFisher2DLoss(VonMisesFisherLoss):
 class EuclideanDistanceLoss(LossFunction):
     """Mean squared error in three dimensions."""
 
+    @property
+    def lower_bound(self) -> float:
+        """Return 0; the loss is non-negative."""
+        return 0.0
+
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Calculate 3D Euclidean distance between predicted and target.
 
@@ -667,6 +713,14 @@ class EnsembleLoss(LossFunction):
             self._prediction_keys = None
         super().__init__(*args, **kwargs)
 
+    @property
+    def lower_bound(self) -> Optional[float]:
+        """Return the weighted sum of the parts' bounds, if all are known."""
+        bounds = [loss.lower_bound for loss in self._loss_functions]
+        if any(b is None for b in bounds) or any(f < 0 for f in self._factors):
+            return None
+        return float(sum(f * b for f, b in zip(self._factors, bounds)))
+
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Calculate loss using multiple loss functions.
 
@@ -719,6 +773,11 @@ class RMSEVonMisesFisher3DLoss(EnsembleLoss):
 class NegCosLoss(LossFunction):
     """Negative Cosine error loss."""
 
+    @property
+    def lower_bound(self) -> float:
+        """Return -1, the negative cosine of aligned vectors."""
+        return -1.0
+
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Implement loss calculation."""
         # Check(s)
@@ -760,6 +819,18 @@ class CauchyLoss(LossFunction):
         super().__init__(**kwargs)
         self._alpha = alpha
         self._frac = frac
+
+    @property
+    def lower_bound(self) -> Optional[float]:
+        """Return log(alpha) for the homoscedastic loss (`frac = 0`).
+
+        Each term log(1 + (r / alpha)^2) + log(alpha) is minimal at zero
+        residual. With a heteroscedastic part (`frac > 0`) the scale is
+        predicted and the loss has no meaningful lower bound.
+        """
+        if self._frac == 0:
+            return float(np.log(self._alpha))
+        return None
 
     def _homoscedastic(self, prediction: Tensor, target: Tensor) -> Tensor:
         return (1 - self._frac) * torch.mean(
