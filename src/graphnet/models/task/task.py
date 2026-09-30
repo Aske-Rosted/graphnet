@@ -1,8 +1,9 @@
 """Base physics task-specific `Model` class(es)."""
 
 from abc import abstractmethod
+from contextlib import nullcontext
 from typing import Any, TYPE_CHECKING, List, Tuple, Union
-from typing import Callable, Optional
+from typing import Callable, ContextManager, Optional
 import numpy as np
 from copy import deepcopy
 
@@ -24,6 +25,14 @@ from graphnet.utilities.imports import has_jammy_flows_package
 
 if has_jammy_flows_package():
     import jammy_flows
+
+
+def _full_precision(x: Union[Tensor, Data]) -> ContextManager:
+    """Return a context disabling autocast on the device of `x`."""
+    device = x.device if isinstance(x, Tensor) else None
+    if device is None or device.type not in ("cuda", "cpu"):
+        return nullcontext()
+    return torch.autocast(device_type=device.type, enabled=False)
 
 
 def _identity(x: Union[Tensor, Data]) -> Union[Tensor, Data]:
@@ -299,14 +308,20 @@ class LearnedTask(Task):
         """Forward call for `LearnedTask`.
 
         The learned embedding transforms last latent layer of Model to
-        meet target dimensions.
+        meet target dimensions. The head always runs in float32, also under
+        mixed-precision autocast: the outputs are the final predictions,
+        and rounding them to e.g. bfloat16 (8 significant bits) would be
+        coarser than the resolution many tasks aim for.
         """
         self._regularisation_loss = 0  # Reset
         if self._detach_backbone:
             x = x.detach()
-        x = self._affine(x)
-        x = self._forward(x=x)
-        return self._transform_prediction(x)
+        with _full_precision(x):
+            if isinstance(x, Tensor):
+                x = x.float()
+            x = self._affine(x)
+            x = self._forward(x=x)
+            return self._transform_prediction(x)
 
 
 class StandardLearnedTask(LearnedTask):
@@ -345,8 +360,15 @@ class StandardLearnedTask(LearnedTask):
         """Compute supervised learning loss.
 
         Grabs truth labels in `data` and sends both `pred` and `target` to loss
-        function for evaluation. Suits most supervised learning `Task`s.
+        function for evaluation. Suits most supervised learning `Task`s. The
+        loss is evaluated in float32, also under mixed-precision autocast.
         """
+        with _full_precision(pred):
+            return self._compute_loss(pred, data)
+
+    def _compute_loss(self, pred: Union[Tensor, Data], data: Data) -> Tensor:
+        if isinstance(pred, Tensor):
+            pred = pred.float()
         target = torch.stack(
             [data[label] for label in self._target_labels], dim=1
         )
