@@ -124,6 +124,7 @@ class Attention_rel(LightningModule):
         super().__init__()
         self.num_heads = num_heads
         head_dim = attn_head_dim or input_dim // num_heads
+        self.head_dim = head_dim
         all_head_dim = head_dim * self.num_heads
         self.scale = qk_scale or head_dim**-0.5
 
@@ -149,7 +150,15 @@ class Attention_rel(LightningModule):
         rel_pos_bias: Optional[Tensor] = None,
         key_padding_mask: Optional[Tensor] = None,
     ) -> Tensor:
-        """Forward pass."""
+        """Forward pass.
+
+        `rel_pos_bias` may be a vector bias of shape [B, N, N, head_dim]
+        (projected onto the queries and added to the values), or a scalar
+        bias added to the attention logits with shape [B, H, N, N],
+        [B, N, N, H], [B, N, N, 1] or [B, N, N]. The form is inferred from
+        the shape, so with `num_heads == head_dim` a [B, N, N, H] bias is
+        read as a vector bias.
+        """
         batch_size, event_length, _ = q.shape
 
         q = linear(input=q, weight=self.proj_q.weight, bias=self.q_bias)
@@ -167,9 +176,13 @@ class Attention_rel(LightningModule):
 
         q = q * self.scale
         attn = q @ k.transpose(-2, -1)
+        vector_bias = False
         if rel_pos_bias is not None:
-            bias = torch.einsum("bhic,bijc->bhij", q, rel_pos_bias)
-            attn = attn + bias
+            attn = attn + self._rel_pos_logits(q, rel_pos_bias)
+            vector_bias = (
+                rel_pos_bias.dim() == 4
+                and rel_pos_bias.shape[-1] == self.head_dim
+            )
         if key_padding_mask is not None:
             assert (
                 key_padding_mask.dtype == torch.float32
@@ -190,12 +203,29 @@ class Attention_rel(LightningModule):
         attn = self.attn_drop(attn)
 
         x = (attn @ v).transpose(1, 2)
-        if rel_pos_bias is not None:
+        if vector_bias:
             x = x + torch.einsum("bhij,bijc->bihc", attn, rel_pos_bias)
         x = x.reshape(batch_size, event_length, -1)
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
+
+    def _rel_pos_logits(self, q: Tensor, rel_pos_bias: Tensor) -> Tensor:
+        """Return the relative bias as attention logits [B, H, N, N]."""
+        rp = rel_pos_bias
+        if rp.dim() == 4 and rp.shape[-1] == self.head_dim:
+            return torch.einsum("bhic,bijc->bhij", q, rp)
+        if rp.dim() == 4 and rp.shape[1] == self.num_heads:
+            return rp
+        if rp.dim() == 4 and rp.shape[-1] == 1:
+            return (
+                rp.squeeze(-1).unsqueeze(1).expand(-1, self.num_heads, -1, -1)
+            )
+        if rp.dim() == 4 and rp.shape[-1] == self.num_heads:
+            return rp.permute(0, 3, 1, 2)
+        if rp.dim() == 3:
+            return rp.unsqueeze(1).expand(-1, self.num_heads, -1, -1)
+        raise ValueError(f"Unsupported rel_pos_bias shape {tuple(rp.shape)}")
 
 
 class Block_rel(LightningModule):

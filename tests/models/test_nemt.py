@@ -4,6 +4,7 @@ import os
 from typing import Any, Dict
 
 import numpy as np
+import pytest
 import torch
 from torch_geometric.data import Batch, Data
 
@@ -82,3 +83,10 @@ def test_example_config_builds_and_runs() -> None:
     with torch.no_grad():
         preds = model(Batch.from_data_list([graph]))
     assert [p.shape[1] for p in preds] == [1, 1, 4]
+
+
+@pytest.mark.parametrize("bias", ["vector", "head", "scalar"])
+def test_bias_modes(bias: str) -> None:
+    """All relative-bias forms run and keep the output shape."""
+    net = _net(bias=bias, hidden_dim=48, num_heads=4)
+    assert net(_batch([5, 9])).shape == (2, 24)

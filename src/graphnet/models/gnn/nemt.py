@@ -52,6 +52,7 @@ class NeutrinoEventMultitaskTransformer(GNN):
         out_dim: Optional[int] = None,
         cross_attention: Optional[List[int]] = None,
         embed_bias: bool = True,
+        bias: str = "vector",
     ):
         """Construct `NeutrinoEventMultitaskTransformer`.
 
@@ -80,6 +81,10 @@ class NeutrinoEventMultitaskTransformer(GNN):
                 updated by a gated token-only attention block.
             embed_bias: If True, the space-time interval is sinusoidally
                 embedded before its projection to the relative bias.
+            bias: Form of the relative bias: "vector" (a head_dim vector per
+                pair, projected onto queries and values), "head" (a scalar
+                logit per pair and head) or "scalar" (one logit per pair,
+                shared by all heads).
         """
         cross_attention = list(cross_attention or [])
         tot_out = (out_dim if out_dim is not None else hidden_dim) * n_tasks
@@ -151,10 +156,16 @@ class NeutrinoEventMultitaskTransformer(GNN):
             )
             nn.init.xavier_normal_(self.shared_tokens, gain=1.0)
 
-        head_dim = hidden_dim // num_heads
+        bias_dims = {"vector": hidden_dim // num_heads, "head": num_heads}
+        bias_dims["scalar"] = 1
+        if bias not in bias_dims:
+            raise ValueError("bias must be one of 'vector', 'head', 'scalar'")
+        bias_dim = bias_dims[bias]
         if n_rel > 0:
             self.rel_pos = SpacetimeEncoder(
-                head_dim, apply_sin_emb=embed_bias, out_dim=head_dim
+                hidden_dim // num_heads,
+                apply_sin_emb=embed_bias,
+                out_dim=bias_dim,
             )
 
         self.task_out: Optional[nn.Module] = None
