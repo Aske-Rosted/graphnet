@@ -1,7 +1,7 @@
 """Unit tests for GraphDefinition."""
 
 from graphnet.models.graphs import KNNGraph
-from graphnet.models.detector.prometheus import ORCA150SuperDense
+from graphnet.models.detector.prometheus import ORCA150SuperDense, Prometheus
 from graphnet.data.constants import FEATURES
 from graphnet.models.detector import IceCube86, IceCubeUpgrade
 from graphnet.models.graphs.nodes import PercentileClusters
@@ -178,3 +178,27 @@ def test_geometry_tables() -> None:
         for index in range(len(trivial_index)):
             match += indices[index] == trivial_index[index]
         assert match < len(trivial_index)
+
+
+def test_add_token_count() -> None:
+    """`add_token_count` stores the number of nodes as `n_tokens`."""
+    graph_definition = KNNGraph(
+        detector=Prometheus(),
+        input_feature_names=[
+            "sensor_pos_x",
+            "sensor_pos_y",
+            "sensor_pos_z",
+            "t",
+        ],
+        add_token_count=True,
+    )
+    graph = graph_definition(
+        input_features=np.random.default_rng(0).normal(size=(7, 4)),
+        input_feature_names=[
+            "sensor_pos_x",
+            "sensor_pos_y",
+            "sensor_pos_z",
+            "t",
+        ],
+    )
+    assert graph.n_tokens == 7
