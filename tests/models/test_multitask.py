@@ -161,3 +161,19 @@ def test_tasks_are_picklable() -> None:
     """Default transforms do not prevent pickling."""
     task = _energy_tasks([4])[0]
     pickle.loads(pickle.dumps(task))
+
+
+def test_task_head_and_loss_run_in_float32_under_autocast() -> None:
+    """Predictions and losses stay float32 under bfloat16 autocast."""
+    task = EnergyReconstruction(
+        hidden_size=4, target_labels="energy", loss_function=MSELoss()
+    )
+    x = torch.randn(8, 4)
+    data = Data(energy=torch.rand(8))
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        pred = task(x.bfloat16())
+        loss = task.compute_loss(pred, data)
+    assert pred.dtype == torch.float32
+    assert loss.dtype == torch.float32
+    # Same as a full-precision evaluation of the (bf16-rounded) input
+    assert torch.allclose(pred, task(x.bfloat16().float()))
