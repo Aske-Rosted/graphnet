@@ -849,3 +849,22 @@ def test_sp_cauchy_alpha_maps_to_rho() -> None:
     assert np.isclose(loss.alpha, 0.1)
     assert wide_bound > narrow_bound
     assert not hasattr(spCauchyLoss(), "_alpha")
+
+
+def test_cauchy_fixed_alpha_reports_residual_scales() -> None:
+    """A fixed-scale loss reports the Cauchy scale of its residuals."""
+    torch.manual_seed(0)
+    n = 40000
+    pair = torch.randn(n, 2) / torch.randn(n, 1).abs() * 0.05
+    single = torch.randn(n, 1) / torch.randn(n, 1).abs() * 2.0
+    residuals = torch.cat([pair, single], dim=1)
+    loss = CauchyLoss(alpha=0.3, frac=0.0, groups=[[0, 1], [2]])
+    assert loss.monitored_values() == {}
+    bound = loss.lower_bound
+    loss(residuals, torch.zeros_like(residuals))
+    values = loss.monitored_values()
+    assert np.isclose(values["residual_scale_0"], 0.05, rtol=0.05)
+    assert np.isclose(values["residual_scale_1"], 2.0, rtol=0.05)
+    # The estimate is a diagnostic only: alpha and the bound are unchanged
+    assert loss.alpha == 0.3
+    assert np.isclose(loss.lower_bound, bound)
