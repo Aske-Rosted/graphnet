@@ -186,6 +186,8 @@ class SpacetimeEncoder(LightningModule):
     def __init__(
         self,
         seq_length: int = 32,
+        out_dim: Optional[int] = None,
+        apply_sin_emb: bool = True,
     ):
         """Construct `SpacetimeEncoder`.
 
@@ -195,10 +197,19 @@ class SpacetimeEncoder(LightningModule):
 
         Args:
             seq_length: Dimensionality of the sinusoidal positional embeddings.
+            out_dim: Output dimension of the projection. Defaults to
+                `seq_length`.
+            apply_sin_emb: If False, the (unclipped) space-time interval is
+                projected directly instead of through the sinusoidal
+                embedding.
         """
         super().__init__()
         self.sin_emb = SinusoidalPosEmb(dim=seq_length)
-        self.projection = nn.Linear(seq_length, seq_length)
+        self.apply_sin_emb = apply_sin_emb
+        self.projection = nn.Linear(
+            seq_length if apply_sin_emb else 1,
+            seq_length if out_dim is None else out_dim,
+        )
 
     def forward(
         self,
@@ -214,9 +225,11 @@ class SpacetimeEncoder(LightningModule):
         four_distance = torch.sign(spacetime_interval) * torch.sqrt(
             torch.abs(spacetime_interval)
         )
-        sin_emb = self.sin_emb(1024 * four_distance.clip(-4, 4))
-        rel_attn = self.projection(sin_emb)
-        return rel_attn
+        if self.apply_sin_emb:
+            embedding = self.sin_emb(1024 * four_distance.clip(-4, 4))
+        else:
+            embedding = four_distance.unsqueeze(-1)
+        return self.projection(embedding)
 
 
 class RRWPLinearNodeEncoder(LightningModule):
