@@ -9,6 +9,7 @@ bound are passed through unchanged.
 """
 
 from abc import abstractmethod
+from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
 import torch
@@ -158,3 +159,135 @@ class UncertaintyWeighting(LossBalancing):
     def weights(self) -> Tensor:
         """Return the current task weights exp(-eta)."""
         return torch.exp(-self.log_variances.detach())
+
+
+class FAMO(LossBalancing):
+    """Fast Adaptive Multitask Optimization.
+
+    Liu, Liu, Jin, Stone & Liu, "FAMO: Fast Adaptive Multitask
+    Optimization" (NeurIPS 2023, https://arxiv.org/abs/2306.03792). Task
+    weights z = softmax(xi) are adapted after every optimizer step so that
+    all tasks decrease their log-loss at a similar rate. The model minimises
+
+        sum_i (z_i / c) * log(D_i),   c = sum_j z_j / D_j,
+
+    with D_i = L_i - L_min_i + eps the loss above its lower bound, i.e. the
+    gradient of task i is weighted by z_i / (c D_i). The logits xi are
+    updated from the change in log(D) over the step, delta_i =
+    log(D_i before) - log(D_i after), by an Adam step along
+    J_softmax^T delta (plus weight decay): tasks that improved more than
+    the weighted average lose weight, slower tasks gain weight. Rescaling a
+    task loss by a constant has no effect.
+
+    The logits are buffers, not model parameters: they are not updated by
+    the model's optimizer, move with the model and are saved in checkpoints.
+    Defaults follow the authors' reference implementation
+    (https://github.com/Cranial-XIX/FAMO, `methods/weight_methods.py`),
+    whose training scripts also clip the model's gradient norm at 1.
+    """
+
+    def __init__(
+        self,
+        start_epoch: int = 0,
+        lower_bounds: Optional[Sequence[Optional[float]]] = None,
+        lr: float = 0.025,
+        weight_decay: float = 1e-5,
+        update_on: str = "same_batch",
+        eps: float = 1e-8,
+    ) -> None:
+        """Construct `FAMO`.
+
+        Args:
+            start_epoch: First epoch in which the losses are balanced.
+            lower_bounds: Optional per-task lower bounds overriding those of
+                the tasks' loss functions.
+            lr: Learning rate of the Adam update of the task logits.
+            weight_decay: Weight decay of the task logits (pulls the weights
+                towards uniform).
+            update_on: "same_batch" re-evaluates the losses on the batch of
+                the step after the optimizer step (one extra forward pass
+                without gradients, as in the reference implementation);
+                "next_batch" uses the losses of the next training batch
+                instead (no extra cost, noisier).
+            eps: Added to the losses above their bounds before the log.
+        """
+        super().__init__(start_epoch=start_epoch, lower_bounds=lower_bounds)
+        assert update_on in ("same_batch", "next_batch"), update_on
+        self._lr = lr
+        self._weight_decay = weight_decay
+        self._update_on = update_on
+        self._eps = eps
+        self._betas = (0.9, 0.999)
+        self._prev: Optional[Tensor] = None
+
+    def _build(self, n_tasks: int) -> None:
+        self.register_buffer("logits", torch.zeros(n_tasks))
+        self.register_buffer("_adam_m", torch.zeros(n_tasks))
+        self.register_buffer("_adam_v", torch.zeros(n_tasks))
+        self.register_buffer("_adam_step", torch.zeros(()))
+
+    def weights(self) -> Tensor:
+        """Return the current task weights softmax(xi)."""
+        return torch.softmax(self.logits, dim=0)
+
+    def _balance(self, excess: Tensor) -> Tensor:
+        d = excess + self._eps
+        z = self.weights().to(d.dtype)
+        c = (z / d).sum().detach()
+        if self.training and self._update_on == "next_batch":
+            if self._prev is not None:
+                self._update(self._prev, d.detach())
+        if self.training:
+            self._prev = d.detach()
+        return z / c * torch.log(d)
+
+    def on_train_batch_end(self, model: Any, batch: Any) -> None:
+        """Update the task weights from the loss change over the step."""
+        if self._update_on != "same_batch" or self._prev is None:
+            return
+        if model.current_epoch < self._start_epoch:
+            return
+        with torch.no_grad(), _forward_context(model):
+            batch = [batch] if not isinstance(batch, list) else batch
+            losses = model._task_losses(model(batch), batch)
+        new = torch.stack(
+            [
+                (losses[i].detach() - self._lower_bound(i)).clamp(min=0.0)
+                for i in self._balanced
+            ]
+        )
+        self._update(self._prev, new + self._eps)
+        self._prev = None
+
+    def _update(self, prev: Tensor, new: Tensor) -> None:
+        """Adam step on the logits from the log-loss decrease."""
+        prev, new = _mean_across_ranks(prev), _mean_across_ranks(new)
+        delta = torch.log(prev) - torch.log(new)
+        z = self.weights()
+        # J_softmax^T delta = z * (delta - z.delta)
+        grad = z * (delta - (z * delta).sum())
+        grad = grad + self._weight_decay * self.logits
+        b1, b2 = self._betas
+        self._adam_step += 1
+        self._adam_m.mul_(b1).add_((1 - b1) * grad)
+        self._adam_v.mul_(b2).add_((1 - b2) * grad * grad)
+        m_hat = self._adam_m / (1 - b1**self._adam_step)
+        v_hat = self._adam_v / (1 - b2**self._adam_step)
+        self.logits -= self._lr * m_hat / (v_hat.sqrt() + 1e-8)
+
+
+def _mean_across_ranks(x: Tensor) -> Tensor:
+    """Average `x` over distributed ranks (identity if not distributed)."""
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        x = x.clone()
+        torch.distributed.all_reduce(x, op=torch.distributed.ReduceOp.SUM)
+        x /= torch.distributed.get_world_size()
+    return x
+
+
+def _forward_context(model: Any) -> Any:
+    """Return the trainer's precision context (e.g. autocast), if any."""
+    trainer = getattr(model, "_trainer", None)
+    if trainer is not None:
+        return trainer.precision_plugin.forward_context()
+    return nullcontext()
