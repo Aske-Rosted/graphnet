@@ -482,3 +482,28 @@ def test_vmf3d_loss_fp32_high_kappa_small_angle() -> None:
     assert torch.all(torch.isfinite(elements))
     elements.sum().backward()
     assert torch.all(torch.isfinite(prediction_extreme.grad))
+
+
+def test_loss_weights_do_not_broadcast() -> None:
+    """Per-event weights scale per-event loss terms of shape [N]."""
+    from graphnet.training.loss_functions import MSELoss
+
+    prediction = torch.tensor([[1.0], [2.0], [3.0]])
+    target = torch.zeros(3, 1)
+    weights = torch.tensor([1.0, 0.0, 2.0])
+    loss = MSELoss()
+    elements = loss(prediction, target, weights=weights, return_elements=True)
+    assert elements.shape == (3,)
+    assert torch.allclose(elements, torch.tensor([1.0, 0.0, 18.0]))
+
+
+def test_loss_weights_with_column_terms() -> None:
+    """[N] weights scale [N, 1] loss terms row-wise instead of broadcasting."""
+    prediction = torch.tensor([[1.0], [2.0], [3.0]])
+    target = torch.zeros(3, 1)
+    weights = torch.tensor([1.0, 0.0, 2.0])
+    loss = LogCoshLoss()
+    plain = loss(prediction, target, return_elements=True)
+    weighted = loss(prediction, target, weights=weights, return_elements=True)
+    assert weighted.shape == plain.shape
+    assert torch.allclose(weighted, plain * weights.reshape(plain.shape))

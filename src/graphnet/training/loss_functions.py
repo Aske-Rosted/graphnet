@@ -43,21 +43,49 @@ class LossFunction(Model):
         Args:
             prediction: Tensor containing predictions. Shape [N,P]
             target: Tensor containing targets. Shape [N,T]
+            weights: Optional per-event weights, shape [N] or [N, 1], or
+                per-element weights of shape [N, F] matching the loss terms.
             return_elements: Whether elementwise loss terms should be returned.
                 The alternative is to return the averaged loss across examples.
 
         Returns:
             Loss, either averaged to a scalar (if `return_elements = False`) or
-            elementwise terms with shape [N,] (if `return_elements = True`).
+            elementwise terms in the shape returned by `_forward` (if
+            `return_elements = True`).
         """
         elements = self._forward(prediction, target)
+        squeeze = elements.dim() == 1
+
+        # Work on [N, F] so that per-event weights of shape [N] never
+        # broadcast against [N, 1] loss terms into an [N, N] matrix.
+        if squeeze:
+            elements = elements.unsqueeze(1)
+        elif elements.dim() != 2:
+            raise ValueError(
+                "`_forward` must return a tensor of shape [N] or [N, F]."
+            )
+
         if weights is not None:
+            if weights.dim() == 1:
+                weights = weights.unsqueeze(1)
+            elif weights.dim() != 2:
+                raise ValueError("`weights` must have shape [N] or [N, F].")
+            assert weights.size(0) == elements.size(
+                0
+            ), "`weights` must have the same batch dimension as loss terms."
+            assert weights.size(1) in [1, elements.size(1)], (
+                "`weights` second dimension must be 1 or match the loss term "
+                "feature dimension."
+            )
             elements = elements * weights
+
         assert elements.size(dim=0) == target.size(
             dim=0
         ), "`_forward` should return elementwise loss terms."
 
-        return elements if return_elements else torch.mean(elements)
+        if return_elements:
+            return elements.squeeze(1) if squeeze else elements
+        return torch.mean(elements)
 
     @abstractmethod
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
