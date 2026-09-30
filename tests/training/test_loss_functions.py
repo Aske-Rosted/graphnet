@@ -571,3 +571,35 @@ def test_sp_cauchy_prefers_aligned_confident_prediction() -> None:
 
     assert loss(aligned, target) < loss(orthogonal, target)
     assert loss(vague, target) < loss(orthogonal, target)
+
+
+@pytest.mark.parametrize("k", [0.3, 2.0, 10.0])
+def test_sp_cauchy_density_is_normalized(k: float) -> None:
+    """Exp(-loss) / (4 pi) integrates to one over the sphere (d = 3)."""
+    n = 400_000
+    i = torch.arange(n, dtype=torch.float64) + 0.5
+    z = 1 - 2 * i / n
+    phi = torch.pi * (1 + 5**0.5) * i
+    r = torch.sqrt(1 - z**2)
+    points = torch.stack([r * torch.cos(phi), r * torch.sin(phi), z], dim=1)
+    mu = torch.tensor([0.0, 0.0, 1.0]).expand(n, 3)
+    prediction = torch.cat([mu, torch.full((n, 1), k)], dim=1)
+
+    loss = spCauchyLoss()(prediction, points.float(), return_elements=True)
+    integral = torch.exp(-loss.double()).mean()  # mean over uniform points
+    assert torch.isclose(
+        integral, torch.tensor(1.0, dtype=torch.float64), rtol=1e-3
+    )
+
+
+def test_sp_cauchy_large_concentration_is_finite() -> None:
+    """Very confident predictions give finite losses and gradients."""
+    target = torch.tensor([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0]])
+    prediction = torch.tensor(
+        [[0.0, 0.0, 1.0, 1e8], [0.0, 0.0, 1.0, 1e8]], requires_grad=True
+    )
+    loss = spCauchyLoss()(prediction, target, return_elements=True)
+    loss.sum().backward()
+    assert torch.isfinite(loss).all()
+    assert torch.isfinite(prediction.grad).all()
+    assert loss[0] < loss[1]
