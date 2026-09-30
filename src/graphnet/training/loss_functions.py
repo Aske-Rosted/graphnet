@@ -1087,21 +1087,22 @@ class spCauchyLoss(LossFunction):
         dim = (
             prediction.size(1) - 1
         )  # last dimensions is the norm of the predicted vector, which is used to calculate the concentration parameter rho
-        assert dim >= 1
+        assert dim > 1
         assert target.size(1) == dim
+
+        prediction = prediction.float()
+        target = target.float()
 
         mu = prediction[:, :dim]
         rho = prediction[:, dim] / (
             1.0 + prediction[:, dim]
         )  # concentration parameter in [0, 1)
-        dot = (mu * target).sum(
-            dim=-1
-        )  # cosine similarity between predicted direction and target direction
-        alpha = (dim - 1) / 2.0
-        log_numer = alpha * torch.log(1.0 - rho**2 + 1e-7)
-        denom = (1.0 - 2.0 * rho * dot + rho**2).clamp(min=1e-7)
-        log_denom = (alpha + 1.0) * torch.log(denom)
-        log_prob = log_numer - log_denom
+        dot = (mu * target).sum(dim=-1)
+        alpha = float(dim - 1)
+        log_numer = torch.log((1.0 - rho) * (1.0 + rho))
+        denom = 1.0 - 2.0 * rho * dot + rho**2
+        log_denom = torch.log(denom)
+        log_prob = alpha * (log_numer - log_denom)
         return -log_prob
 
 

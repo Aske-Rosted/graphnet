@@ -14,11 +14,13 @@ if has_icecube_package() or TYPE_CHECKING:
 class I3FeatureExtractor(I3Extractor):
     """Base class for extracting specific, reconstructed features."""
 
-    def __init__(self, 
-        pulsemap: str, 
+    def __init__(
+        self,
+        pulsemap: str,
         exclude: list = [None],
         exclude_saturation: bool = False,
         exclude_calibration_errata: bool = False,
+        bright_doms_threshold: float = -1,
     ) -> None:
         """Construct I3FeatureExtractor.
 
@@ -26,11 +28,20 @@ class I3FeatureExtractor(I3Extractor):
             pulsemap: Name of the pulse (series) map for which to extract
                 reconstructed features.
             exclude: List of keys to exclude from the extracted data.
+            bright_doms_threshold: Fraction of the total event charge above
+                which a DOM is flagged as bright. Values <= 0 disable the
+                re-calculation, in which case the frame's `BrightDOMs` list
+                is used if present.
         """
+        assert (
+            bright_doms_threshold < 1.0
+        ), "bright_doms_threshold must be a fraction below 1"
+
         # Member variable(s)
         self._pulsemap = pulsemap
         self._exclude_saturation = exclude_saturation
         self._exclude_calibration_errata = exclude_calibration_errata
+        self._bright_doms_threshold = bright_doms_threshold
 
         # Base class constructor
         super().__init__(pulsemap, exclude=exclude)
@@ -97,6 +108,12 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
 
         if "BrightDOMs" in frame:
             bright_doms = frame.Get("BrightDOMs")
+            if self._bright_doms_threshold > 0:
+                self.warning_once(
+                    "BrightDOMs list already exists in frame, but "
+                    "bright_doms_threshold is set to a positive value. "
+                    "re-calculating for feature extraction."
+                )
 
         if "BadDomsList" in frame:
             bad_doms = frame.Get("BadDomsList")
@@ -109,7 +126,9 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
 
         event_time = frame["I3EventHeader"].start_time.mod_julian_day_double
 
-        for om_key in om_keys:
+        dom_index_per_pulse: List[int] = []
+        dom_charges: List[float] = []
+        for dom_index, om_key in enumerate(om_keys):
             # Common values for each OM
             x = self._gcd_dict[om_key].position.x
             y = self._gcd_dict[om_key].position.y
@@ -163,30 +182,35 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
 
             # Loop over pulses for each OM
             pulses = data[om_key]
+            dom_charge = 0.0
             for pulse in pulses:
-                
                 pulse_time = getattr(pulse, "time", padding_value)
 
-                if is_saturated_dom == 1 and saturation_start <= pulse_time <= saturation_stop:
+                if (
+                    is_saturated_dom == 1
+                    and saturation_start <= pulse_time <= saturation_stop
+                ):
                     is_saturated_pulse = 1
                     if self._exclude_saturation:
-                        continue # Exclude Saturated Pulses
+                        continue  # Exclude Saturated Pulses
                 else:
                     is_saturated_pulse = 0
-                
-                if is_errata_dom == 1 and errata_start <= pulse_time <= errata_stop:
+
+                if (
+                    is_errata_dom == 1
+                    and errata_start <= pulse_time <= errata_stop
+                ):
                     is_errata_pulse = 1
                     if self._exclude_calibration_errata:
-                        continue # Exclude Errata Pulses
+                        continue  # Exclude Errata Pulses
                 else:
                     is_errata_pulse = 0
 
-                output["charge"].append(
-                    getattr(pulse, "charge", padding_value)
-                )
-                output["dom_time"].append(
-                    pulse_time
-                )
+                charge = getattr(pulse, "charge", padding_value)
+                output["charge"].append(charge)
+                dom_charge += charge
+                dom_index_per_pulse.append(dom_index)
+                output["dom_time"].append(pulse_time)
                 output["width"].append(getattr(pulse, "width", padding_value))
                 output["pmt_area"].append(area)
                 output["rde"].append(rde)
@@ -215,6 +239,20 @@ class I3FeatureExtractorIceCube86(I3FeatureExtractor):
                 else:
                     output["hlc"].append((pulse.flags >> 0) & 0x1)  # bit 0
                     output["awtd"].append(self._parse_awtd_flag(pulse))
+            dom_charges.append(dom_charge)
+
+        if self._bright_doms_threshold > 0:
+            # Flag DOMs carrying more than `bright_doms_threshold` of the
+            # total event charge, and broadcast onto their pulses.
+            total_charge = sum(dom_charges)
+            is_bright = [
+                total_charge > 0
+                and charge / total_charge > self._bright_doms_threshold
+                for charge in dom_charges
+            ]
+            output["is_bright_dom"] = [
+                int(is_bright[dom_index]) for dom_index in dom_index_per_pulse
+            ]
 
         return output
 

@@ -187,9 +187,9 @@ class I3InferenceModule(DeploymentModule):
         if self._inference_speed_check is True:
             write_end = perf_counter()
             write_time = write_end - write_start
-            #self._logger.info(f"Write time: {write_time:.4f} s\n")
+            # self._logger.info(f"Write time: {write_time:.4f} s\n")
             total_time = data_repr_time + inference_time + write_time
-            #self._logger.info(f"Total time: {total_time:.4f} s\n")
+            # self._logger.info(f"Total time: {total_time:.4f} s\n")
             dict_speed = {
                 "data_repr_time": data_repr_time,
                 "inference_time": inference_time,
@@ -244,14 +244,29 @@ class I3InferenceModule(DeploymentModule):
                 torch.cuda.synchronize()
             inference_end = perf_counter()
             inference_time = inference_end - inference_start
-            #self._logger.info(
+            # self._logger.info(
             #    f"Data representation time: {data_repr_time:.4f} s\n"
             #    f"Inference time: {inference_time:.4f} s\n"
-            #)
+            # )
         del data
         return predictions, data_repr_time, inference_time
 
     def _check_dimensions(self, predictions: np.ndarray) -> int:
+        if self._multiple_models == True:
+            # `predictions` is the flat concatenation of every model's
+            # output, so it must be as long as all the declared columns.
+            expected = sum(len(columns) for columns in self.prediction_columns)
+            dim = len(predictions)
+            try:
+                assert dim == expected
+            except AssertionError as e:
+                self.error(
+                    f"predictions hold {dim} values but the models declare "
+                    f"{expected} prediction columns "
+                    f"{self.prediction_columns}"
+                )
+                raise e
+            return dim
         if len(predictions.shape) > 1:
             dim = predictions.shape[1]
         else:
@@ -274,8 +289,23 @@ class I3InferenceModule(DeploymentModule):
         """Transform predictions into a dictionary."""
         data = {}
         if self._multiple_models == True:
+            offset = 0
             for i, key in enumerate(self.model_name):
-                data[key] = float(predictions[i])
+                columns = self.prediction_columns[i]
+                if len(columns) == 1:
+                    # Single-output models are keyed by their bare model
+                    # name and kept as plain floats, which is what
+                    # `I3MultipleModelInferenceModule` writes into an
+                    # I3MapStringDouble.
+                    data[key] = float(predictions[offset])
+                else:
+                    # Multi-output models get one I3Double per column,
+                    # named as in the single-model case.
+                    for j, column in enumerate(columns):
+                        data[key + "_" + column] = I3Double(
+                            float(predictions[offset + j])
+                        )
+                offset += len(columns)
         else:
             for i in range(dim):
                 data[self.model_name + "_" + self.prediction_columns[i]] = (
@@ -403,7 +433,25 @@ class I3InferenceModule(DeploymentModule):
     def _add_runtimes_to_frame(self, frame, runtimes):
 
         i3_runtime_container = dataclasses.I3MapStringDouble(runtimes)
-        frame.Put(self.model_name + "_Speed", i3_runtime_container)
+        # The runtimes are per-call totals shared by every model, so with
+        # several models they are recorded once, under the first name.
+        name = (
+            self.model_name[0]
+            if isinstance(self.model_name, list)
+            else self.model_name
+        )
+        key = name + "_Speed"
+        # Respect `overwrite` as the other frame writes do, so a rerun over
+        # already-processed input replaces the runtimes instead of raising.
+        if key in frame:
+            if not self._overwrite:
+                self.warning(
+                    f"{key} already exists in frame and overwrite is set to "
+                    f"False. Skipping adding {key} to frame."
+                )
+                return
+            frame.Delete(key)
+        frame.Put(key, i3_runtime_container)
 
     def _check_requirements(self, frame: I3Frame) -> bool:
         """Check if requirements are met."""
@@ -435,20 +483,31 @@ class I3ParticleInferenceModule(I3InferenceModule):
         """Initialize the I3ParticleInferenceModule."""
         super().__init__(**kwargs)
 
-        self._directions = [
-            self.model_name + "_" + dirs for dirs in directions
-        ]
         assert (
-            len(self._directions) == 2 or len(self._directions) == 3
+            len(directions) == 2 or len(directions) == 3
         ), "directions must be a list of 2 or 3 elements"
-        self._time = self.model_name + "_" + time
-        self._energy = self.model_name + "_" + energy
-        self._positions = [self.model_name + "_" + pos for pos in positions]
+        assert len(positions) == 3, "positions must be a list of 3 elements"
+
+        # One particle is built per model. With `multiple_models` the models
+        # share the extracted pulses and differ only in their data
+        # representation, so each gets its own set of prefixed columns.
+        self._model_names = (
+            self.model_name
+            if isinstance(self.model_name, list)
+            else [self.model_name]
+        )
+        self._directions = [
+            [name + "_" + dirs for dirs in directions]
+            for name in self._model_names
+        ]
+        self._positions = [
+            [name + "_" + pos for pos in positions]
+            for name in self._model_names
+        ]
+        self._time = [name + "_" + time for name in self._model_names]
+        self._energy = [name + "_" + energy for name in self._model_names]
         self._shift_time = shift_time
         self._statistics_dictionary = statistics_dictionary
-        assert (
-            len(self._positions) == 3
-        ), "positions must be a list of 3 elements"
 
     def _get_min_time(self, frame: I3Frame, pulsemap: str) -> float:
         """Get the minimum time of the first pulse in the frame."""
@@ -461,80 +520,81 @@ class I3ParticleInferenceModule(I3InferenceModule):
 
         return min_time
 
+    def _resolve_shift_time(self, frame: I3Frame) -> float:
+        """Get the time all predictions are measured relative to.
+
+        The statistics dictionary is optional, so fall back silently to the
+        pulsemap if it's not found. The pulsemap itself is required, so its
+        absence is a hard error.
+        """
+        shift_time = None
+        if self._statistics_dictionary:
+            if self._statistics_dictionary in frame:
+                shift_time = frame[self._statistics_dictionary].min_pulse_time
+            else:
+                self.warning(
+                    f"{self._statistics_dictionary} not found in "
+                    f"frame. Falling back to minimum pulse time "
+                    f"from pulsemap."
+                )
+
+        if shift_time is None:
+            try:
+                shift_time = self._get_min_time(frame, self._pulsemap)
+            except KeyError as e:
+                raise KeyError(
+                    f"Tried to get minimum pulse time from "
+                    f"pulsemap '{self._pulsemap}', but it was not "
+                    f"found in frame."
+                ) from e
+        return shift_time
+
     def _add_to_frame(self, frame, data):
-        """Create the I3Particle and add it to the frame."""
+        """Create an I3Particle per model and add them to the frame."""
+        # Shift time to be relative to the first pulse. Every model sees the
+        # same pulsemap, so this is resolved once for all of them.
+        shift_time = self._resolve_shift_time(frame) if self._shift_time else 0
 
-        particle = I3Particle()
+        for i, model_name in enumerate(self._model_names):
+            particle = I3Particle()
 
-        directions = [data[k].value for k in self._directions]
-        # drop the directions from the data dictionary
-        for dirs in self._directions:
-            del data[dirs]
+            directions = [data[k].value for k in self._directions[i]]
+            # drop the directions from the data dictionary
+            for dirs in self._directions[i]:
+                del data[dirs]
 
-        positions = [data[k].value for k in self._positions]
-        # drop the positions from the data dictionary
-        for pos in self._positions:
-            del data[pos]
+            positions = [data[k].value for k in self._positions[i]]
+            # drop the positions from the data dictionary
+            for pos in self._positions[i]:
+                del data[pos]
 
-        particle.dir = I3Direction(*directions)
+            particle.dir = I3Direction(*directions)
+            particle.time = data[self._time[i]].value + shift_time
+            # drop the time from the data dictionary
+            if self._time[i] in data:
+                del data[self._time[i]]
 
-        if self._shift_time:
-            # Shift time to be relative to the first pulse
-            # The statistics dictionary is optional, so fall back
-            # silently to the pulsemap if it's not found. The pulsemap
-            # itself is required, so its absence is a hard error.
-            shift_time = None
-            if self._statistics_dictionary:
-                if self._statistics_dictionary in frame:
-                    shift_time = frame[
-                        self._statistics_dictionary
-                    ].min_pulse_time
-                else:
-                    self.warning(
-                        f"{self._statistics_dictionary} not found in "
-                        f"frame. Falling back to minimum pulse time "
-                        f"from pulsemap."
-                    )
-
-            if shift_time is None:
-                try:
-                    shift_time = self._get_min_time(
-                        frame, self._pulsemap
-                    )
-                except KeyError as e:
-                    raise KeyError(
-                        f"Tried to get minimum pulse time from "
-                        f"pulsemap '{self._pulsemap}', but it was not "
-                        f"found in frame."
-                    ) from e
-            particle.time = data[self._time].value + shift_time
-        else:
-            particle.time = data[self._time].value
-        # drop the time from the data dictionary
-        if self._time in data:
-            del data[self._time]
-
-        particle.energy = data[self._energy].value
-        # drop the energy from the data dictionary
-        if self._energy in data:
-            del data[self._energy]
-        # Set the position of the particle
-        particle.pos = I3Position(*positions)
-        particle.shape = I3Particle.ParticleShape.InfiniteTrack
-        particle_name = self.model_name + "_particle"
-        particle.fit_status = I3Particle.FitStatus.OK
-        # Add the particle to the frame
-        if particle_name not in frame:
-            frame.Put(particle_name, particle)
-        elif self._overwrite:
-            frame.Delete(particle_name)
-            frame.Put(particle_name, particle)
-        else:
-            self.warning(
-                f"{particle_name} already exists in frame and "
-                f"overwrite is set to False. Skipping adding particle to "
-                f"frame."
-            )
+            particle.energy = data[self._energy[i]].value
+            # drop the energy from the data dictionary
+            if self._energy[i] in data:
+                del data[self._energy[i]]
+            # Set the position of the particle
+            particle.pos = I3Position(*positions)
+            particle.shape = I3Particle.ParticleShape.InfiniteTrack
+            particle_name = model_name + "_particle"
+            particle.fit_status = I3Particle.FitStatus.OK
+            # Add the particle to the frame
+            if particle_name not in frame:
+                frame.Put(particle_name, particle)
+            elif self._overwrite:
+                frame.Delete(particle_name)
+                frame.Put(particle_name, particle)
+            else:
+                self.warning(
+                    f"{particle_name} already exists in frame and "
+                    f"overwrite is set to False. Skipping adding particle to "
+                    f"frame."
+                )
 
         # for all the other values in data, add them to an I3Dictionary
         super()._add_to_frame(frame=frame, data=data)

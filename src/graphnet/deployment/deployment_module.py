@@ -111,11 +111,23 @@ class DeploymentModule(Logger):
                             prediction_columns[i]
                         )
                 else:
-                    # Only Take First Label
                     resolved_prediction_columns.append(
-                        model.prediction_labels[0]
+                        self._model_output_labels(model)
                     )
             return resolved_prediction_columns
+
+    def _model_output_labels(self, model: Model) -> List[str]:
+        """Return the labels of the columns `_inference` keeps for `model`.
+
+        A model built from a single multi-column task (e.g. the binary
+        `MulticlassClassificationTask` behind the bundle classifiers) has its
+        second column dropped in `_inference`, so its second label is dropped
+        here too. Everything else keeps every label, in task order.
+        """
+        labels = model.prediction_labels
+        if len(model._tasks) == 1 and len(labels) > 1:
+            return labels[:1] + labels[2:]
+        return labels
 
     def _inference(self, data: Union[Data, Batch]) -> List[np.ndarray]:
         """Apply model to a single event or batch of events `data`.
@@ -142,9 +154,14 @@ class DeploymentModule(Logger):
                 output = model(data=data[_])
                 for k in range(len(output)):
                     output[k] = output[k].detach().cpu().numpy()
-                if output[0].shape[1] > 1:
-                    output = np.delete(output[0], 1, axis=1)
+                if len(output) == 1 and output[0].shape[1] > 1:
+                    # A single multi-column task (e.g. the binary
+                    # classifiers) keeps everything but its second column.
+                    # `_model_output_labels` drops the same label.
+                    outputs.append(np.delete(output[0], 1, axis=1))
                 else:
-                    output = output[0]
-                outputs.append(output)
+                    # Multi-task models: keep every task, concatenated in
+                    # task order so the columns line up with
+                    # `prediction_labels`.
+                    outputs.append(np.hstack(output))
             return outputs

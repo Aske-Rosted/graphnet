@@ -25,11 +25,25 @@ class NodeDefinition(Model):  # pylint: disable=too-few-public-methods
     """Base class for graph building."""
 
     def __init__(
-        self, input_feature_names: Optional[List[str]] = None
+        self,
+        input_feature_names: Optional[List[str]] = None,
+        exclude_flags: Union[str, List[str], None] = None,
     ) -> None:
-        """Construct `Detector`."""
+        """Construct `Detector`.
+
+        Args:
+            input_feature_names: (Optional) column names for input features.
+            exclude_flags: (Optional) column name or list of column names
+                whose values flag pulses that should be excluded. Pulses for
+                which any of these columns equals 1 are dropped, and the
+                flag columns themselves are removed from the input before
+                it reaches `_construct_nodes`.
+        """
         # Base class constructor
         super().__init__(name=__name__, class_name=self.__class__.__name__)
+        self._exclude_flags = self._parse_exclude_flags(exclude_flags)
+        self._exclude_flag_indices: Optional[List[int]] = None
+        self._keep_column_indices: Optional[List[int]] = None
         if input_feature_names is not None:
             self.set_output_feature_names(
                 input_feature_names=input_feature_names
@@ -47,9 +61,98 @@ class NodeDefinition(Model):  # pylint: disable=too-few-public-methods
         Returns:
             graph: a graph without edges
         """
-        data = self._construct_nodes(x=x)
+        data = self._construct_nodes(x=self._apply_exclude_flags(x))
 
         return data
+
+    @final
+    def _parse_exclude_flags(
+        self, exclude_flags: Union[str, List[str], None]
+    ) -> Optional[List[str]]:
+        """Normalize `exclude_flags` to a list of column names or None."""
+        if exclude_flags is None:
+            return None
+        if isinstance(exclude_flags, str):
+            return [exclude_flags]
+        if isinstance(exclude_flags, list) and all(
+            isinstance(flag, str) for flag in exclude_flags
+        ):
+            return list(exclude_flags)
+        raise ValueError(
+            "exclude_flags should be either a str, a list of str, or None, "
+            f"but got {exclude_flags} of type {type(exclude_flags)}."
+        )
+
+    @final
+    def _resolve_exclude_flags(
+        self, input_feature_names: List[str]
+    ) -> List[str]:
+        """Locate the flag columns and return the remaining column names.
+
+        Resolution happens by name on every call, such that the indices
+        always refer to the column order that is actually passed in.
+
+        Args:
+            input_feature_names: List of column names of the input to the
+            node definition.
+
+        Returns:
+            `input_feature_names` without the flag columns.
+        """
+        if self._exclude_flags is None:
+            return input_feature_names
+
+        indices = []
+        for exclude_flag in self._exclude_flags:
+            try:
+                indices.append(input_feature_names.index(exclude_flag))
+            except ValueError:
+                raise ValueError(
+                    f"exclude_flags contains '{exclude_flag}' but it is not "
+                    f"found in input_feature_names {input_feature_names}. "
+                    f"Please remove '{exclude_flag}' from exclude_flags or "
+                    "provide a valid column name."
+                )
+        self._exclude_flag_indices = indices
+        self._keep_column_indices = [
+            index
+            for index in range(len(input_feature_names))
+            if index not in indices
+        ]
+        return [
+            name
+            for index, name in enumerate(input_feature_names)
+            if index not in indices
+        ]
+
+    @final
+    def _apply_exclude_flags(self, x: torch.tensor) -> torch.tensor:
+        """Drop flagged pulses and the flag columns themselves.
+
+        A pulse is dropped if any of the flag columns equals 1. Note that
+        the flags are padded with -1 where the underlying information was
+        unavailable, so comparing against 1 rather than against 0 is
+        deliberate.
+
+        Args:
+            x: standardized node features with shape ´[num_pulses, d]´.
+
+        Returns:
+            `x` without the flagged pulses and without the flag columns.
+        """
+        if self._exclude_flags is None:
+            return x
+        if self._exclude_flag_indices is None:
+            self.error(
+                f"""{self.__class__.__name__} was instantiated with
+                `exclude_flags` but `input_feature_names` was never set,
+                so the flag columns could not be located. Please instantiate
+                this class with `input_feature_names` if you're using it
+                outside `GraphDefinition`."""
+            )  # noqa
+            raise AttributeError
+        keep_rows = ~(x[:, self._exclude_flag_indices] == 1).any(dim=1)
+        return x[keep_rows][:, self._keep_column_indices]
 
     @property
     def _output_feature_names(self) -> List[str]:
@@ -89,12 +192,15 @@ class NodeDefinition(Model):  # pylint: disable=too-few-public-methods
     def set_output_feature_names(self, input_feature_names: List[str]) -> None:
         """Set output features names as a member variable.
 
+        Any column listed in `exclude_flags` is removed before the names are
+        passed on, so inheriting classes never see the flag columns.
+
         Args:
             input_feature_names: List of column names of the input to the
             node definition.
         """
         self._hidden_output_feature_names = self._define_output_feature_names(
-            input_feature_names
+            self._resolve_exclude_flags(input_feature_names)
         )
 
     @abstractmethod
@@ -130,6 +236,24 @@ class NodeDefinition(Model):  # pylint: disable=too-few-public-methods
 class NodesAsPulses(NodeDefinition):
     """Represent each measured pulse of Cherenkov Radiation as a node."""
 
+    def __init__(
+        self,
+        input_feature_names: Optional[List[str]] = None,
+        exclude_flags: Union[str, List[str], None] = None,
+    ) -> None:
+        """Construct `NodesAsPulses`.
+
+        Args:
+            input_feature_names: (Optional) column names for input features.
+            exclude_flags: Column name or list of column names whose values
+                indicate pulses to exclude from the node features.
+        """
+        # Base class constructor
+        super().__init__(
+            input_feature_names=input_feature_names,
+            exclude_flags=exclude_flags,
+        )
+
     def _define_output_feature_names(
         self, input_feature_names: List[str]
     ) -> List[str]:
@@ -154,6 +278,7 @@ class PercentileClusters(NodeDefinition):
         percentiles: List[int],
         add_counts: bool = True,
         input_feature_names: Optional[List[str]] = None,
+        exclude_flags: Union[str, List[str], None] = None,
     ) -> None:
         """Construct `PercentileClusters`.
 
@@ -162,12 +287,17 @@ class PercentileClusters(NodeDefinition):
             percentiles: List of percentiles. E.g. `[10, 50, 90]`.
             add_counts: If True, number of duplicates is added to output array.
             input_feature_names: (Optional) column names for input features.
+            exclude_flags: Column name or list of column names whose values
+                indicate pulses to exclude from the node features.
         """
         self._cluster_on = cluster_on
         self._percentiles = percentiles
         self._add_counts = add_counts
         # Base class constructor
-        super().__init__(input_feature_names=input_feature_names)
+        super().__init__(
+            input_feature_names=input_feature_names,
+            exclude_flags=exclude_flags,
+        )
 
     def _define_output_feature_names(
         self, input_feature_names: List[str]
@@ -790,30 +920,11 @@ class ClusterSummaryFeatures(NodeDefinition):
         self._node_limit_index = node_limit_index
         self._node_limit_seed = node_limit_seed
         self._node_limit_ascending = node_limit_ascending
-        if exclude_flags is None:
-            self._exclude_flag_indices = None
-        else:
-            if isinstance(exclude_flags, str):
-                exclude_flags = [exclude_flags]
-            elif not isinstance(exclude_flags, list):
-                raise ValueError(
-                    f"exclude_flags should be either a str, a list of str, or None, but got {exclude_flags} of type {type(exclude_flags)}"
-                )
-
-            self._exclude_flag_indices = []
-            for exclude_flag in exclude_flags:
-                try:
-                    self._exclude_flag_indices.append(
-                        input_feature_names.index(exclude_flag)
-                    )
-                    #update charge and time indices if necessary
-
-                except ValueError:
-                    raise ValueError(
-                        f"exclude_flags is set to '{exclude_flag}' but it is not found in input_feature_names {input_feature_names}. Please set exclude_flags to None or provide valid column name(s)."
-                    )
         # Base class constructor
-        super().__init__(input_feature_names=input_feature_names)
+        super().__init__(
+            input_feature_names=input_feature_names,
+            exclude_flags=exclude_flags,
+        )
         if self._order_in_time is False:
             self.info(
                 "Setting `order_by_time` to False. "
@@ -825,8 +936,6 @@ class ClusterSummaryFeatures(NodeDefinition):
         input_feature_names: List[str],
     ) -> List[str]:
         """Set the output feature names."""
-        #drop the excluded flag columns from the output feature names
-        input_feature_names = [val for i, val in enumerate(input_feature_names) if i not in self._exclude_flag_indices] if self._exclude_flag_indices is not None else input_feature_names
         self.set_indices(input_feature_names)
         new_feature_names = deepcopy(self._cluster_on)
         if self._total_charge:
@@ -851,11 +960,17 @@ class ClusterSummaryFeatures(NodeDefinition):
         """Construct nodes from raw node features ´x´."""
         # Cast to Numpy
         x = x.numpy()
-        # remove flagged pulses if specified
-        if self._exclude_flag_indices is not None:
-            x = x[~np.any(x[:, self._exclude_flag_indices] == 1, axis=1)]
-            # remove the flag columns from x
-            x = np.delete(x, self._exclude_flag_indices, axis=1)
+        if x.shape[0] == 0:
+            # Every pulse was removed by `exclude_flags`. There is nothing
+            # to cluster, so return an empty node set rather than letting
+            # the time shift below fail on an empty array.
+            self.warning_once(
+                "All pulses of an event were excluded; returning an empty "
+                "node set. Consider relaxing `exclude_flags`."
+            )
+            return torch.zeros(
+                (0, len(self._output_feature_names)), dtype=torch.float64
+            )
         # Shift time to start at 0
         if self._time_idx is not None:
             x[:, self._time_idx] -= np.min(x[:, self._time_idx])
@@ -1141,5 +1256,5 @@ class NodesAsPulsesBundle(NodeDefinition):
                 graph[:, self.feature_indexes[feature]] = x[
                     :, self.feature_indexes[feature]
                 ]
-                
+
         return graph
