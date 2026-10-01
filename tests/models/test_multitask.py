@@ -294,6 +294,46 @@ def test_direction_tasks() -> None:
     assert torch.allclose(scaled[:, 3], plain[:, 3] + plain[:, 3] ** 2)
 
 
+def test_direction_task_with_kappa_output() -> None:
+    """With `kappa_output` the concentration is exp of a fourth input."""
+    task = DirectionReconstructionWithKappa(
+        hidden_size=5,
+        target_labels="direction",
+        loss_function=MSELoss(),
+        kappa_output=True,
+    )
+    assert task.nb_inputs == 4
+    x = torch.tensor([[3.0, 0.0, 4.0, 1.5], [0.0, -2.0, 0.0, -1.0]])
+    out = task._forward(x)
+    assert torch.allclose(out[:, :3].norm(dim=1), torch.ones(2))
+    assert torch.allclose(out[0, :3], torch.tensor([0.6, 0.0, 0.8]))
+    assert torch.allclose(out[:, 3], torch.exp(x[:, 3]))
+    assert task(torch.randn(6, 5)).shape == (6, 4)
+    with pytest.raises(AssertionError, match="scaling"):
+        DirectionReconstructionWithKappa(
+            hidden_size=5,
+            target_labels="direction",
+            loss_function=MSELoss(),
+            kappa_output=True,
+            scaling=True,
+        )
+
+
+def test_mlp_head_runs_in_float32_under_autocast() -> None:
+    """An MLP head is evaluated in float32 like the default linear head."""
+    task = EnergyReconstruction(
+        hidden_size=4,
+        target_labels="energy",
+        loss_function=MSELoss(),
+        head=[8],
+    )
+    x = torch.randn(8, 4)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        pred = task(x.bfloat16())
+    assert pred.dtype == torch.float32
+    assert torch.allclose(pred, task(x.bfloat16().float()))
+
+
 def test_identity_task_with_uncertainty() -> None:
     """Values pass through; scales are positive and start at one."""
     task = IdentityTaskWithUncertainty(
