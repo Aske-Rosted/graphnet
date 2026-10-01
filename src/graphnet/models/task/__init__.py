@@ -7,3 +7,4 @@ from .task import (
     StandardLearnedTask,
     StandardFlowTask,
 )
+from .heads import TaskHead, MLPHead
