@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     )  # noqa: E501 # type: ignore[attr-defined]
 
 from graphnet.models import Model
+from graphnet.models.task.heads import MLPHead, TaskHead
 from graphnet.utilities.decorators import final
 from graphnet.models.utils import get_fields
 from graphnet.utilities.imports import has_jammy_flows_package
@@ -253,6 +254,7 @@ class LearnedTask(Task):
         loss_function: "LossFunction",
         disable_affine: bool = False,
         detach_backbone: bool = False,
+        head: Optional[Union[List[int], TaskHead]] = None,
         **task_kwargs: Any,
     ):
         """Construct `LearnedTask`.
@@ -269,6 +271,11 @@ class LearnedTask(Task):
             detach_backbone: If True, the task input is detached, such that
                             this task's loss does not propagate gradients
                             into the model producing it.
+            head: Mapping from `hidden_size` to `nb_inputs` columns instead
+                  of the default single linear layer. Either a `TaskHead`
+                  (e.g. `MLPHead`), which the task builds with these sizes,
+                  or a list of hidden-layer widths as shorthand for
+                  `MLPHead(hidden_layers=head)` with default options.
         """
         # Base class constructor
         super().__init__(**task_kwargs)
@@ -277,7 +284,14 @@ class LearnedTask(Task):
         self._loss_function = loss_function
         self._disable_affine = disable_affine
         if self._disable_affine:
+            assert (
+                head is None
+            ), "`head` cannot be combined with `disable_affine`."
             self._affine: torch.nn.Module = Identity()
+        elif head is not None:
+            if not isinstance(head, TaskHead):
+                head = MLPHead(hidden_layers=list(head))
+            self._affine = head.build(hidden_size, self.nb_inputs)
         else:
             self._affine = Linear(hidden_size, self.nb_inputs)
         self._detach_backbone = detach_backbone
