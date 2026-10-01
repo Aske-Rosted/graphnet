@@ -73,20 +73,43 @@ class DirectionReconstructionWithKappa(StandardLearnedTask):
         "dir_z_pred",
         "direction_kappa",
     ]
-    nb_inputs = 3
 
-    def __init__(self, *args: Any, scaling: bool = False, **kwargs: Any):
+    def __init__(
+        self,
+        *args: Any,
+        scaling: bool = False,
+        kappa_output: bool = False,
+        **kwargs: Any,
+    ):
         """Construct `DirectionReconstructionWithKappa`.
 
         Args:
             scaling: If True, the predicted magnitude `k` is mapped to
                 `k + k**2`, widening its dynamic range for losses (such as
                 `spCauchyLoss`) that derive a concentration from it.
+            kappa_output: If True, the concentration has an output of its
+                own: the task takes four inputs, the direction is the
+                normalized first three and `k = exp(fourth)`. Otherwise `k`
+                is the norm of the three direction inputs, which couples
+                the predicted confidence to the direction output.
         """
+        assert not (
+            scaling and kappa_output
+        ), "`scaling` only applies to a kappa taken from the norm."
         self._scaling = scaling
+        self._kappa_output = kappa_output
         super().__init__(*args, **kwargs)
 
+    @property
+    def nb_inputs(self) -> int:
+        """Return number of inputs assumed by task."""
+        return 4 if self._kappa_output else 3
+
     def _forward(self, x: Tensor) -> Tensor:
+        if self._kappa_output:
+            direction = torch.nn.functional.normalize(x[:, :3], dim=1)
+            kappa = torch.exp(x[:, 3].clamp(min=-20.0, max=20.0))
+            return torch.cat([direction, kappa.unsqueeze(1)], dim=1)
         # Transform outputs to angle and prepare prediction
         kappa = torch.linalg.vector_norm(x, dim=1) + eps_like(x)
         vec_x = x[:, 0] / kappa
