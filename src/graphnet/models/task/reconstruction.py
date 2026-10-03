@@ -79,6 +79,7 @@ class DirectionReconstructionWithKappa(StandardLearnedTask):
         *args: Any,
         scaling: bool = False,
         kappa_output: bool = False,
+        shape_output: bool = False,
         **kwargs: Any,
     ):
         """Construct `DirectionReconstructionWithKappa`.
@@ -92,24 +93,45 @@ class DirectionReconstructionWithKappa(StandardLearnedTask):
                 normalized first three and `k = exp(fourth)`. Otherwise `k`
                 is the norm of the three direction inputs, which couples
                 the predicted confidence to the direction output.
+            shape_output: If True (requires `kappa_output`), a fifth output
+                gives a tail index `gamma = 1 + exp(fifth)` in
+                [1.1, 31], e.g. for `KingLoss`. A zero output gives
+                `gamma = 2`, the spherical Cauchy.
         """
         assert not (
             scaling and kappa_output
         ), "`scaling` only applies to a kappa taken from the norm."
+        assert (
+            kappa_output or not shape_output
+        ), "`shape_output` requires `kappa_output`."
         self._scaling = scaling
         self._kappa_output = kappa_output
+        self._shape_output = shape_output
+        if shape_output:
+            self.default_prediction_labels = self.default_prediction_labels + [
+                "direction_gamma"
+            ]
         super().__init__(*args, **kwargs)
 
     @property
     def nb_inputs(self) -> int:
         """Return number of inputs assumed by task."""
-        return 4 if self._kappa_output else 3
+        if self._kappa_output:
+            return 5 if self._shape_output else 4
+        return 3
 
     def _forward(self, x: Tensor) -> Tensor:
         if self._kappa_output:
             direction = torch.nn.functional.normalize(x[:, :3], dim=1)
             kappa = torch.exp(x[:, 3].clamp(min=-20.0, max=20.0))
-            return torch.cat([direction, kappa.unsqueeze(1)], dim=1)
+            outputs = [direction, kappa.unsqueeze(1)]
+            if self._shape_output:
+                # gamma - 1 in [0.1, 30]
+                gamma = 1 + torch.exp(
+                    x[:, 4].clamp(min=np.log(0.1), max=np.log(30.0))
+                )
+                outputs.append(gamma.unsqueeze(1))
+            return torch.cat(outputs, dim=1)
         # Transform outputs to angle and prepare prediction
         kappa = torch.linalg.vector_norm(x, dim=1) + eps_like(x)
         vec_x = x[:, 0] / kappa

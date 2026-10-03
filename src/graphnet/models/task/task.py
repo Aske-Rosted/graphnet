@@ -456,7 +456,9 @@ class IdentityTaskWithUncertainty(IdentityTask):
     The task returns `nb_outputs` values followed by `nb_outputs` scales
     (uncertainties), e.g. for the heteroscedastic term of `CauchyLoss`. The
     scale is the exponential of the raw output, so that the raw output is
-    the log-scale and the scale starts out of order one.
+    the log-scale and the scale starts out of order one. With
+    `shape_output`, `nb_outputs` shape parameters follow, e.g. the degrees
+    of freedom of `StudentTLoss`.
     """
 
     def __init__(
@@ -464,25 +466,42 @@ class IdentityTaskWithUncertainty(IdentityTask):
         nb_outputs: int,
         target_labels: Union[List[str], Any],
         *args: Any,
+        shape_output: bool = False,
         **kwargs: Any,
     ):
         """Construct IdentityTaskWithUncertainty.
 
         Args:
             nb_outputs: Number of predicted values; the task has twice as
-                many outputs.
+                many outputs (three times with `shape_output`).
             target_labels: Target label(s).
+            shape_output: If True, also predict a shape parameter per value,
+                `nu = exp(raw output)` in [0.25, 100]. A zero output gives
+                `nu = 1` (Cauchy for `StudentTLoss`).
         """
-        super().__init__(2 * nb_outputs, target_labels, *args, **kwargs)
+        n_blocks = 3 if shape_output else 2
+        super().__init__(n_blocks * nb_outputs, target_labels, *args, **kwargs)
         self._nb_values = nb_outputs
+        self._shape_output = shape_output
         self._default_prediction_labels = [
             f"target_{i}_pred" for i in range(nb_outputs)
         ] + [f"target_{i}_scale" for i in range(nb_outputs)]
+        if shape_output:
+            self._default_prediction_labels += [
+                f"target_{i}_shape" for i in range(nb_outputs)
+            ]
 
     def _forward(self, x: Union[Tensor, Data]) -> Tensor:  # type: ignore
-        values = x[:, : self._nb_values]
-        log_scale = x[:, self._nb_values :].clamp(min=-20.0, max=20.0)
-        return torch.cat([values, torch.exp(log_scale)], dim=1)
+        n = self._nb_values
+        values = x[:, :n]
+        log_scale = x[:, n : 2 * n].clamp(min=-20.0, max=20.0)
+        outputs = [values, torch.exp(log_scale)]
+        if self._shape_output:
+            log_shape = x[:, 2 * n :].clamp(
+                min=np.log(0.25), max=np.log(100.0)
+            )
+            outputs.append(torch.exp(log_shape))
+        return torch.cat(outputs, dim=1)
 
 
 class StandardFlowTask(Task):
