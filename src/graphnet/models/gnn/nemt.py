@@ -164,12 +164,15 @@ class NeutrinoEventMultitaskTransformer(GNN):
 
         head_dim = hidden_dim // num_heads
         if n_rel > 0:
+            # without the sinusoidal embedding the raw four-distance is
+            # projected unclipped
             self.rel_pos = SpacetimeEncoder(
                 head_dim,
-                apply_sin_emb=embed_bias,
-                out_dim=head_dim,
-                time_index=spacetime_time_index,
+                output_dim=head_dim,
+                columns=(0, 1, 2, spacetime_time_index),
                 time_scale=spacetime_time_scale,
+                clip=4.0 if embed_bias else None,
+                apply_sin_emb=embed_bias,
             )
 
         self.task_out: Optional[nn.Module] = None

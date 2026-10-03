@@ -90,10 +90,11 @@ def test_spacetime_encoder_uses_configured_time_column() -> None:
 
     encoder = SpacetimeEncoder(
         seq_length=2,
-        out_dim=1,
-        apply_sin_emb=False,
-        time_index=4,
+        output_dim=1,
+        columns=(0, 1, 2, 4),
         time_scale=0.6,
+        clip=None,
+        apply_sin_emb=False,
     )
     with torch.no_grad():
         encoder.projection.weight.fill_(1.0)
@@ -121,3 +122,18 @@ def test_closed_gate_leaves_tokens_unchanged() -> None:
 class _RandomBlock(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.randn_like(x) * 100
+
+
+def test_spacetime_encoder_with_sinusoid_matches_epjc() -> None:
+    """With the EPJ-C constants the sinusoidal path equals the EPJ-C one."""
+    from graphnet.models.components.embedding import (
+        SpacetimeEncoder,
+        SpacetimeEncoderEPJC,
+    )
+
+    torch.manual_seed(0)
+    reference = SpacetimeEncoderEPJC(seq_length=8)
+    encoder = SpacetimeEncoder(seq_length=8, time_scale=3e4 / 500 * 3e-1)
+    encoder.load_state_dict(reference.state_dict())
+    x = torch.randn(2, 5, 4) * 0.01
+    assert torch.allclose(encoder(x), reference(x))
