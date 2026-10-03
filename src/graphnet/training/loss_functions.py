@@ -1212,3 +1212,163 @@ class spCauchyLoss(LossFunction):
             2.0 * k * (1.0 + k) * one_minus_dot
         )
         return -(dim - 1) * log_density
+
+
+class KingLoss(LossFunction):
+    """Negative log-likelihood of a King profile on the unit sphere.
+
+    The King profile (King 1962), `(1 + x**2 / (2 * gamma * sigma**2))**-gamma`
+    in the angular distance `x`, is the usual model of the point-spread
+    function of gamma-ray and neutrino telescopes (e.g. Fermi-LAT). Its tail
+    index `gamma > 1` interpolates between a heavy power-law tail
+    (`gamma -> 1`) and a Gaussian of width `sigma` (`gamma -> inf`). On the
+    unit sphere in three dimensions the loss uses the exact form
+
+        f(x | mu) = (1 + c * (1 - mu . x))**-gamma / Z,
+        Z = 2 * pi * (1 - (1 + 2c)**(1 - gamma)) / (c * (gamma - 1)),
+
+    with `c = 1 / (gamma * sigma**2)`, which has the King profile as its
+    small-angle limit and is normalized for every `gamma > 1`.
+
+    The core width is given by a magnitude `k >= 0`, the parameter of the
+    spherical Cauchy distribution with concentration `rho = k / (1 + k)`
+    (Kato & McCullagh 2020): `sigma**2 = 1 / (4 k (1 + k))`. For
+    `gamma = 2` the loss is exactly the spherical Cauchy negative
+    log-likelihood with that concentration, and for `gamma -> inf` it tends
+    to the von Mises-Fisher loss with `kappa = 4 k (1 + k)`.
+
+    `1 - mu . x` is computed from the chord between the unit vectors, which
+    stays accurate in single precision at sub-degree angles.
+    """
+
+    def __init__(
+        self, gamma: Optional[float] = None, eps: float = 1e-6, **kwargs: Any
+    ) -> None:
+        """Construct `KingLoss`.
+
+        Args:
+            gamma: Fixed tail index (> 1). If None (default), the tail index
+                is predicted per event (last column of the prediction).
+            eps: Lower bound on `gamma - 1`, which keeps the
+                normalization finite.
+        """
+        super().__init__(**kwargs)
+        assert gamma is None or gamma > 1, "`gamma` must be larger than 1."
+        self._gamma = gamma
+        self._eps = eps
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        """Calculate the King loss for a direction in 3D.
+
+        Args:
+            prediction: Output of the model, of shape [N, 5] with the
+                direction in columns 0-2, the magnitude `k` in column 3 and
+                the tail index `gamma` in column 4; [N, 4] (no `gamma`) for
+                a fixed tail index.
+            target: Target unit vectors, of shape [N, 3].
+
+        Returns:
+            Elementwise loss terms, of shape [N,].
+        """
+        assert prediction.dim() == 2
+        assert target.dim() == 2 and target.size(1) == 3
+        # at least single precision (e.g. under bf16 autocast)
+        dtype = torch.promote_types(prediction.dtype, torch.float32)
+        prediction, target = prediction.to(dtype), target.to(dtype)
+        mu = prediction[:, :3]
+        k = prediction[:, 3].clamp(min=0)
+        if self._gamma is None:
+            assert prediction.size(1) == 5, "Expected [direction, k, gamma]."
+            gamma = prediction[:, 4].clamp(min=1 + self._eps)
+        else:
+            assert prediction.size(1) == 4, "Expected [direction, k]."
+            gamma = torch.full_like(k, self._gamma)
+
+        # c > 0: the normalization tends to 4 pi (uniform) as c -> 0
+        c = (4 * k * (1 + k) / gamma).clamp(min=1e-12)
+        one_minus_dot = 0.5 * ((mu - target) ** 2).sum(dim=-1)
+        # log Z, with 1 - (1 + 2c)**(1 - gamma) = -expm1((1 - gamma) L)
+        log_norm = (
+            np.log(2 * np.pi)
+            + torch.log(-torch.expm1((1 - gamma) * torch.log1p(2 * c)))
+            - torch.log(c)
+            - torch.log(gamma - 1)
+        )
+        return gamma * torch.log1p(c * one_minus_dot) + log_norm
+
+
+class StudentTLoss(LossFunction):
+    """Negative log-likelihood of a Student-t distribution.
+
+    For a residual `r = prediction - target` with scale `s` and `nu`
+    degrees of freedom,
+
+        -log f = log(s) + (nu + 1) / 2 * log(1 + r**2 / (nu s**2))
+                 + log Gamma(nu / 2) - log Gamma((nu + 1) / 2)
+                 + log(nu * pi) / 2.
+
+    `nu = 1` is the Cauchy distribution and `nu -> inf` the normal
+    distribution; in between the tail falls like `|r|**-(nu + 1)`. The scale
+    and, optionally, `nu` are predicted per element. With several target
+    columns the loss is the mean over the columns.
+    """
+
+    def __init__(
+        self, nu: Optional[float] = None, eps: float = 1e-6, **kwargs: Any
+    ) -> None:
+        """Construct `StudentTLoss`.
+
+        Args:
+            nu: Fixed degrees of freedom (> 0). If None (default), they are
+                predicted per element (last block of the prediction).
+            eps: Lower bound on the scale and on `nu`.
+        """
+        super().__init__(**kwargs)
+        assert nu is None or nu > 0, "`nu` must be positive."
+        self._nu = nu
+        self._eps = eps
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        """Calculate the Student-t loss.
+
+        Args:
+            prediction: Output of the model, of shape [N, 3T] for `T` target
+                columns: values, scales and degrees of freedom (in blocks of
+                `T` columns); [N, 2T] (no degrees of freedom) for a fixed
+                `nu`.
+            target: Targets, of shape [N, T].
+
+        Returns:
+            Elementwise loss terms, of shape [N,].
+        """
+        assert prediction.dim() == 2
+        if target.dim() == 1:
+            target = target.unsqueeze(1)
+        n = target.size(1)
+        # at least single precision (e.g. under bf16 autocast)
+        dtype = torch.promote_types(prediction.dtype, torch.float32)
+        prediction, target = prediction.to(dtype), target.to(dtype)
+        value = prediction[:, :n]
+        scale = prediction[:, n : 2 * n].clamp(min=self._eps)
+        if self._nu is None:
+            assert prediction.size(1) == 3 * n, (
+                f"Expected {3 * n} columns (values, scales, nu), got "
+                f"{prediction.size(1)}."
+            )
+            nu = prediction[:, 2 * n :].clamp(min=self._eps)
+        else:
+            assert prediction.size(1) == 2 * n, (
+                f"Expected {2 * n} columns (values, scales), got "
+                f"{prediction.size(1)}."
+            )
+            nu = torch.full_like(scale, self._nu)
+
+        z2 = ((value - target) / scale) ** 2
+        elements = (
+            torch.log(scale)
+            + (nu + 1) / 2 * torch.log1p(z2 / nu)
+            + torch.lgamma(nu / 2)
+            - torch.lgamma((nu + 1) / 2)
+            + 0.5 * torch.log(nu * np.pi)
+        )
+        return elements.mean(dim=-1)
