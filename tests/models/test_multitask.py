@@ -454,3 +454,56 @@ def test_famo_updates_during_training(update_on: str) -> None:
     trainer.fit(model, loader)
     assert int(famo._adam_step) >= 3
     assert not torch.allclose(famo.weights(), torch.full((3,), 1 / 3))
+
+
+def test_direction_task_with_shape_output() -> None:
+    """With `shape_output` a fifth input gives the tail index gamma."""
+    task = DirectionReconstructionWithKappa(
+        hidden_size=5,
+        target_labels="direction",
+        loss_function=MSELoss(),
+        kappa_output=True,
+        shape_output=True,
+    )
+    assert task.nb_inputs == 5
+    assert task.default_prediction_labels[-1] == "direction_gamma"
+    assert len(task._prediction_labels) == 5
+    x = torch.tensor(
+        [[3.0, 0.0, 4.0, 1.5, 0.0], [0.0, -2.0, 0.0, -1.0, 100.0]]
+    )
+    out = task._forward(x)
+    assert torch.allclose(out[0, :3], torch.tensor([0.6, 0.0, 0.8]))
+    assert torch.allclose(out[:, 3], torch.exp(x[:, 3]))
+    # zero output: spherical Cauchy; large outputs are clamped
+    assert torch.allclose(out[:, 4], torch.tensor([2.0, 31.0]))
+    assert out[:, 4].min() >= 1.1 - 1e-6
+    assert task(torch.randn(6, 5)).shape == (6, 5)
+    with pytest.raises(AssertionError, match="kappa_output"):
+        DirectionReconstructionWithKappa(
+            hidden_size=5,
+            target_labels="direction",
+            loss_function=MSELoss(),
+            shape_output=True,
+        )
+
+
+def test_identity_task_with_uncertainty_and_shape() -> None:
+    """With `shape_output` a positive shape per value follows the scales."""
+    task = IdentityTaskWithUncertainty(
+        nb_outputs=2,
+        target_labels=["a", "b"],
+        hidden_size=4,
+        loss_function=MSELoss(),
+        shape_output=True,
+    )
+    assert task.nb_inputs == 6
+    assert task.default_prediction_labels[4:] == [
+        "target_0_shape",
+        "target_1_shape",
+    ]
+    x = torch.tensor([[1.0, -2.0, 0.0, -1.0, 0.0, -50.0]])
+    out = task._forward(x)
+    assert torch.allclose(out[:, :2], x[:, :2])
+    assert torch.allclose(out[:, 2:4], torch.exp(x[:, 2:4]))
+    # zero output: nu = 1 (Cauchy); clamped at 0.25
+    assert torch.allclose(out[:, 4:], torch.tensor([[1.0, 0.25]]))
