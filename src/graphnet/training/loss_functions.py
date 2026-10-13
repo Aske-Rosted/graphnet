@@ -247,10 +247,23 @@ class CrossEntropyLoss(LossFunction):
         return self._loss(prediction.float(), target_one_hot.float())
 
 
+def _binary_entropy(q: float) -> float:
+    """Return the entropy (nats) of a Bernoulli variable with mean `q`."""
+    if q <= 0.0 or q >= 1.0:
+        return 0.0
+    return float(-q * np.log(q) - (1 - q) * np.log1p(-q))
+
+
 class BinaryCrossEntropyLoss(LossFunction):
     """Compute binary cross entropy loss."""
 
-    def __init__(self, from_logits: bool = False, *args: Any, **kwargs: Any):
+    def __init__(
+        self,
+        from_logits: bool = False,
+        label_smoothing: float = 0.0,
+        *args: Any,
+        **kwargs: Any,
+    ):
         """Construct BinaryCrossEntropyLoss.
 
         Args:
@@ -259,23 +272,39 @@ class BinaryCrossEntropyLoss(LossFunction):
                 (i.e., not passed through a sigmoid function). If False, the
                 predictions are expected to be probabilities
                 (i.e., passed through a sigmoid function).
+            label_smoothing: Smoothing `eps` in [0, 1): the targets 0 / 1 are
+                replaced by `eps / 2` / `1 - eps / 2`. The loss is then
+                smallest at a finite logit, `log((2 - eps) / eps)`, so correct
+                predictions stop being pushed to ever larger logits.
         """
+        assert (
+            0.0 <= label_smoothing < 1.0
+        ), "label_smoothing must be in [0, 1)."
         super().__init__(*args, **kwargs)
         self._from_logits = from_logits
+        self._label_smoothing = label_smoothing
 
     @property
     def lower_bound(self) -> float:
-        """Return 0; the loss is non-negative."""
-        return 0.0
+        """Return the entropy of the smoothed targets (0 without smoothing).
+
+        A target `q` gives a cross entropy of at least `H(q)`, reached at
+        prediction `q`; both smoothed targets have `H(eps / 2)`.
+        """
+        return _binary_entropy(self._label_smoothing / 2)
+
+    def _smooth(self, target: Tensor) -> Tensor:
+        return target * (1 - self._label_smoothing) + self._label_smoothing / 2
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        target = self._smooth(target.float())
         if self._from_logits:
             return binary_cross_entropy_with_logits(
-                prediction.float(), target.float(), reduction="none"
+                prediction.float(), target, reduction="none"
             )
         else:
             return binary_cross_entropy(
-                prediction.float(), target.float(), reduction="none"
+                prediction.float(), target, reduction="none"
             )
 
 
@@ -292,6 +321,7 @@ class FocalBinaryCrossEntropyLoss(BinaryCrossEntropyLoss):
         gamma: float = 2.0,
         alpha: float = 0.25,
         from_logits: bool = False,
+        label_smoothing: float = 0.0,
         *args: Any,
         **kwargs: Any,
     ):
@@ -304,12 +334,29 @@ class FocalBinaryCrossEntropyLoss(BinaryCrossEntropyLoss):
                 weighted by `1 - alpha`.
             from_logits: Whether the predictions are logits (raw scores)
                 rather than probabilities.
+            label_smoothing: Smoothing of the targets in the cross entropy,
+                see `BinaryCrossEntropyLoss`; `alpha` and the focusing term
+                use the hard labels.
         """
-        super().__init__(from_logits, *args, **kwargs)
+        super().__init__(from_logits, label_smoothing, *args, **kwargs)
         self._gamma = gamma
         self._alpha = alpha
 
+    @property
+    def lower_bound(self) -> float:
+        """Return a lower bound of the mean loss.
+
+        For `gamma = 0` each event's loss is at least `alpha_t * H(eps / 2)`,
+        so the mean is at least `min(alpha, 1 - alpha) * H(eps / 2)` (exact
+        for `alpha = 0.5`). For `gamma > 0` the bound is 0.
+        """
+        if self._gamma != 0:
+            return 0.0
+        return min(self._alpha, 1 - self._alpha) * super().lower_bound
+
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        # smoothed targets in the cross entropy, the hard labels in the class
+        # weight and the focusing term
         bce = super()._forward(prediction, target)
         probability = prediction.float()
         if self._from_logits:

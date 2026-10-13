@@ -869,3 +869,83 @@ def test_cauchy_fixed_alpha_reports_residual_scales() -> None:
     # The estimate is a diagnostic only: alpha and the bound are unchanged
     assert loss.alpha == 0.3
     assert np.isclose(loss.lower_bound, bound)
+
+
+@pytest.mark.parametrize("from_logits", [True, False])
+def test_bce_label_smoothing_uses_smoothed_targets(from_logits: bool) -> None:
+    """Smoothing `eps` is BCE against targets `eps / 2` and `1 - eps / 2`."""
+    torch.manual_seed(0)
+    logits = torch.randn(64, 1)
+    prediction = logits if from_logits else torch.sigmoid(logits)
+    target = torch.randint(0, 2, (64, 1)).float()
+    eps = 0.1
+    smoothed = BinaryCrossEntropyLoss(
+        from_logits=from_logits, label_smoothing=eps
+    )
+    plain = BinaryCrossEntropyLoss(from_logits=from_logits)
+    soft_target = target * (1 - eps) + eps / 2
+    assert torch.allclose(
+        smoothed(prediction, target, return_elements=True),
+        plain(prediction, soft_target, return_elements=True),
+        atol=1e-6,
+    )
+
+
+@pytest.mark.parametrize("eps", [0.0, 0.03, 0.2])
+def test_bce_label_smoothing_lower_bound_is_the_minimum(eps: float) -> None:
+    """The lower bound is the smallest loss, at logit log((2 - eps) / eps)."""
+    loss = BinaryCrossEntropyLoss(from_logits=True, label_smoothing=eps)
+    logits = torch.linspace(-30, 30, 600001).unsqueeze(1)
+    for label in (0.0, 1.0):
+        values = loss(
+            logits, torch.full_like(logits, label), return_elements=True
+        )
+        assert values.min().item() == pytest.approx(loss.lower_bound, abs=1e-6)
+        if eps > 0:
+            best = logits[values.argmin()].item()
+            sign = 1 if label else -1
+            # the loss is evaluated in float32: flat to ~1e-7 within ~5e-3
+            assert best == pytest.approx(
+                sign * np.log((2 - eps) / eps), abs=1e-2
+            )
+
+
+def test_focal_bce_label_smoothing_weights_with_hard_labels() -> None:
+    """With smoothing, alpha is applied by the hard label."""
+    torch.manual_seed(0)
+    logits = torch.randn(64, 1)
+    target = torch.randint(0, 2, (64, 1)).float()
+    alpha, eps = 0.3, 0.05
+    focal = FocalBinaryCrossEntropyLoss(
+        gamma=0.0, alpha=alpha, from_logits=True, label_smoothing=eps
+    )
+    bce = BinaryCrossEntropyLoss(from_logits=True, label_smoothing=eps)
+    alpha_t = alpha * target + (1 - alpha) * (1 - target)
+    assert torch.allclose(
+        focal(logits, target, return_elements=True),
+        alpha_t * bce(logits, target, return_elements=True),
+        atol=1e-6,
+    )
+
+
+@pytest.mark.parametrize("alpha", [0.5, 0.9])
+def test_focal_bce_label_smoothing_lower_bound(alpha: float) -> None:
+    """The bound is min(alpha, 1 - alpha) H(eps / 2) for gamma 0, else 0."""
+    eps = 0.03
+    focal = FocalBinaryCrossEntropyLoss(
+        gamma=0.0, alpha=alpha, from_logits=True, label_smoothing=eps
+    )
+    q = eps / 2
+    entropy = -q * np.log(q) - (1 - q) * np.log(1 - q)
+    assert focal.lower_bound == pytest.approx(min(alpha, 1 - alpha) * entropy)
+    # reached for alpha = 0.5 by the optimal logits of a mixed batch
+    if alpha == 0.5:
+        target = torch.tensor([[1.0], [0.0], [1.0]])
+        best = np.log((2 - eps) / eps)
+        logits = (2 * target - 1) * best
+        assert focal(logits, target).item() == pytest.approx(
+            focal.lower_bound, rel=1e-5
+        )
+    assert FocalBinaryCrossEntropyLoss(
+        gamma=2.0, alpha=alpha, label_smoothing=eps
+    ).lower_bound == pytest.approx(0.0)
