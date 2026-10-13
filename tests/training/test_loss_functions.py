@@ -949,3 +949,89 @@ def test_focal_bce_label_smoothing_lower_bound(alpha: float) -> None:
     assert FocalBinaryCrossEntropyLoss(
         gamma=2.0, alpha=alpha, label_smoothing=eps
     ).lower_bound == pytest.approx(0.0)
+
+
+def _unit_vectors(n: int, seed: int = 0) -> Tensor:
+    generator = torch.Generator().manual_seed(seed)
+    v = torch.randn(n, 3, generator=generator, dtype=torch.float64)
+    return v / v.norm(dim=1, keepdim=True)
+
+
+def test_spcauchy_knots_with_equal_rho_match_fixed_rho() -> None:
+    """Equal concentrations at all knots give the fixed-rho loss - its bound."""
+    prediction, target = _unit_vectors(50, 0), _unit_vectors(50, 1)
+    trackness = torch.rand(50, 1, dtype=torch.float64)
+    fixed = spCauchyLoss(rho=0.97)
+    knots = spCauchyLoss(rho=[0.97, 0.97, 0.97], rho_knots=[0.0, 0.5, 1.0])
+    expected = fixed(prediction, target, return_elements=True)
+    expected = expected - fixed.lower_bound
+    got = knots(
+        prediction,
+        torch.cat([target, trackness], dim=1),
+        return_elements=True,
+    )
+    assert torch.allclose(got.double(), expected.double(), atol=1e-5)
+
+
+def test_spcauchy_knots_interpolate_log_alpha() -> None:
+    """At a knot the knot's scale is used, between knots log(alpha) is
+    lerped."""
+    rho, knots = [0.93, 0.98, 0.994], [0.0, 0.9, 1.0]
+    loss = spCauchyLoss(rho=rho, rho_knots=knots)
+    alphas = loss.alphas
+    prediction = _unit_vectors(4, 2)
+    target = _unit_vectors(4, 3)
+    trackness = torch.tensor(
+        [[-1.0], [0.9], [0.95], [2.0]], dtype=torch.float64
+    )
+    got = loss(
+        prediction, torch.cat([target, trackness], 1), return_elements=True
+    )
+    u = 0.5 * ((prediction - target) ** 2).sum(1)
+    expected_alpha = torch.tensor(
+        [
+            alphas[0],  # clamped below the first knot
+            alphas[1],
+            np.sqrt(alphas[1] * alphas[2]),  # midway in log(alpha)
+            alphas[2],  # clamped above the last knot
+        ],
+        dtype=torch.float64,
+    )
+    expected = 2 * torch.log1p(2 * u / expected_alpha**2)
+    assert torch.allclose(got.double(), expected, rtol=1e-5)
+
+
+def test_spcauchy_knots_bound_is_zero_and_reached() -> None:
+    """The loss is non-negative and 0 for exact predictions."""
+    loss = spCauchyLoss(rho=[0.93, 0.994], rho_knots=[0.0, 1.0])
+    assert loss.lower_bound == 0.0
+    target = _unit_vectors(20, 4)
+    trackness = torch.rand(20, 1, dtype=torch.float64)
+    full_target = torch.cat([target, trackness], 1)
+    assert loss(target, full_target, return_elements=True).abs().max() < 1e-6
+    elements = loss(_unit_vectors(20, 5), full_target, return_elements=True)
+    assert (elements >= 0).all()
+
+
+def test_spcauchy_knots_alpha_setter() -> None:
+    """`alphas` is one value per knot; a scalar sets all knots (annealing)."""
+    loss = spCauchyLoss(rho=[0.93, 0.994], rho_knots=[0.0, 1.0])
+    alphas = loss.alphas
+    assert len(alphas) == 2
+    with pytest.raises(AttributeError):
+        loss.alpha
+    loss._alpha = 0.1  # as set by the annealing callback
+    assert loss._alpha == pytest.approx([0.1, 0.1])
+    loss._alpha = np.asarray(alphas)
+    assert loss._rho_values == pytest.approx([0.93, 0.994])
+
+
+def test_spcauchy_knots_need_the_property_column() -> None:
+    """A target without the extra column is rejected."""
+    loss = spCauchyLoss(rho=[0.93, 0.994], rho_knots=[0.0, 1.0])
+    with pytest.raises(AssertionError):
+        loss(_unit_vectors(3, 6), _unit_vectors(3, 7))
+    with pytest.raises(AssertionError):
+        spCauchyLoss(rho=[0.93, 0.994])
+    with pytest.raises(AssertionError):
+        spCauchyLoss(rho=0.9, rho_knots=[0.0])
