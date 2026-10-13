@@ -5,7 +5,7 @@ handles per-event weights, etc.
 """
 
 from abc import abstractmethod
-from typing import Any, Optional, Union, List, Dict
+from typing import Any, Optional, Union, List, Dict, Sequence
 
 import numpy as np
 import scipy.special
@@ -1133,23 +1133,57 @@ class spCauchyLoss(LossFunction):
     and the loss is, up to a constant, the rotation-invariant Cauchy loss
     `(d - 1) * log(1 + |mu - x|**2 / alpha**2)` of the chord between
     prediction and target, with `alpha**2 = (1 - rho)**2 / rho`.
+
+    The fixed concentration can also depend on a property of each event, e.g.
+    its true trackness, when the resolution differs strongly between event
+    classes: `rho` is then a list of values at the points `rho_knots`, and
+    the target holds that property as an extra last column. The scale
+    `alpha` is interpolated piecewise linearly in `log(alpha)` between the
+    knots (constant beyond them). The loss is then the Cauchy loss above,
+    `(d - 1) * log(1 + |mu - x|**2 / alpha**2)`: every event's loss is 0
+    for an exact prediction, so the lower bound stays 0 although the
+    density at the peak differs between events.
     """
 
     def __init__(
-        self, rho: Optional[float] = None, dim: int = 3, **kwargs: Any
+        self,
+        rho: Optional[Union[float, Sequence[float]]] = None,
+        dim: int = 3,
+        rho_knots: Optional[Sequence[float]] = None,
+        **kwargs: Any,
     ) -> None:
         """Construct spCauchyLoss.
 
         Args:
             rho: Fixed concentration in `[0, 1)`. If None (default), the
                 concentration is predicted per event (last column of the
-                prediction).
+                prediction). A list gives the concentration at each of
+                `rho_knots`.
             dim: Dimension `d` of the vectors; only used for the lower
                 bound of the loss with a fixed `rho`.
+            rho_knots: Increasing values of the event property (the last
+                target column) at which `rho` is given; required for, and
+                only used with, a list `rho`.
         """
         super().__init__(**kwargs)
-        assert rho is None or 0 <= rho < 1, "`rho` must be in [0, 1)."
-        self._rho = rho
+        self._rho: Optional[float] = None
+        # concentrations at the knots, if given as a list
+        self._rho_values: Optional[List[float]] = None
+        self._rho_knots: Optional[List[float]] = None
+        if isinstance(rho, (int, float)) or rho is None:
+            assert rho_knots is None, "`rho_knots` needs a list `rho`."
+            assert rho is None or 0 <= rho < 1, "`rho` must be in [0, 1)."
+            self._rho = None if rho is None else float(rho)
+        else:
+            assert rho_knots is not None and len(rho_knots) == len(
+                rho
+            ), "A list `rho` needs `rho_knots` of the same length."
+            assert np.all(
+                np.diff(rho_knots) > 0
+            ), "`rho_knots` must be increasing."
+            assert all(0 < r < 1 for r in rho), "`rho` must be in (0, 1)."
+            self._rho_values = [float(r) for r in rho]
+            self._rho_knots = [float(x) for x in rho_knots]
         self._dim = dim
 
     @property
@@ -1159,29 +1193,72 @@ class spCauchyLoss(LossFunction):
         `alpha**2 = (1 - rho)**2 / rho` for a fixed `rho`, approximately the
         angular scale in radians. Setting it changes `rho`, e.g. to anneal
         the loss from a wide to a narrow scale. Not available for a
-        predicted concentration.
+        predicted concentration or a `rho` given at knots (see `alphas`).
         """
         if self._rho is None:
-            raise AttributeError("The concentration is predicted.")
-        return float((1 - self._rho) / np.sqrt(self._rho))
+            raise AttributeError("No single fixed concentration.")
+        return self._alpha_from_rho(self._rho)
 
     @alpha.setter
     def alpha(self, alpha: float) -> None:
         if self._rho is None:
-            raise AttributeError("The concentration is predicted.")
+            raise AttributeError("No single fixed concentration.")
+        self._rho = self._rho_from_alpha(alpha)
+
+    @property
+    def alphas(self) -> List[float]:
+        """Return the scale at each knot, for a `rho` given at `rho_knots`.
+
+        Setting a list changes the concentration at each knot; a single
+        value sets all knots.
+        """
+        if self._rho_values is None:
+            raise AttributeError("The concentration is not given at knots.")
+        return [self._alpha_from_rho(r) for r in self._rho_values]
+
+    @alphas.setter
+    def alphas(self, alphas: Union[float, Sequence[float]]) -> None:
+        if self._rho_knots is None:
+            raise AttributeError("The concentration is not given at knots.")
+        values = np.broadcast_to(
+            np.asarray(alphas, dtype=float), (len(self._rho_knots),)
+        )
+        self._rho_values = [self._rho_from_alpha(float(a)) for a in values]
+
+    @staticmethod
+    def _alpha_from_rho(rho: float) -> float:
+        return float((1 - rho) / np.sqrt(rho))
+
+    @staticmethod
+    def _rho_from_alpha(alpha: float) -> float:
         # k (1 + k) = 1 / alpha^2 with k = rho / (1 - rho)
         k = 0.5 * (np.sqrt(1 + 4 / alpha**2) - 1)
-        self._rho = float(k / (1 + k))
+        return float(k / (1 + k))
 
-    # Same attribute name as the scale of `CauchyLoss`.
-    _alpha = alpha
+    # Same attribute name as the scale of `CauchyLoss` (e.g. for annealing):
+    # `alpha`, or `alphas` for a `rho` given at knots.
+    @property
+    def _alpha(self) -> Union[float, List[float]]:
+        if self._rho_values is not None:
+            return self.alphas
+        return self.alpha
+
+    @_alpha.setter
+    def _alpha(self, alpha: Union[float, Sequence[float]]) -> None:
+        if self._rho_values is not None:
+            self.alphas = alpha
+        else:
+            self.alpha = float(np.asarray(alpha))
 
     @property
     def lower_bound(self) -> Optional[float]:
         """Return the loss of an exact prediction for a fixed `rho`.
 
-        With a predicted concentration the loss is unbounded.
+        0 for a `rho` given at `rho_knots`; with a predicted concentration
+        the loss is unbounded.
         """
+        if self._rho_values is not None:
+            return 0.0
         if self._rho is None:
             return None
         k = self._rho / (1 - self._rho)
@@ -1193,6 +1270,8 @@ class spCauchyLoss(LossFunction):
         assert prediction.size(0) == target.size(0)
 
         prediction = prediction.float()
+        if self._rho_knots is not None:
+            return self._forward_with_knots(prediction, target)
         if self._rho is None:
             # Last column is the magnitude setting the concentration rho.
             dim = prediction.size(1) - 1
@@ -1212,3 +1291,24 @@ class spCauchyLoss(LossFunction):
             2.0 * k * (1.0 + k) * one_minus_dot
         )
         return -(dim - 1) * log_density
+
+    def _forward_with_knots(
+        self, prediction: Tensor, target: Tensor
+    ) -> Tensor:
+        dim = prediction.size(1)
+        assert dim == self._dim
+        assert (
+            target.size(1) == dim + 1
+        ), "The last target column must hold the property at `rho_knots`."
+        assert self._rho_knots is not None
+        knots = prediction.new_tensor(self._rho_knots)
+        log_alpha = prediction.new_tensor(np.log(self.alphas))
+        x = target[:, dim].float().clamp(knots[0], knots[-1])
+        i = torch.searchsorted(knots, x, right=True).clamp(1, len(knots) - 1)
+        w = (x - knots[i - 1]) / (knots[i] - knots[i - 1])
+        alpha = torch.exp(torch.lerp(log_alpha[i - 1], log_alpha[i], w))
+        one_minus_dot = 0.5 * (
+            (prediction - target[:, :dim].float()) ** 2
+        ).sum(dim=-1)
+        # 2 k (1 + k) = 2 / alpha^2; the peak value log(1 + 2k) is dropped
+        return (dim - 1) * torch.log1p(2.0 * one_minus_dot / alpha**2)
