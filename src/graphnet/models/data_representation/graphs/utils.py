@@ -254,33 +254,26 @@ class cluster_and_pad:
 
         x = lex_sort(x=x, cluster_columns=sort_cols)
 
-        unique_sensors, self._counts = np.unique(
-            x[:, cluster_columns], axis=0, return_counts=True
+        # The cluster columns are the primary sort keys, so the rows of a
+        # cluster are contiguous and the clusters are in lex_sort order of
+        # the cluster columns: a cluster starts where they change. (Same
+        # clusters, order and counts as `np.unique(axis=0)` followed by a
+        # `lex_sort` of the unique rows, without sorting a second time.)
+        keys = x[:, cluster_columns]
+        change = np.any(keys[1:] != keys[:-1], axis=1)
+        starts = np.flatnonzero(np.concatenate([[True], change]))
+        self._counts = np.diff(np.append(starts, len(x))).astype(int)
+        # float64, as the former table of coordinates and integer counts
+        self.clustered_x = keys[starts].astype(
+            np.result_type(keys.dtype, np.int64)
         )
 
-        contingency_table = np.concatenate(
-            [unique_sensors, self._counts.reshape(-1, 1)], axis=1
+        self._padded_x = np.full(
+            (len(self._counts), max(self._counts), x.shape[1]), np.nan
         )
-
-        contingency_table = lex_sort(
-            x=contingency_table, cluster_columns=cluster_columns
-        )
-
-        self.clustered_x = contingency_table[:, 0 : unique_sensors.shape[1]]
-        self._counts = (
-            contingency_table[:, self.clustered_x.shape[1] :]
-            .flatten()
-            .astype(int)
-        )
-
-        self._padded_x = np.empty(
-            (len(self._counts), max(self._counts), x.shape[1])
-        )
-        self._padded_x.fill(np.nan)
-
-        for i in range(len(self._counts)):
-            self._padded_x[i, : self._counts[i]] = x[: self._counts[i]]
-            x = x[self._counts[i] :]
+        cluster = np.repeat(np.arange(len(self._counts)), self._counts)
+        position = np.arange(len(x)) - np.repeat(starts, self._counts)
+        self._padded_x[cluster, position] = x
 
         self._input_names = input_names
         if self._input_names is not None:
