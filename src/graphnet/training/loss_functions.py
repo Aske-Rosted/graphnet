@@ -1264,6 +1264,9 @@ class spCauchyLoss(LossFunction):
             self._rho_values = [float(r) for r in rho]
             self._rho_knots = [float(x) for x in rho_knots]
         self._dim = dim
+        # (knots, log alpha) per device / dtype: building them from Python
+        # lists at every call would copy to (and synchronise with) the GPU
+        self._knot_tensors: Dict[Tuple[str, str], Tuple[Tensor, Tensor]] = {}
 
     @property
     def alpha(self) -> float:
@@ -1303,6 +1306,7 @@ class spCauchyLoss(LossFunction):
             np.asarray(alphas, dtype=float), (len(self._rho_knots),)
         )
         self._rho_values = [self._rho_from_alpha(float(a)) for a in values]
+        self._knot_tensors = {}
 
     @staticmethod
     def _alpha_from_rho(rho: float) -> float:
@@ -1380,8 +1384,13 @@ class spCauchyLoss(LossFunction):
             target.size(1) == dim + 1
         ), "The last target column must hold the property at `rho_knots`."
         assert self._rho_knots is not None
-        knots = prediction.new_tensor(self._rho_knots)
-        log_alpha = prediction.new_tensor(np.log(self.alphas))
+        key = (str(prediction.device), str(prediction.dtype))
+        if key not in self._knot_tensors:
+            self._knot_tensors[key] = (
+                prediction.new_tensor(self._rho_knots),
+                prediction.new_tensor(np.log(self.alphas)),
+            )
+        knots, log_alpha = self._knot_tensors[key]
         x = target[:, dim].float().clamp(knots[0], knots[-1])
         i = torch.searchsorted(knots, x, right=True).clamp(1, len(knots) - 1)
         w = (x - knots[i - 1]) / (knots[i] - knots[i - 1])

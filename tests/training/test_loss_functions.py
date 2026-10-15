@@ -1092,3 +1092,31 @@ def test_cauchy_new_alpha_replaces_the_device_copies() -> None:
         fresh(prediction, target, return_elements=True),
     )
     assert annealed.lower_bound == fresh.lower_bound
+
+
+def test_spcauchy_knots_do_not_synchronise_and_follow_new_scales() -> None:
+    """No GPU synchronisation per call; a new scale is used at once."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    loss = spCauchyLoss(rho=[0.93, 0.994], rho_knots=[0.0, 1.0])
+    prediction = _unit_vectors(30, 8).float().to(device)
+    target = (
+        torch.cat(
+            [_unit_vectors(30, 9), torch.rand(30, 1, dtype=torch.float64)], 1
+        )
+        .float()
+        .to(device)
+    )
+    before = loss(prediction, target, return_elements=True)
+    if device == "cuda":
+        torch.cuda.synchronize()
+        torch.cuda.set_sync_debug_mode("error")
+        try:
+            loss(prediction, target)
+        finally:
+            torch.cuda.set_sync_debug_mode("default")
+    loss._alpha = 0.1
+    fresh = spCauchyLoss(rho=[0.93, 0.994], rho_knots=[0.0, 1.0])
+    fresh._alpha = 0.1
+    after = loss(prediction, target, return_elements=True)
+    assert not torch.allclose(before, after)
+    assert torch.equal(after, fresh(prediction, target, return_elements=True))
