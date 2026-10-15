@@ -26,10 +26,23 @@ class NodeDefinition(Model):  # pylint: disable=too-few-public-methods
         """Construct `Detector`."""
         # Base class constructor
         super().__init__(name=__name__, class_name=self.__class__.__name__)
+        # Event-level attributes of the last constructed graph, see
+        # `graph_attributes`.
+        self._graph_attributes: Dict[str, float] = {}
         if input_feature_names is not None:
             self.set_output_feature_names(
                 input_feature_names=input_feature_names
             )
+
+    @property
+    def graph_attributes(self) -> Dict[str, float]:
+        """Return event-level attributes of the last call.
+
+        Node definitions may compute event-level quantities while building
+        the nodes (e.g. a reference time). They are reset at every call and
+        added to the graph by `GraphDefinition`.
+        """
+        return self._graph_attributes
 
     @final
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -43,6 +56,7 @@ class NodeDefinition(Model):  # pylint: disable=too-few-public-methods
         Returns:
             Node feature tensor of shape ´[num_nodes, num_features]´.
         """
+        self._graph_attributes = {}
         return self._construct_nodes(x=x)
 
     @property
@@ -523,6 +537,8 @@ class ClusterSummaryFeatures(NodeDefinition):
         order_in_time: bool = True,
         add_counts: bool = False,
         charge_weighted: bool = False,
+        reference_charge_quantile: float = 0.5,
+        reference_time_attribute: Optional[str] = None,
     ) -> None:
         """Construct `ClusterSummaryFeatures`.
 
@@ -557,6 +573,17 @@ class ClusterSummaryFeatures(NodeDefinition):
                 is added as a feature.
             charge_weighted: If True, the time std is weighted by the
                 pulse charges.
+            reference_charge_quantile: The event time reference of the
+                time features (`time_of_first_hit`, `time_after_charge_pct`)
+                is the time by which this fraction of the event charge has
+                arrived. 0.5 (default) is the charge weighted median; a
+                lower value (e.g. 0.1) is not moved by a bright particle
+                arriving late, and unlike the first pulse not by early
+                isolated pulses either.
+            reference_time_attribute: If given, the reference time (in the
+                time units of the input, not shifted) is added to the graph
+                under this name, e.g. to express a time target relative to
+                the same reference and to convert predictions back.
 
         NOTE: Make sure that either the input data is not already standardized
         or that the `charge_standardization` and `time_standardization`
@@ -583,6 +610,11 @@ class ClusterSummaryFeatures(NodeDefinition):
         self._time_after_charge_pct = time_after_charge_pct
         self._add_counts = add_counts
         self._charge_weighted = charge_weighted
+        assert (
+            0.0 < reference_charge_quantile <= 1.0
+        ), "reference_charge_quantile must be in (0, 1]."
+        self._reference_charge_quantile = reference_charge_quantile
+        self._reference_time_attribute = reference_time_attribute
 
         # Base class constructor
         super().__init__(input_feature_names=input_feature_names)
@@ -620,26 +652,37 @@ class ClusterSummaryFeatures(NodeDefinition):
     def _construct_nodes(self, x: torch.Tensor) -> torch.Tensor:
         """Construct nodes from raw node features ´x´."""
         if x.shape[0] == 0:
+            if self._reference_time_attribute is not None:
+                self._graph_attributes[self._reference_time_attribute] = float(
+                    "nan"
+                )
             return torch.empty(
                 (0, len(self._output_feature_names)),
                 dtype=x.dtype,
                 device=x.device,
             )
-        # Cast to Numpy
-        x = x.numpy()
+        # Cast to Numpy; a copy, since `numpy()` shares memory with the
+        # caller's tensor and the time shift below is in place
+        x = x.numpy().copy()
         # Shift time such that the event starts at 0
-        x[:, self._time_idx] -= np.min(x[:, self._time_idx])
+        time_shift = np.min(x[:, self._time_idx])
+        x[:, self._time_idx] -= time_shift
         # Construct clusters with percentile-summarized features
         cluster_class = cluster_and_pad(
             x=x,
             cluster_columns=self._cluster_idx,
             sort_by=[self._time_idx] if self._order_in_time else [],
         )
-        # calculate charge weighted median time as reference
+        # charge weighted quantile time (default: median) as reference
         ref_time = cluster_class.reference_time(
             charge_index=self._charge_idx,
             time_index=self._time_idx,
+            quantile=self._reference_charge_quantile,
         )
+        if self._reference_time_attribute is not None:
+            self._graph_attributes[self._reference_time_attribute] = float(
+                ref_time + time_shift
+            )
 
         # add total charge
         if self._total_charge:

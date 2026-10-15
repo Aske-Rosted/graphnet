@@ -171,6 +171,9 @@ class GraphDefinition(DataRepresentation):
         )
         # Create graph & get new node feature names
         data.x = self._node_definition(data.x)
+        # Event-level attributes computed by the node definition
+        for key, value in self._node_definition.graph_attributes.items():
+            data[key] = torch.tensor(value, dtype=torch.float64)
         if self._sort_by is not None:
             data.x = data.x[data.x[:, self._sort_by].sort()[1]]
 

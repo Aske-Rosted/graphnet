@@ -254,3 +254,114 @@ def test_cluster_summary_reference_time_is_charge_weighted() -> None:
         :, node_definition._output_feature_names.index("time_of_first_hit")
     ]
     assert np.allclose(first_hit, [0.0, 100.0, 200.0])
+
+
+# An early faint pulse (1 PE at 0 ns, DOM C) before the main light: DOM A
+# 30 PE at 5000 ns and DOM B 70 PE at 5100 ns. Cumulative charge fractions
+# 1%, 31%, 100%: the 10% time is 5000 ns, the median 5100 ns.
+_EARLY_PULSE = torch.tensor(
+    [
+        [2.0, 0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 0.0, 5000.0, 30.0],
+        [1.0, 0.0, 0.0, 5100.0, 70.0],
+    ],
+    dtype=torch.float64,
+)
+
+
+def _first_hits(**kwargs: Any) -> Dict[float, float]:
+    """Return time_of_first_hit per DOM (keyed by dom_x)."""
+    node_definition = _summary(time_standardization=1.0, **kwargs)
+    names = node_definition._output_feature_names
+    nodes = node_definition(_EARLY_PULSE).numpy()
+    return dict(
+        zip(
+            nodes[:, names.index("dom_x")],
+            nodes[:, names.index("time_of_first_hit")],
+        )
+    )
+
+
+def test_cluster_summary_reference_charge_quantile() -> None:
+    """The time reference is the chosen charge quantile of the event."""
+    # DOMs A (dom_x 0, 5000 ns), B (1, 5100 ns), C (2, early pulse at 0 ns)
+    assert _first_hits() == {0.0: -100.0, 1.0: 0.0, 2.0: -5100.0}
+    assert _first_hits(reference_charge_quantile=0.1) == {
+        0.0: 0.0,
+        1.0: 100.0,
+        2.0: -5000.0,
+    }
+
+
+def test_cluster_summary_does_not_modify_its_input() -> None:
+    """The input tensor keeps its times (the time shift works on a copy)."""
+    pulses = _EARLY_PULSE.clone()
+    pulses[:, 3] += 1e4
+    before = pulses.clone()
+    _summary()(pulses)
+    assert torch.equal(pulses, before)
+
+
+def test_cluster_summary_reference_time_attribute() -> None:
+    """The reference is exposed in input time units, before any shift."""
+    plain = _summary()
+    plain(_EARLY_PULSE)
+    assert plain.graph_attributes == {}
+
+    shifted = _EARLY_PULSE.clone()
+    shifted[:, 3] += 1e4
+    for quantile, expected in [(0.1, 15000.0), (0.5, 15100.0)]:
+        node_definition = _summary(
+            reference_charge_quantile=quantile,
+            reference_time_attribute="reference_time",
+        )
+        node_definition(shifted)
+        assert node_definition.graph_attributes == {"reference_time": expected}
+
+
+def test_cluster_summary_reference_quantile_is_offset_invariant() -> None:
+    """Features ignore the event time; the reference moves with it."""
+    node_definition = _summary(
+        reference_charge_quantile=0.1,
+        reference_time_attribute="reference_time",
+        total_charge_fraction=True,
+    )
+    nodes = node_definition(_EARLY_PULSE).numpy()
+    reference = node_definition.graph_attributes["reference_time"]
+    shifted = _EARLY_PULSE.clone()
+    shifted[:, 3] += 123.0
+    assert np.allclose(node_definition(shifted).numpy(), nodes)
+    assert node_definition.graph_attributes["reference_time"] == (
+        reference + 123.0
+    )
+
+
+def test_cluster_summary_reference_time_attribute_empty_event() -> None:
+    """An event without pulses has no reference time (NaN)."""
+    node_definition = _summary(reference_time_attribute="reference_time")
+    node_definition(torch.zeros((0, 5), dtype=torch.float64))
+    assert np.isnan(node_definition.graph_attributes["reference_time"])
+
+
+def test_graph_definition_adds_node_definition_attributes() -> None:
+    """`GraphDefinition` puts the node definition's attributes on `Data`."""
+    from graphnet.models.data_representation import GraphDefinition
+    from graphnet.models.detector import IceCube86
+
+    names = ["dom_x", "dom_y", "dom_z", "dom_time", "charge"]
+    graph_definition = GraphDefinition(
+        detector=IceCube86(replace_with_identity=["dom_time", "charge"]),
+        node_definition=ClusterSummaryFeatures(
+            cluster_on=names[:3],
+            input_feature_names=names,
+            charge_after_t=[],
+            time_after_charge_pct=[],
+            reference_charge_quantile=0.1,
+            reference_time_attribute="reference_time",
+        ),
+        input_feature_names=names,
+    )
+    data = graph_definition(
+        input_features=_EARLY_PULSE.numpy().copy(), input_feature_names=names
+    )
+    assert data["reference_time"].item() == 5000.0
