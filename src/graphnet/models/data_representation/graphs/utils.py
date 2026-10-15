@@ -174,11 +174,23 @@ def cluster_summarize_with_percentiles(
     return array
 
 
-def weighted_median(values: np.array, weights: np.array) -> float:
-    """Compute the weighted median of values."""
+def weighted_quantile(
+    values: np.array, weights: np.array, quantile: float
+) -> float:
+    """Compute the weighted `quantile` of values.
+
+    Returns the smallest value at which the cumulative weight reaches the
+    fraction `quantile` of the total weight. NaN entries (padding) are
+    sorted last and do not count.
+    """
     i = np.argsort(values)
     c = np.cumsum(weights[i])
-    return values[i[np.searchsorted(c, 0.5 * np.nanmax(c))]]
+    return values[i[np.searchsorted(c, quantile * np.nanmax(c))]]
+
+
+def weighted_median(values: np.array, weights: np.array) -> float:
+    """Compute the weighted median of values."""
+    return weighted_quantile(values, weights, 0.5)
 
 
 class cluster_and_pad:
@@ -340,20 +352,23 @@ class cluster_and_pad:
         )
 
     def _calculate_reference_time(
-        self, time_index: int, charge_index: int
+        self, time_index: int, charge_index: int, quantile: float = 0.5
     ) -> None:
-        """Calculate the charge weighted median time of the whole event.
+        """Calculate the charge weighted `quantile` time of the whole event.
 
         Each pulse is weighted by its charge, so bright sensors dominate
-        (rather than every sensor counting equally).
+        (rather than every sensor counting equally). `quantile` 0.5 is the
+        charge weighted median; e.g. 0.1 is the time by which 10% of the
+        event charge has arrived.
         """
         assert not hasattr(
             self, "_reference_time"
         ), "Reference time has already been calculated, \
             re-calculation is not allowed"
-        self._reference_time = weighted_median(
+        self._reference_time = weighted_quantile(
             values=self._padded_x[:, :, time_index].flatten(),
             weights=self._padded_x[:, :, charge_index].flatten(),
+            quantile=quantile,
         )
 
     def _calculate_time_first_pulse(self, time_index: int) -> np.ndarray:
@@ -657,15 +672,20 @@ class cluster_and_pad:
             ]
             self._add_column_names(new_names, location)
 
-    def reference_time(self, charge_index: int, time_index: int) -> float:
-        """Return and set the charge weighted median of hit times."""
+    def reference_time(
+        self, charge_index: int, time_index: int, quantile: float = 0.5
+    ) -> float:
+        """Return and set the charge weighted `quantile` of hit times.
+
+        The default 0.5 is the charge weighted median.
+        """
         if not hasattr(self, "_reference_time"):
             assert charge_index is not None, "Charge index must be provided"
             if not hasattr(self, "_charge_weights"):
                 if not hasattr(self, "_charge_sum"):
                     self._calculate_charge_sum(charge_index)
                 self._calculate_charge_weights(charge_index)
-            self._calculate_reference_time(time_index, charge_index)
+            self._calculate_reference_time(time_index, charge_index, quantile)
         return self._reference_time
 
 
