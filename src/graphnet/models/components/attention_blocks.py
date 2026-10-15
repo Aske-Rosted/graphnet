@@ -1,6 +1,6 @@
 """Attention and transformer blocks used in graphnet models."""
 
-from typing import Optional
+from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -146,10 +146,21 @@ class Attention_rel(LightningModule):
         q: Tensor,
         k: Tensor,
         v: Tensor,
-        rel_pos_bias: Optional[Tensor] = None,
+        rel_pos_bias: Optional[
+            Union[Tensor, Tuple[Tensor, Tensor, Tensor]]
+        ] = None,
         key_padding_mask: Optional[Tensor] = None,
     ) -> Tensor:
-        """Forward pass."""
+        """Forward pass.
+
+        `rel_pos_bias` is either the relative encoding `[B, L, L, C]`
+        (`C` the head dimension, shared by the heads), or its affine
+        factors `(d, w, b)` from `SpacetimeEncoder.affine_factors` with
+        encoding `d[..., None] * w + b`: the same attention without
+        building the `[B, L, L, C]` tensor, since
+        `sum_c q_c (d w_c + b_c) = d (q.w) + q.b` and
+        `sum_j a_ij (d_ij w + b) = (sum_j a_ij d_ij) w + (sum_j a_ij) b`.
+        """
         batch_size, event_length, _ = q.shape
 
         q = linear(input=q, weight=self.proj_q.weight, bias=self.q_bias)
@@ -167,7 +178,16 @@ class Attention_rel(LightningModule):
 
         q = q * self.scale
         attn = q @ k.transpose(-2, -1)
-        if rel_pos_bias is not None:
+        factored = isinstance(rel_pos_bias, tuple)
+        if factored:
+            distance, rel_weight, rel_bias = rel_pos_bias  # type: ignore
+            distance = distance.unsqueeze(1)  # [B, 1, L, L]
+            q_w = q @ rel_weight.to(q.dtype)  # [B, H, L]
+            q_b = q @ rel_bias.to(q.dtype)
+            attn = attn + (
+                distance.to(attn.dtype) * q_w.unsqueeze(-1) + q_b.unsqueeze(-1)
+            )
+        elif rel_pos_bias is not None:
             bias = torch.einsum("bhic,bijc->bhij", q, rel_pos_bias)
             attn = attn + bias
         if key_padding_mask is not None:
@@ -190,7 +210,15 @@ class Attention_rel(LightningModule):
         attn = self.attn_drop(attn)
 
         x = (attn @ v).transpose(1, 2)
-        if rel_pos_bias is not None:
+        if factored:
+            # row sums of the (dropped-out) attention, not assumed to be 1
+            weighted_distance = (attn * distance.to(attn.dtype)).sum(-1)
+            row_sum = attn.sum(-1)
+            rel = weighted_distance.unsqueeze(-1) * rel_weight.to(
+                attn.dtype
+            ) + row_sum.unsqueeze(-1) * rel_bias.to(attn.dtype)
+            x = x + rel.transpose(1, 2).to(x.dtype)
+        elif rel_pos_bias is not None:
             x = x + torch.einsum("bhij,bijc->bihc", attn, rel_pos_bias)
         x = x.reshape(batch_size, event_length, -1)
         x = self.proj(x)
@@ -275,7 +303,9 @@ class Block_rel(LightningModule):
         self,
         x: Tensor,
         key_padding_mask: Optional[Tensor] = None,
-        rel_pos_bias: Optional[Tensor] = None,
+        rel_pos_bias: Optional[
+            Union[Tensor, Tuple[Tensor, Tensor, Tensor]]
+        ] = None,
         kv: Optional[Tensor] = None,
     ) -> Tensor:
         """Forward pass."""

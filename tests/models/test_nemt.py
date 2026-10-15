@@ -137,3 +137,74 @@ def test_spacetime_encoder_with_sinusoid_matches_epjc() -> None:
     encoder.load_state_dict(reference.state_dict())
     x = torch.randn(2, 5, 4) * 0.01
     assert torch.allclose(encoder(x), reference(x))
+
+
+def _pair(**kwargs: Any) -> tuple:
+    """Two identical networks, with and without the factored bias."""
+    torch.manual_seed(1)
+    factored = _net(embed_bias=False, factor_rel_bias=True, **kwargs)
+    full = _net(embed_bias=False, factor_rel_bias=False, **kwargs)
+    full.load_state_dict(factored.state_dict())
+    return factored.double(), full.double()
+
+
+def _double_batch(sizes: list) -> Batch:
+    batch = _batch(sizes)
+    batch.x = batch.x.double()
+    return batch
+
+
+def test_factored_rel_bias_matches_full_encoding() -> None:
+    """Factored relative bias: same outputs and gradients."""
+    factored, full = _pair()
+    batch = _double_batch([5, 17, 9])
+    out_factored, out_full = factored(batch), full(batch)
+    assert torch.allclose(out_factored, out_full, rtol=1e-10, atol=1e-12)
+    out_factored.square().sum().backward()
+    out_full.square().sum().backward()
+    for (name, a), (_, b) in zip(
+        factored.named_parameters(), full.named_parameters()
+    ):
+        if a.grad is None:
+            assert b.grad is None, name
+            continue
+        assert torch.allclose(a.grad, b.grad, rtol=1e-8, atol=1e-10), name
+
+
+def test_factored_rel_bias_matches_with_attention_dropout() -> None:
+    """With attention dropout (rows no longer sum to one) in training."""
+    factored, full = _pair(dropout=0.3)
+    factored.train()
+    full.train()
+    batch = _double_batch([6, 11])
+    torch.manual_seed(7)
+    out_factored = factored(batch)
+    torch.manual_seed(7)
+    out_full = full(batch)
+    assert torch.allclose(out_factored, out_full, rtol=1e-10, atol=1e-12)
+
+
+def test_affine_factors_reproduce_the_encoding() -> None:
+    """`d * w + b` from the factors equals the encoder output."""
+    from graphnet.models.components.embedding import SpacetimeEncoder
+
+    torch.manual_seed(2)
+    x = torch.randn(3, 7, 6, dtype=torch.float64)
+    for clip in (None, 0.5):
+        encoder = SpacetimeEncoder(
+            8, output_dim=8, clip=clip, apply_sin_emb=False
+        ).double()
+        distance, weight, bias = encoder.affine_factors(x)
+        assert torch.allclose(
+            distance.unsqueeze(-1) * weight + bias, encoder(x)
+        )
+
+
+def test_factor_rel_bias_has_no_effect_with_sinusoidal_embedding() -> None:
+    """With `embed_bias` the encoding is not affine; the flag is ignored."""
+    torch.manual_seed(3)
+    a = _net(embed_bias=True, factor_rel_bias=True)
+    b = _net(embed_bias=True, factor_rel_bias=False)
+    b.load_state_dict(a.state_dict())
+    batch = _batch([4, 9])
+    assert torch.equal(a(batch), b(batch))
