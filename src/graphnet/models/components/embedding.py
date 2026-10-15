@@ -352,7 +352,9 @@ def signed_four_distance(
     other data silently reduces the interval to a spatial distance.
     """
     xi, yi, zi, ti = columns
-    pos = x[:, :, [xi, yi, zi]]
+    # stacked columns, not `x[:, :, [xi, yi, zi]]`: indexing with a list
+    # copies the index to the GPU at every call, a synchronisation
+    pos = torch.stack([x[:, :, xi], x[:, :, yi], x[:, :, zi]], dim=-1)
     time = x[:, :, ti]
     interval = (pos[:, :, None] - pos[:, None, :]).pow(2).sum(-1) - (
         (time[:, :, None] - time[:, None, :]) * time_scale
