@@ -13,6 +13,7 @@ from graphnet.models.data_representation.graphs.utils import (
     ice_transparency,
     identify_indices,
     lex_sort,
+    weighted_quantile,
 )
 from graphnet.utilities.decorators import final
 
@@ -539,6 +540,8 @@ class ClusterSummaryFeatures(NodeDefinition):
         charge_weighted: bool = False,
         reference_charge_quantile: float = 0.5,
         reference_time_attribute: Optional[str] = None,
+        event_features: List[str] = [],
+        event_duration_pct: Tuple[int, int] = (10, 90),
     ) -> None:
         """Construct `ClusterSummaryFeatures`.
 
@@ -584,6 +587,18 @@ class ClusterSummaryFeatures(NodeDefinition):
                 time units of the input, not shifted) is added to the graph
                 under this name, e.g. to express a time target relative to
                 the same reference and to convert predictions back.
+            event_features: Event-level features added to every node (the
+                same value for all nodes of an event), as `event_<name>`:
+                - "total_charge": total charge of the event
+                  (`charge_standardization`);
+                - "time_to_reference": time from the first pulse to the
+                  reference time (`reference_charge_quantile`); large for
+                  events with early isolated pulses;
+                - "duration": time between the `event_duration_pct`
+                  charge percentiles of the event.
+                Times use `time_standardization`.
+            event_duration_pct: Charge percentiles (low, high) of the
+                "duration" event feature.
 
         NOTE: Make sure that either the input data is not already standardized
         or that the `charge_standardization` and `time_standardization`
@@ -615,6 +630,14 @@ class ClusterSummaryFeatures(NodeDefinition):
         ), "reference_charge_quantile must be in (0, 1]."
         self._reference_charge_quantile = reference_charge_quantile
         self._reference_time_attribute = reference_time_attribute
+        allowed = ("total_charge", "time_to_reference", "duration")
+        unknown = [f for f in event_features if f not in allowed]
+        assert not unknown, f"Unknown event features {unknown}; use {allowed}"
+        assert (
+            0 < event_duration_pct[0] < event_duration_pct[1] <= 100
+        ), "event_duration_pct must be increasing percentiles in (0, 100]."
+        self._event_features = list(event_features)
+        self._event_duration_pct = tuple(event_duration_pct)
 
         # Base class constructor
         super().__init__(input_feature_names=input_feature_names)
@@ -647,6 +670,8 @@ class ClusterSummaryFeatures(NodeDefinition):
             new_feature_names.append(f"time_after_charge_pct{pct}")
         if self._add_counts:
             new_feature_names.append("counts")
+        for name in self._event_features:
+            new_feature_names.append(f"event_{name}")
         return new_feature_names
 
     def _construct_nodes(self, x: torch.Tensor) -> torch.Tensor:
@@ -775,7 +800,40 @@ class ClusterSummaryFeatures(NodeDefinition):
 
         if self._add_counts:
             cluster_class.add_counts()
+        if self._event_features:
+            values = self._event_feature_values(x, ref_time)
+            cluster_class.clustered_x = np.hstack(
+                [
+                    cluster_class.clustered_x,
+                    np.tile(values, (cluster_class.clustered_x.shape[0], 1)),
+                ]
+            )
         return torch.tensor(cluster_class.clustered_x)
+
+    def _event_feature_values(
+        self, x: np.ndarray, ref_time: float
+    ) -> np.ndarray:
+        """Return the event features; times relative to the first pulse."""
+        times = x[:, self._time_idx]
+        charges = x[:, self._charge_idx]
+        values = []
+        for name in self._event_features:
+            if name == "total_charge":
+                value = self._standardize_features(
+                    np.array([np.nansum(charges)]),
+                    self._charge_standardization,
+                )[0]
+            elif name == "time_to_reference":
+                # the times were shifted to start at 0 (the first pulse)
+                value = ref_time * self._time_standardization
+            else:  # duration
+                low, high = (
+                    weighted_quantile(times, charges, pct / 100)
+                    for pct in self._event_duration_pct
+                )
+                value = (high - low) * self._time_standardization
+            values.append(value)
+        return np.asarray(values, dtype=float)
 
     def set_indices(self, feature_names: List[str]) -> None:
         """Set the indices for the input features."""
