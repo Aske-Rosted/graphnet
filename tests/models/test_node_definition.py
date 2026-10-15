@@ -3,6 +3,7 @@
 from typing import Any, Dict
 
 import numpy as np
+import pytest
 import pandas as pd
 import sqlite3
 import torch
@@ -365,3 +366,54 @@ def test_graph_definition_adds_node_definition_attributes() -> None:
         input_features=_EARLY_PULSE.numpy().copy(), input_feature_names=names
     )
     assert data["reference_time"].item() == 5000.0
+
+
+def test_cluster_summary_event_features() -> None:
+    """Event features are appended to every node with the same value."""
+    node_definition = _summary(
+        time_standardization=1.0,
+        reference_charge_quantile=0.1,
+        event_features=["total_charge", "time_to_reference", "duration"],
+    )
+    names = node_definition._output_feature_names
+    assert names[-3:] == [
+        "event_total_charge",
+        "event_time_to_reference",
+        "event_duration",
+    ]
+    nodes = node_definition(_EARLY_PULSE).numpy()
+    assert nodes.shape[1] == len(names)
+    # 101 PE in total; 10% of the charge at 5000 ns, 90% at 5100 ns
+    expected = [np.log10(101.0), 5000.0, 100.0]
+    assert np.allclose(nodes[:, -3:], np.tile(expected, (3, 1)))
+
+
+def test_cluster_summary_event_features_leave_other_features() -> None:
+    """Adding event features does not change the other node features."""
+    plain = _summary(reference_charge_quantile=0.1)
+    extended = _summary(
+        reference_charge_quantile=0.1,
+        event_features=["total_charge", "duration"],
+    )
+    assert np.allclose(
+        extended(_EARLY_PULSE).numpy()[:, :-2], plain(_EARLY_PULSE).numpy()
+    )
+
+
+def test_cluster_summary_event_features_offset_invariant() -> None:
+    """Event features do not depend on when the event happened."""
+    node_definition = _summary(
+        event_features=["total_charge", "time_to_reference", "duration"]
+    )
+    shifted = _EARLY_PULSE.clone()
+    shifted[:, 3] += 777.0
+    assert np.allclose(
+        node_definition(_EARLY_PULSE).numpy(),
+        node_definition(shifted).numpy(),
+    )
+
+
+def test_cluster_summary_event_features_unknown_name() -> None:
+    """An unknown event feature is rejected."""
+    with pytest.raises(AssertionError):
+        _summary(event_features=["n_strings"])
