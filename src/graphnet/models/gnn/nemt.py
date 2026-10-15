@@ -198,7 +198,10 @@ class NeutrinoEventMultitaskTransformer(GNN):
 
     def forward(self, data: Data) -> Tensor:
         """Apply learnable forward pass to input data."""
-        x, mask, _ = array_to_sequence(data.x, data.batch)
+        # node counts known on the CPU (bucketing collator): no GPU sync
+        x, mask, _ = array_to_sequence(
+            data.x, data.batch, seq_length=getattr(data, "node_counts", None)
+        )
         batch_size = mask.shape[0]
 
         if self.n_rel > 0:
