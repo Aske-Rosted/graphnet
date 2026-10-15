@@ -5,7 +5,7 @@ handles per-event weights, etc.
 """
 
 from abc import abstractmethod
-from typing import Any, Optional, Union, List, Dict, Sequence
+from typing import Any, Optional, Union, List, Dict, Sequence, Tuple
 
 import numpy as np
 import scipy.special
@@ -915,7 +915,13 @@ class CauchyLoss(LossFunction):
         self._learn_alpha = learn_alpha
         self._n_conditions = n_conditions
         self._last_bound: Optional[float] = None
-        self._residual_scales: Optional[Tensor] = None
+        # residuals of the most recent batch, for `monitored_values`
+        self._last_squared: Optional[Tensor] = None
+        self._last_sizes: Optional[Tensor] = None
+        # copies of the fixed tensors on the device in use: moving a CPU
+        # tensor to the GPU at every call would synchronise with the GPU
+        self._device_copies: Dict[Tuple[int, str, str], Tensor] = {}
+        self._unit_size = torch.ones(1)
 
         self._group_index: Optional[Tensor] = None
         self._group_size: Optional[Tensor] = None
@@ -985,17 +991,32 @@ class CauchyLoss(LossFunction):
             raise AttributeError("The scale is learned and cannot be set.")
         self._fixed_alpha = alpha
         self._fixed_log_alpha = self._as_log_alpha(alpha)
+        self._device_copies = {}
         if self._frac == 0:
             self._last_bound = self._bound(self._fixed_log_alpha.unsqueeze(0))
 
     # Name of the attribute before the scale became a property.
     _alpha = alpha
 
+    def _on_device(
+        self, tensor: Tensor, like: Tensor, keep_dtype: bool = False
+    ) -> Tensor:
+        """Return `tensor` on the device (and dtype) of `like`, cached."""
+        dtype = tensor.dtype if keep_dtype else like.dtype
+        if tensor.device == like.device and tensor.dtype == dtype:
+            return tensor
+        key = (id(tensor), str(like.device), str(dtype))
+        copy = self._device_copies.get(key)
+        if copy is None:
+            copy = tensor.to(device=like.device, dtype=dtype)
+            self._device_copies[key] = copy
+        return copy
+
     def _sizes(self, log_alpha: Tensor) -> Tensor:
         """Return the number of columns of each scale."""
         if self._group_size is None:
-            return torch.ones(1).to(log_alpha)
-        return self._group_size.to(log_alpha)
+            return self._on_device(self._unit_size, log_alpha)
+        return self._on_device(self._group_size, log_alpha)
 
     def _bound(self, log_alpha: Tensor) -> float:
         """Return the batch-mean minimum of the homoscedastic loss."""
@@ -1036,11 +1057,15 @@ class CauchyLoss(LossFunction):
         condition slopes).
         """
         if not self._learn_alpha:
-            if self._residual_scales is None:
+            if self._last_squared is None:
                 return {}
+            assert self._last_sizes is not None
+            residual_scales = self._scale_estimate(
+                self._last_squared, self._last_sizes
+            )
             return {
                 f"residual_scale_{i}": float(scale)
-                for i, scale in enumerate(self._residual_scales)
+                for i, scale in enumerate(residual_scales)
             }
         values = {
             f"alpha_{i}": float(alpha) for i, alpha in enumerate(self.alphas())
@@ -1053,7 +1078,7 @@ class CauchyLoss(LossFunction):
     def _log_alpha(self, conditions: Optional[Tensor], like: Tensor) -> Tensor:
         """Return log(alpha), broadcastable to [N, n_scales]."""
         if not self._learn_alpha:
-            return self._fixed_log_alpha.to(like).unsqueeze(0)
+            return self._on_device(self._fixed_log_alpha, like).unsqueeze(0)
         log_alpha = self.log_alpha[0].unsqueeze(0)
         if conditions is not None:
             log_alpha = (
@@ -1074,21 +1099,28 @@ class CauchyLoss(LossFunction):
                 f"`groups` cover {self._group_index.numel()} columns, got "
                 f"{squared.size(1)}."
             )
-            squared = (
-                torch.zeros(
-                    squared.size(0), log_alpha.size(1), dtype=squared.dtype
-                )
-                .to(squared.device)
-                .index_add_(1, self._group_index.to(squared.device), squared)
+            squared = torch.zeros(
+                squared.size(0),
+                log_alpha.size(1),
+                dtype=squared.dtype,
+                device=squared.device,
+            ).index_add_(
+                1,
+                self._on_device(self._group_index, squared, keep_dtype=True),
+                squared,
             )
         sizes = self._sizes(log_alpha)
         if not self._learn_alpha:
-            self._residual_scales = self._scale_estimate(squared, sizes)
+            # the scale estimate is computed when it is read
+            # (`monitored_values`), not at every call
+            self._last_squared, self._last_sizes = squared.detach(), sizes
         terms = (1 + sizes) / 2 * torch.log1p(
             squared * torch.exp(-2 * log_alpha)
         ) + sizes * log_alpha
         n_columns = prediction.size(1)
-        if self._frac == 0:
+        # with a fixed scale the bound is constant (set with the scale);
+        # reading it back from the GPU at every call would synchronise
+        if self._frac == 0 and self._learn_alpha:
             self._last_bound = float(
                 (sizes * log_alpha.detach())
                 .expand_as(terms)

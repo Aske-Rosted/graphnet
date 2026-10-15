@@ -1,6 +1,8 @@
 """Unit tests for LossFunction classes."""
 
 import numpy as np
+from typing import Any
+
 import pytest
 import torch
 import warnings
@@ -1035,3 +1037,58 @@ def test_spcauchy_knots_need_the_property_column() -> None:
         spCauchyLoss(rho=[0.93, 0.994])
     with pytest.raises(AssertionError):
         spCauchyLoss(rho=0.9, rho_knots=[0.0])
+
+
+def _grouped_cauchy(alpha: Any = (0.01, 0.02, 0.5)) -> CauchyLoss:
+    return CauchyLoss(alpha=list(alpha), groups=[[0, 1], [2], [3]], frac=0.0)
+
+
+def test_cauchy_device_matches_cpu() -> None:
+    """Loss, bound and residual scales do not depend on the device."""
+    if not torch.cuda.is_available():
+        pytest.skip("needs a GPU")
+    torch.manual_seed(0)
+    prediction, target = torch.randn(500, 4), torch.randn(500, 4)
+    cpu, gpu = _grouped_cauchy(), _grouped_cauchy()
+    loss_cpu = cpu(prediction, target, return_elements=True)
+    loss_gpu = gpu(prediction.cuda(), target.cuda(), return_elements=True)
+    assert torch.allclose(loss_cpu, loss_gpu.cpu(), rtol=1e-5, atol=1e-6)
+    assert cpu.lower_bound == gpu.lower_bound
+    for key, value in cpu.monitored_values().items():
+        assert np.isclose(gpu.monitored_values()[key], value, rtol=1e-5)
+
+
+def test_cauchy_fixed_alpha_does_not_synchronise() -> None:
+    """A fixed-scale (grouped) loss never waits for the GPU."""
+    if not torch.cuda.is_available():
+        pytest.skip("needs a GPU")
+    grouped, single = _grouped_cauchy(), CauchyLoss(alpha=0.1, frac=0.0)
+    prediction = torch.randn(64, 4, device="cuda")
+    target = torch.randn(64, 4, device="cuda")
+    # the first call copies the fixed tensors to the GPU (once)
+    grouped(prediction, target)
+    single(prediction, target)
+    torch.cuda.synchronize()
+    torch.cuda.set_sync_debug_mode("error")
+    try:
+        grouped(prediction, target)
+        single(prediction, target)
+    finally:
+        torch.cuda.set_sync_debug_mode("default")
+
+
+def test_cauchy_new_alpha_replaces_the_device_copies() -> None:
+    """Setting alpha after a call matches a loss built with that alpha."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    torch.manual_seed(1)
+    prediction = torch.randn(100, 4, device=device)
+    target = torch.randn(100, 4, device=device)
+    annealed = _grouped_cauchy()
+    annealed(prediction, target)
+    annealed._alpha = [0.1, 0.2, 0.3]
+    fresh = _grouped_cauchy([0.1, 0.2, 0.3])
+    assert torch.equal(
+        annealed(prediction, target, return_elements=True),
+        fresh(prediction, target, return_elements=True),
+    )
+    assert annealed.lower_bound == fresh.lower_bound
