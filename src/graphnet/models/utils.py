@@ -71,6 +71,7 @@ def array_to_sequence(
     batch_idx: LongTensor,
     padding_value: Any = 0,
     excluding_value: Any = torch.inf,
+    seq_length: Optional[List[int]] = None,
 ) -> Tuple[Tensor, Tensor, Tensor]:
     """Convert `x` of shape [n,d] into a padded sequence of shape [B, L, D].
 
@@ -86,28 +87,46 @@ def array_to_sequence(
         padding_value: The value to use for padding.
         excluding_value: This parameter represents a unique value that should
                 not be present in the input tensor 'x'
+        seq_length: Optional number of rows of each example, in order (e.g.
+                `node_counts` of a batch from the bucketing collator). If
+                given, it is used instead of counting `batch_idx` on the
+                device, and the check for `excluding_value` is an
+                asynchronous device assertion: no synchronisation with the
+                GPU. The returned `seq_length` is then a CPU tensor.
+
     Returns:
         x: Padded sequence with dimensions  [B, L, D].
         mask: A tensor that identifies masked entries in `x`.
                E.g. : `masked_entries = x[mask]`
         seq_length: A tensor containing the number of pulses in each event.
     """
-    if torch.any(torch.eq(x, excluding_value)):
-        raise ValueError(
-            f"Transformation cannot be made because input tensor "
-            f"`x` contains at least one element equal to "
-            f"excluding value {excluding_value}."
+    if seq_length is None:
+        if torch.any(torch.eq(x, excluding_value)):
+            raise ValueError(
+                f"Transformation cannot be made because input tensor "
+                f"`x` contains at least one element equal to "
+                f"excluding value {excluding_value}."
+            )
+        _, counts = torch.unique(batch_idx, return_counts=True)
+        lengths = counts.tolist()
+    else:
+        torch._assert_async(
+            torch.logical_not(torch.any(torch.eq(x, excluding_value))),
+            f"Input tensor `x` contains an element equal to the excluding "
+            f"value {excluding_value}.",
         )
-
-    _, seq_length = torch.unique(batch_idx, return_counts=True)
-    x_list = torch.split(x, seq_length.tolist())
+        lengths = [int(n) for n in seq_length]
+        counts = torch.tensor(lengths)
+    x_list = torch.split(x, lengths)
 
     x = torch.nn.utils.rnn.pad_sequence(
         x_list, batch_first=True, padding_value=excluding_value
     )
     mask = torch.ne(x[:, :, 1], excluding_value)
-    x[~mask] = padding_value
-    return x, mask, seq_length
+    # masked_fill: same values as `x[~mask] = padding_value`, without the
+    # data-dependent indexing (a synchronisation on GPU)
+    x = x.masked_fill(~mask.unsqueeze(-1), padding_value)
+    return x, mask, counts
 
 
 def get_fields(data: Union[Data, List[Data]], fields: List[str]) -> Tensor:
