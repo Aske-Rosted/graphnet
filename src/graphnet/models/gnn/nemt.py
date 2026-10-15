@@ -55,6 +55,7 @@ class NeutrinoEventMultitaskTransformer(GNN):
         embed_bias: bool = True,
         spacetime_time_index: int = 3,
         spacetime_time_scale: float = 3e4 / 500 * 3e-1,
+        factor_rel_bias: bool = True,
     ):
         """Construct `NeutrinoEventMultitaskTransformer`.
 
@@ -91,6 +92,11 @@ class NeutrinoEventMultitaskTransformer(GNN):
                 time column, in units of the position columns (see
                 `SpacetimeEncoder`). E.g. 0.6 for times in microseconds and
                 positions in units of 500 m.
+            factor_rel_bias: Without `embed_bias` the relative encoding is
+                affine in the four-distance; pass it to the attention in
+                factored form (same attention, without the `[B, L, L,
+                head_dim]` tensor; ~head_dim times less memory and work for
+                the relative term). Has no effect with `embed_bias`.
         """
         cross_attention = list(cross_attention or [])
         tot_out = (out_dim if out_dim is not None else hidden_dim) * n_tasks
@@ -185,6 +191,7 @@ class NeutrinoEventMultitaskTransformer(GNN):
             )
 
         self.n_rel = n_rel
+        self._factor_rel_bias = factor_rel_bias and not embed_bias
         self.n_tasks = n_tasks
         self.inject_cls_after = inject_cls_after
         self.cross_attention = cross_attention
@@ -202,7 +209,10 @@ class NeutrinoEventMultitaskTransformer(GNN):
         batch_size = mask.shape[0]
 
         if self.n_rel > 0:
-            rel_pos_bias = self.rel_pos(x)
+            if self._factor_rel_bias:
+                rel_pos_bias = self.rel_pos.affine_factors(x)
+            else:
+                rel_pos_bias = self.rel_pos(x)
 
         attn_mask = torch.zeros(mask.shape, device=mask.device)
         attn_mask[~mask] = -torch.inf

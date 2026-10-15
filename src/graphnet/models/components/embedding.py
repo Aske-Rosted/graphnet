@@ -464,6 +464,27 @@ class SpacetimeEncoder(LightningModule):
             return self.projection(four_distance.unsqueeze(-1))
         return self.projection(self.sin_emb(self.scale * four_distance))
 
+    def affine_factors(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+        """Return the encoding of `forward` in factored form.
+
+        Without the sinusoidal embedding the encoding of each pair is affine
+        in its (clipped) four-distance `d`: `forward(x)[..., c] = d * w[c] +
+        b[c]`. Returns `(d, w, b)` with `d` of shape `[B, L, L]` and `w`,
+        `b` of shape `[output_dim]`, so that consumers can avoid building
+        the `[B, L, L, output_dim]` tensor (see `Attention_rel`).
+        """
+        assert (
+            not self.apply_sin_emb
+        ), "Only the encoding without sinusoidal embedding is affine."
+        four_distance = signed_four_distance(x, self.time_scale, self.columns)
+        if self.clip is not None:
+            four_distance = four_distance.clip(-self.clip, self.clip)
+        weight = self.projection.weight[:, 0]
+        bias = self.projection.bias
+        if bias is None:
+            bias = torch.zeros_like(weight)
+        return four_distance, weight, bias
+
 
 class RRWPLinearNodeEncoder(LightningModule):
     """Relative random walk probability node encoder.
