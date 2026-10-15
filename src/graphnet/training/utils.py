@@ -157,8 +157,15 @@ class collator_compute_budget_bucketing:
         return batch_list
 
     def _collate(self, graphs: List[Data]) -> Batch:
-        """Collate `graphs` into one mini-batch."""
+        """Collate `graphs` into one mini-batch.
+
+        The number of nodes of each graph is kept as a plain list in
+        `batch.node_counts`: unlike tensors it stays on the CPU when the
+        batch is moved to a GPU, so models can pad the nodes into sequences
+        without reading the counts back from the GPU (a synchronisation).
+        """
         batch = Batch.from_data_list(graphs)
+        batch.node_counts = [int(graph.num_nodes) for graph in graphs]
         if self.drop_slices:
             batch._slice_dict, batch._inc_dict = {}, {}
         return batch
