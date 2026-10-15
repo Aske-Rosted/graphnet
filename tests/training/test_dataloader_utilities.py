@@ -152,3 +152,19 @@ def test_compute_budget_bucketing_drop_slices() -> None:
         assert torch.equal(a.energy, b.energy)
         assert len(a._slice_dict) > 0 and len(b._slice_dict) == 0
         assert len(b._inc_dict) == 0
+
+
+def test_compute_budget_bucketing_node_counts() -> None:
+    """Each mini-batch lists its graphs' node counts, kept on the CPU."""
+    from torch_geometric.data import Data
+    from graphnet.training.utils import collator_compute_budget_bucketing
+
+    lengths = [2, 3, 5, 8, 13, 4]
+    graphs = [Data(x=torch.zeros(n, 2), n_tokens=n) for n in lengths]
+    batches = collator_compute_budget_bucketing(
+        max_compute=200, parameter="n_tokens", gamma=2.0, drop_slices=True
+    )(graphs)
+    for batch in batches:
+        assert batch.node_counts == torch.bincount(batch.batch).tolist()
+        moved = batch.to("cuda" if torch.cuda.is_available() else "cpu")
+        assert moved.node_counts == batch.node_counts  # still a plain list
