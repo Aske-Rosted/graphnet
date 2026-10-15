@@ -273,7 +273,11 @@ class EasySyntax(Model):
         )
 
         current_lr = self.trainer.optimizers[0].param_groups[0]["lr"]
-        self.log("lr", current_lr, prog_bar=True, on_step=True)
+        # Not in the progress bar: progress-bar values are read back from the
+        # GPU after every batch, a synchronisation that stops the CPU from
+        # preparing the next step while the GPU works. Logged values are
+        # read back only every `log_every_n_steps`.
+        self.log("lr", current_lr, prog_bar=False, on_step=True)
         return loss
 
     def validation_step(
