@@ -146,15 +146,75 @@ class UncertaintyWeighting(LossBalancing):
     with one learned `eta_i` per balanced task. For a fixed loss the weight
     exp(-eta_i) settles at 1 / (2 L'_i): tasks far from their best possible
     loss are down-weighted relative to tasks close to it.
+
+    A task that overfits keeps lowering its training loss and so keeps
+    raising its own weight; `max_weights` caps the weight of such tasks.
     """
+
+    def __init__(
+        self,
+        start_epoch: int = 0,
+        lower_bounds: Optional[Sequence[Optional[float]]] = None,
+        lr_scale: float = 1.0,
+        max_weights: Optional[Sequence[Optional[float]]] = None,
+    ) -> None:
+        """Construct `UncertaintyWeighting`.
+
+        Args:
+            start_epoch: First epoch in which the losses are balanced.
+            lower_bounds: Optional per-task lower bounds overriding those of
+                the tasks' loss functions (see `LossBalancing`).
+            lr_scale: Factor applied to the model's learning rate for the
+                balancing parameters.
+            max_weights: Optional per-task upper limits of the weight
+                exp(-eta), one entry per task; `None` entries are not
+                limited. `eta` is clamped in the loss and projected onto
+                the limit after every optimizer step, so a weight at its
+                limit (also one loaded from a checkpoint) can move back
+                below it.
+        """
+        super().__init__(
+            start_epoch=start_epoch,
+            lower_bounds=lower_bounds,
+            lr_scale=lr_scale,
+        )
+        self._max_weights = (
+            list(max_weights) if max_weights is not None else None
+        )
+
+    def setup(self, tasks: Sequence["Task"], detached: Sequence[bool]) -> None:
+        """Register the tasks and their weight limits."""
+        if self._max_weights is not None:
+            assert len(self._max_weights) == len(
+                tasks
+            ), "`max_weights` must have one entry per task."
+        super().setup(tasks, detached)
+        floor = torch.full((len(self._balanced),), -float("inf"))
+        for i, w in enumerate(self._max_weights or []):
+            if w is None:
+                continue
+            assert w > 0, "`max_weights` entries must be positive."
+            assert i in self._balanced, f"Task {i} is not balanced."
+            floor[self._balanced.index(i)] = -torch.log(torch.tensor(w))
+        # Not persistent: checkpoints keep only `log_variances`, and the
+        # limits of the config apply when a checkpoint is loaded.
+        self.register_buffer("_eta_floor", floor, persistent=False)
 
     def _build(self, n_tasks: int) -> None:
         self.log_variances = torch.nn.Parameter(torch.zeros(n_tasks))
 
+    def _eta(self) -> Tensor:
+        return self.log_variances.clamp(min=self._eta_floor)
+
     def _balance(self, excess: Tensor) -> Tensor:
-        eta = self.log_variances
+        eta = self._eta()
         return torch.exp(-eta) * excess + 0.5 * eta
+
+    def on_train_batch_end(self, model: Any, batch: Any) -> None:
+        """Project `eta` onto the weight limits after the optimizer step."""
+        with torch.no_grad():
+            self.log_variances.copy_(self._eta())
 
     def weights(self) -> Tensor:
         """Return the current task weights exp(-eta)."""
-        return torch.exp(-self.log_variances.detach())
+        return torch.exp(-self._eta().detach())

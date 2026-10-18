@@ -180,6 +180,38 @@ def test_uncertainty_weights_converge_to_inverse_excess() -> None:
     assert torch.allclose(balancing.weights(), expected, rtol=1e-2)
 
 
+def test_uncertainty_weighting_max_weights() -> None:
+    """Capped weights stay at their limit and can move back below it."""
+    balancing = UncertaintyWeighting(
+        lower_bounds=[0.0, 0.0, 0.0], max_weights=[None, 2.0, None]
+    )
+    _balanced_model(balancing)
+    assert "_eta_floor" not in balancing.state_dict()
+    # Unconstrained, task 1 settles at 1 / (2 * 0.05) = 10, above its limit.
+    losses = [torch.tensor(0.5), torch.tensor(0.05), torch.tensor(8.0)]
+    optimizer = torch.optim.Adam(balancing.parameters(), lr=0.05)
+
+    def run(steps: int) -> None:
+        for _ in range(steps):
+            optimizer.zero_grad()
+            torch.stack(balancing(losses, epoch=0)).sum().backward()
+            optimizer.step()
+            balancing.on_train_batch_end(None, None)
+
+    run(2000)
+    weights = balancing.weights()
+    assert torch.isclose(weights[1], torch.tensor(2.0))
+    assert torch.allclose(weights[[0, 2]], torch.tensor([1.0, 0.0625]), 1e-2)
+    # A weight loaded above the limit is used at the limit, and a loss
+    # that grows takes the weight back below the limit (1 / (2 * 2) here).
+    with torch.no_grad():
+        balancing.log_variances[1] = -5.0
+    assert torch.isclose(balancing.weights()[1], torch.tensor(2.0))
+    losses[1] = torch.tensor(2.0)
+    run(2000)
+    assert torch.isclose(balancing.weights()[1], torch.tensor(0.25), 1e-2)
+
+
 def test_unbounded_shared_task_warns(monkeypatch: Any) -> None:
     """A shared task without a lower bound triggers a warning."""
     messages: List[str] = []
