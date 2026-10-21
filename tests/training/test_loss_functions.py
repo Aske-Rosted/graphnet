@@ -1120,3 +1120,97 @@ def test_spcauchy_knots_do_not_synchronise_and_follow_new_scales() -> None:
     after = loss(prediction, target, return_elements=True)
     assert not torch.allclose(before, after)
     assert torch.equal(after, fresh(prediction, target, return_elements=True))
+
+
+def test_spcauchy_two_property_knots_reduce_to_one_property() -> None:
+    """A grid constant along the second property equals the 1-D knots."""
+    rho, knots = [0.93, 0.98, 0.994], [0.0, 0.9, 1.0]
+    one = spCauchyLoss(rho=rho, rho_knots=knots)
+    two = spCauchyLoss(
+        rho=[[r, r] for r in rho],
+        rho_knots=knots,
+        rho_knots_2=[0.0, 2000.0],
+    )
+    prediction, target = _unit_vectors(40, 10), _unit_vectors(40, 11)
+    trackness = torch.rand(40, 1, dtype=torch.float64)
+    length = 3000 * torch.rand(40, 1, dtype=torch.float64)
+    expected = one(
+        prediction, torch.cat([target, trackness], 1), return_elements=True
+    )
+    got = two(
+        prediction,
+        torch.cat([target, trackness, length], 1),
+        return_elements=True,
+    )
+    assert torch.allclose(got, expected, rtol=1e-6)
+
+
+def test_spcauchy_two_property_knots_interpolate_bilinearly() -> None:
+    """Log(alpha) is bilinear in the cell and clamped beyond the grid."""
+    rho = [[0.90, 0.95], [0.98, 0.995]]
+    loss = spCauchyLoss(
+        rho=rho, rho_knots=[0.0, 1.0], rho_knots_2=[100.0, 1100.0]
+    )
+    log_alpha = np.log(np.asarray(loss.alphas))
+    assert log_alpha.shape == (2, 2)
+    prediction, target = _unit_vectors(3, 12), _unit_vectors(3, 13)
+    properties = torch.tensor(
+        [[0.5, 600.0], [1.0, 100.0], [2.0, 5000.0]], dtype=torch.float64
+    )
+    got = loss(
+        prediction, torch.cat([target, properties], 1), return_elements=True
+    )
+    u = 0.5 * ((prediction - target) ** 2).sum(1)
+    expected_alpha = torch.tensor(
+        np.exp(
+            [
+                log_alpha.mean(),  # centre of the cell
+                log_alpha[1, 0],  # at a corner
+                log_alpha[1, 1],  # clamped beyond both edges
+            ]
+        ),
+        dtype=torch.float64,
+    )
+    expected = 2 * torch.log1p(2 * u / expected_alpha**2)
+    assert torch.allclose(got.double(), expected, rtol=1e-5)
+    assert loss.lower_bound == 0.0
+
+
+def test_spcauchy_two_property_knots_alpha_setter() -> None:
+    """`alphas` is nested like `rho`; a scalar or a grid sets the knots."""
+    rho = [[0.90, 0.95, 0.97], [0.98, 0.99, 0.995]]
+    loss = spCauchyLoss(
+        rho=rho, rho_knots=[0.0, 1.0], rho_knots_2=[0.0, 500.0, 1500.0]
+    )
+    alphas = loss.alphas
+    assert np.shape(alphas) == (2, 3)
+    loss._alpha = 0.1  # as set by the annealing callback
+    assert np.allclose(loss._alpha, 0.1)
+    # the annealing callback interpolates element-wise in log space
+    schedule = np.logspace(np.log10(0.1), np.log10(np.asarray(alphas)), 3)
+    loss._alpha = schedule[-1].tolist()
+    assert np.allclose(loss._rho_values, rho)
+
+
+def test_spcauchy_two_property_knots_check_shapes() -> None:
+    """Grid shape, knot order and the two property columns are checked."""
+    with pytest.raises(AssertionError):
+        spCauchyLoss(rho=[0.9, 0.95], rho_knots=[0.0, 1.0], rho_knots_2=[0.0])
+    with pytest.raises(AssertionError):
+        spCauchyLoss(
+            rho=[[0.9, 0.95], [0.97, 0.99]],
+            rho_knots=[0.0, 1.0],
+            rho_knots_2=[1.0, 0.0],
+        )
+    with pytest.raises(AssertionError):
+        spCauchyLoss(rho=0.9, rho_knots_2=[0.0, 1.0])
+    loss = spCauchyLoss(
+        rho=[[0.9, 0.95], [0.97, 0.99]],
+        rho_knots=[0.0, 1.0],
+        rho_knots_2=[0.0, 1000.0],
+    )
+    one_column = torch.cat(
+        [_unit_vectors(3, 14), torch.rand(3, 1, dtype=torch.float64)], 1
+    )
+    with pytest.raises(AssertionError):
+        loss(_unit_vectors(3, 15), one_column)
