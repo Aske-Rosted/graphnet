@@ -4,7 +4,7 @@ A transformer backbone producing one output token group per task, for
 reconstructing several quantities of an event with a single model.
 """
 
-from typing import List, Optional, Set
+from typing import List, Optional, Sequence, Set, Tuple
 
 import torch
 import torch.nn as nn
@@ -15,6 +15,7 @@ from graphnet.models.components.attention_blocks import Block, Block_rel
 from graphnet.models.components.embedding import (
     SinusoidalPosEmb,
     SpacetimeEncoder,
+    signed_four_distance,
 )
 from graphnet.models.gnn.gnn import GNN
 from graphnet.models.utils import array_to_sequence
@@ -56,6 +57,8 @@ class NeutrinoEventMultitaskTransformer(GNN):
         spacetime_time_index: int = 3,
         spacetime_time_scale: float = 3e4 / 500 * 3e-1,
         factor_rel_bias: bool = True,
+        rel_bias_widths: Optional[Sequence[float]] = None,
+        per_block_rel_bias: bool = False,
     ):
         """Construct `NeutrinoEventMultitaskTransformer`.
 
@@ -97,6 +100,17 @@ class NeutrinoEventMultitaskTransformer(GNN):
                 factored form (same attention, without the `[B, L, L,
                 head_dim]` tensor; ~head_dim times less memory and work for
                 the relative term). Has no effect with `embed_bias`.
+            rel_bias_widths: Without `embed_bias`, make the relative
+                encoding non-linear in the four-distance `d`: a fixed basis
+                `[d, exp(-(d / s)**2) for s in rel_bias_widths]` (widths in
+                units of the position columns), projected linearly to the
+                head dimension, `sum_k phi_k(d) w_k + b`, and passed to the
+                attention in factored form (cost ~K times the linear
+                term). None (default): the encoding is affine in `d`.
+            per_block_rel_bias: If True, each of the `n_rel` blocks has its
+                own projection of the (shared) four-distance basis;
+                otherwise all of them use the same one. Requires
+                `embed_bias=False`.
         """
         cross_attention = list(cross_attention or [])
         tot_out = (out_dim if out_dim is not None else hidden_dim) * n_tasks
@@ -169,7 +183,30 @@ class NeutrinoEventMultitaskTransformer(GNN):
             nn.init.xavier_normal_(self.shared_tokens, gain=1.0)
 
         head_dim = hidden_dim // num_heads
-        if n_rel > 0:
+        # basis / per-block projections of the four-distance, instead of
+        # `rel_pos`: the distance is computed once, each projection owns
+        # its weights (`rel_pos` would leave unused parameters)
+        self._basis_rel_bias = (
+            rel_bias_widths is not None or per_block_rel_bias
+        )
+        if self._basis_rel_bias:
+            assert (
+                not embed_bias
+            ), "`rel_bias_widths` / `per_block_rel_bias` need embed_bias=False."
+            assert n_rel > 0, "`rel_bias_widths` needs a block with n_rel > 0."
+            widths = [float(w) for w in (rel_bias_widths or [])]
+            assert all(w > 0 for w in widths), "Widths must be positive."
+            self._rel_bias_widths = widths
+            self._spacetime_columns = (0, 1, 2, spacetime_time_index)
+            self._spacetime_time_scale = spacetime_time_scale
+            n_basis = 1 + len(widths)
+            self.rel_proj = nn.ModuleList(
+                [
+                    nn.Linear(n_basis, head_dim)
+                    for _ in range(n_rel if per_block_rel_bias else 1)
+                ]
+            )
+        elif n_rel > 0:
             # without the sinusoidal embedding the raw four-distance is
             # projected unclipped
             self.rel_pos = SpacetimeEncoder(
@@ -208,7 +245,9 @@ class NeutrinoEventMultitaskTransformer(GNN):
         x, mask, _ = array_to_sequence(data.x, data.batch)
         batch_size = mask.shape[0]
 
-        if self.n_rel > 0:
+        if self._basis_rel_bias:
+            basis = self._rel_bias_basis(x)
+        elif self.n_rel > 0:
             if self._factor_rel_bias:
                 rel_pos_bias = self.rel_pos.affine_factors(x)
             else:
@@ -235,6 +274,9 @@ class NeutrinoEventMultitaskTransformer(GNN):
                 attn_mask = create_attn_mask(mask, add_tokens=n_tokens)
 
             if i < self.n_rel:
+                if self._basis_rel_bias:
+                    proj = self.rel_proj[min(i, len(self.rel_proj) - 1)]
+                    rel_pos_bias = self._basis_factors(basis, proj)
                 x = block(x, attn_mask, rel_pos_bias)
             else:
                 x = block(x, None, attn_mask)
@@ -259,6 +301,31 @@ class NeutrinoEventMultitaskTransformer(GNN):
         if self.task_out is not None:
             x = self.task_out(x)
         return x.flatten(1, 2)
+
+    def _rel_bias_basis(self, x: Tensor) -> Tensor:
+        """Return the four-distance basis, `[B, L, L]` or `[B, K, L, L]`."""
+        distance = signed_four_distance(
+            x, self._spacetime_time_scale, self._spacetime_columns
+        )
+        if not self._rel_bias_widths:
+            return distance
+        return torch.stack(
+            [distance]
+            + [
+                torch.exp(-((distance / width) ** 2))
+                for width in self._rel_bias_widths
+            ],
+            1,
+        )
+
+    @staticmethod
+    def _basis_factors(
+        basis: Tensor, proj: nn.Linear
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        """Return the factors `(phi, w, b)` for `Attention_rel`."""
+        if basis.dim() == 3:  # linear in the distance: as `affine_factors`
+            return basis, proj.weight[:, 0], proj.bias
+        return basis, proj.weight.t(), proj.bias
 
 
 def create_attn_mask(mask: Tensor, add_tokens: int = 0) -> Tensor:

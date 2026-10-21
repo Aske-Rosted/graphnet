@@ -160,6 +160,9 @@ class Attention_rel(LightningModule):
         building the `[B, L, L, C]` tensor, since
         `sum_c q_c (d w_c + b_c) = d (q.w) + q.b` and
         `sum_j a_ij (d_ij w + b) = (sum_j a_ij d_ij) w + (sum_j a_ij) b`.
+        The factors can also hold `K` basis functions of the pair, `phi` of
+        shape `[B, K, L, L]` and `w` of shape `[K, C]`, for the encoding
+        `sum_k phi_k[..., None] * w_k + b` (factored term by term).
         """
         batch_size, event_length, _ = q.shape
 
@@ -181,12 +184,22 @@ class Attention_rel(LightningModule):
         factored = isinstance(rel_pos_bias, tuple)
         if factored:
             distance, rel_weight, rel_bias = rel_pos_bias  # type: ignore
-            distance = distance.unsqueeze(1)  # [B, 1, L, L]
-            q_w = q @ rel_weight.to(q.dtype)  # [B, H, L]
+            basis = distance.dim() == 4  # [B, K, L, L] with weights [K, C]
             q_b = q @ rel_bias.to(q.dtype)
-            attn = attn + (
-                distance.to(attn.dtype) * q_w.unsqueeze(-1) + q_b.unsqueeze(-1)
-            )
+            if basis:
+                q_w = q @ rel_weight.t().to(q.dtype)  # [B, H, L, K]
+                for k in range(distance.shape[1]):
+                    attn = attn + distance[:, k : k + 1].to(attn.dtype) * q_w[
+                        ..., k
+                    ].unsqueeze(-1)
+                attn = attn + q_b.unsqueeze(-1)
+            else:
+                distance = distance.unsqueeze(1)  # [B, 1, L, L]
+                q_w = q @ rel_weight.to(q.dtype)  # [B, H, L]
+                attn = attn + (
+                    distance.to(attn.dtype) * q_w.unsqueeze(-1)
+                    + q_b.unsqueeze(-1)
+                )
         elif rel_pos_bias is not None:
             bias = torch.einsum("bhic,bijc->bhij", q, rel_pos_bias)
             attn = attn + bias
@@ -212,11 +225,23 @@ class Attention_rel(LightningModule):
         x = (attn @ v).transpose(1, 2)
         if factored:
             # row sums of the (dropped-out) attention, not assumed to be 1
-            weighted_distance = (attn * distance.to(attn.dtype)).sum(-1)
             row_sum = attn.sum(-1)
-            rel = weighted_distance.unsqueeze(-1) * rel_weight.to(
-                attn.dtype
-            ) + row_sum.unsqueeze(-1) * rel_bias.to(attn.dtype)
+            if basis:
+                weighted_basis = torch.stack(
+                    [
+                        (attn * distance[:, k : k + 1].to(attn.dtype)).sum(-1)
+                        for k in range(distance.shape[1])
+                    ],
+                    -1,
+                )  # [B, H, L, K]
+                rel = weighted_basis @ rel_weight.to(
+                    attn.dtype
+                ) + row_sum.unsqueeze(-1) * rel_bias.to(attn.dtype)
+            else:
+                weighted_distance = (attn * distance.to(attn.dtype)).sum(-1)
+                rel = weighted_distance.unsqueeze(-1) * rel_weight.to(
+                    attn.dtype
+                ) + row_sum.unsqueeze(-1) * rel_bias.to(attn.dtype)
             x = x + rel.transpose(1, 2).to(x.dtype)
         elif rel_pos_bias is not None:
             x = x + torch.einsum("bhij,bijc->bihc", attn, rel_pos_bias)

@@ -208,3 +208,113 @@ def test_factor_rel_bias_has_no_effect_with_sinusoidal_embedding() -> None:
     b.load_state_dict(a.state_dict())
     batch = _batch([4, 9])
     assert torch.equal(a(batch), b(batch))
+
+
+def test_attention_basis_factors_match_full_encoding() -> None:
+    """`Attention_rel` with K basis factors equals the built encoding."""
+    from graphnet.models.components.attention_blocks import Attention_rel
+
+    torch.manual_seed(4)
+    attention = Attention_rel(16, num_heads=2, attn_drop=0.3).double()
+    x = torch.randn(2, 7, 16, dtype=torch.float64)
+    phi = torch.randn(2, 3, 7, 7, dtype=torch.float64)
+    weight = torch.randn(3, 8, dtype=torch.float64)
+    bias = torch.randn(8, dtype=torch.float64)
+    encoding = torch.einsum("bkij,kc->bijc", phi, weight) + bias
+    for train in (False, True):  # with dropout the rows do not sum to one
+        attention.train(train)
+        torch.manual_seed(5)
+        factored = attention(x, x, x, (phi, weight, bias))
+        torch.manual_seed(5)
+        full = attention(x, x, x, encoding)
+        assert torch.allclose(factored, full, rtol=1e-10, atol=1e-12)
+
+
+def test_per_block_linear_rel_bias_matches_shared_encoder() -> None:
+    """Per-block projections without widths reproduce the affine bias."""
+    torch.manual_seed(6)
+    reference = _net(embed_bias=False).double()
+    per_block = _net(embed_bias=False, per_block_rel_bias=True).double()
+    state = reference.state_dict()
+    state["rel_proj.0.weight"] = state.pop("rel_pos.projection.weight")
+    state["rel_proj.0.bias"] = state.pop("rel_pos.projection.bias")
+    per_block.load_state_dict(state)
+    batch = _double_batch([5, 12])
+    assert torch.allclose(
+        per_block(batch), reference(batch), rtol=1e-10, atol=1e-12
+    )
+
+
+def test_rel_bias_basis_extends_the_linear_bias() -> None:
+    """Zero weights on the Gaussian terms give the linear bias; non-zero
+    weights change the output."""
+    torch.manual_seed(7)
+    linear = _net(embed_bias=False, per_block_rel_bias=True).double()
+    basis = _net(
+        embed_bias=False, per_block_rel_bias=True, rel_bias_widths=[0.1, 1.0]
+    ).double()
+    state = linear.state_dict()
+    weight = state["rel_proj.0.weight"]
+    state["rel_proj.0.weight"] = torch.cat(
+        [weight, torch.zeros(weight.shape[0], 2, dtype=weight.dtype)], 1
+    )
+    basis.load_state_dict(state)
+    batch = _double_batch([6, 10])
+    assert torch.allclose(basis(batch), linear(batch), rtol=1e-10, atol=1e-12)
+    with torch.no_grad():
+        basis.rel_proj[0].weight[:, 1:] = 0.5
+    assert not torch.allclose(basis(batch), linear(batch))
+
+
+def test_per_block_rel_bias_trains_every_projection() -> None:
+    """Two rel blocks with own projections: all get gradients, padding
+    stays local."""
+    net = _net(
+        n_attention_blocks=4,
+        n_rel=2,
+        inject_cls_after=2,
+        cross_attention=[2, 3],
+        embed_bias=False,
+        per_block_rel_bias=True,
+        rel_bias_widths=[0.1, 0.3, 1.0],
+    )
+    assert len(net.rel_proj) == 2
+    assert net.rel_proj[0].weight.shape == (8, 4)
+    assert not hasattr(net, "rel_pos")
+    batch = _batch([5, 9])
+    net(batch).square().sum().backward()
+    for name, parameter in net.named_parameters():
+        assert parameter.grad is not None, name
+    with torch.no_grad():
+        together = net(batch)
+        alone = net(Batch.from_data_list([batch.get_example(0)]))
+    assert torch.allclose(together[0], alone[0], atol=1e-5)
+
+
+def test_shared_basis_projection_and_argument_checks() -> None:
+    """Without `per_block_rel_bias` one projection serves all rel blocks."""
+    net = _net(
+        n_attention_blocks=4,
+        n_rel=2,
+        inject_cls_after=2,
+        cross_attention=[2, 3],
+        embed_bias=False,
+        rel_bias_widths=[0.2],
+    )
+    assert len(net.rel_proj) == 1
+    assert net(_batch([4, 7])).shape == (2, 24)
+    for kwargs in (
+        dict(embed_bias=True, rel_bias_widths=[0.2]),
+        dict(embed_bias=False, rel_bias_widths=[0.0]),
+        dict(
+            embed_bias=False,
+            n_rel=0,
+            inject_cls_after=1,
+            per_block_rel_bias=True,
+        ),
+    ):
+        try:
+            _net(**kwargs)
+        except AssertionError:
+            continue
+        raise AssertionError(f"accepted {kwargs}")
