@@ -1143,13 +1143,22 @@ class spCauchyLoss(LossFunction):
     `(d - 1) * log(1 + |mu - x|**2 / alpha**2)`: every event's loss is 0
     for an exact prediction, so the lower bound stays 0 although the
     density at the peak differs between events.
+
+    A second property, e.g. the true visible length, can be added with
+    `rho_knots_2`: `rho` is then a nested list `rho[i][j]` at
+    `(rho_knots[i], rho_knots_2[j])`, the target holds both properties as
+    its last two columns (first property, then second), and `log(alpha)` is
+    interpolated bilinearly on the grid (constant beyond its edges).
     """
 
     def __init__(
         self,
-        rho: Optional[Union[float, Sequence[float]]] = None,
+        rho: Optional[
+            Union[float, Sequence[float], Sequence[Sequence[float]]]
+        ] = None,
         dim: int = 3,
         rho_knots: Optional[Sequence[float]] = None,
+        rho_knots_2: Optional[Sequence[float]] = None,
         **kwargs: Any,
     ) -> None:
         """Construct spCauchyLoss.
@@ -1158,36 +1167,57 @@ class spCauchyLoss(LossFunction):
             rho: Fixed concentration in `[0, 1)`. If None (default), the
                 concentration is predicted per event (last column of the
                 prediction). A list gives the concentration at each of
-                `rho_knots`.
+                `rho_knots`; a nested list `rho[i][j]` the concentration at
+                `(rho_knots[i], rho_knots_2[j])`.
             dim: Dimension `d` of the vectors; only used for the lower
                 bound of the loss with a fixed `rho`.
             rho_knots: Increasing values of the event property (the last
                 target column) at which `rho` is given; required for, and
-                only used with, a list `rho`.
+                only used with, a list `rho`. With `rho_knots_2` the first
+                property is the second-to-last target column.
+            rho_knots_2: Increasing values of a second event property (the
+                last target column) at which `rho` is given; requires
+                `rho_knots` and a nested `rho`.
         """
         super().__init__(**kwargs)
         self._rho: Optional[float] = None
         # concentrations at the knots, if given as a list
-        self._rho_values: Optional[List[float]] = None
+        # (nested for two properties)
+        self._rho_values: Optional[List[Any]] = None
         self._rho_knots: Optional[List[float]] = None
+        self._rho_knots_2: Optional[List[float]] = None
         if isinstance(rho, (int, float)) or rho is None:
             assert rho_knots is None, "`rho_knots` needs a list `rho`."
+            assert rho_knots_2 is None, "`rho_knots_2` needs a nested `rho`."
             assert rho is None or 0 <= rho < 1, "`rho` must be in [0, 1)."
             self._rho = None if rho is None else float(rho)
         else:
-            assert rho_knots is not None and len(rho_knots) == len(
-                rho
-            ), "A list `rho` needs `rho_knots` of the same length."
+            assert rho_knots is not None, "A list `rho` needs `rho_knots`."
+            shape: Tuple[int, ...] = (len(rho_knots),)
+            if rho_knots_2 is not None:
+                shape = (len(rho_knots), len(rho_knots_2))
+            values = np.asarray(rho, dtype=float)
+            assert values.shape == shape, (
+                f"`rho` must have the shape of the knots {shape}, got "
+                f"{values.shape}."
+            )
+            for knots in (rho_knots, rho_knots_2):
+                assert knots is None or np.all(
+                    np.diff(knots) > 0
+                ), "The knots must be increasing."
             assert np.all(
-                np.diff(rho_knots) > 0
-            ), "`rho_knots` must be increasing."
-            assert all(0 < r < 1 for r in rho), "`rho` must be in (0, 1)."
-            self._rho_values = [float(r) for r in rho]
+                (values > 0) & (values < 1)
+            ), "`rho` must be in (0, 1)."
+            self._rho_values = values.tolist()
             self._rho_knots = [float(x) for x in rho_knots]
+            if rho_knots_2 is not None:
+                self._rho_knots_2 = [float(x) for x in rho_knots_2]
         self._dim = dim
         # (knots, log alpha) per device / dtype: building them from Python
         # lists at every call would copy to (and synchronise with) the GPU
-        self._knot_tensors: Dict[Tuple[str, str], Tuple[Tensor, Tensor]] = {}
+        self._knot_tensors: Dict[
+            Tuple[str, str], Tuple[Tensor, Optional[Tensor], Tensor]
+        ] = {}
 
     @property
     def alpha(self) -> float:
@@ -1209,24 +1239,27 @@ class spCauchyLoss(LossFunction):
         self._rho = self._rho_from_alpha(alpha)
 
     @property
-    def alphas(self) -> List[float]:
+    def alphas(self) -> List[Any]:
         """Return the scale at each knot, for a `rho` given at `rho_knots`.
 
-        Setting a list changes the concentration at each knot; a single
+        Nested like `rho` (`alphas[i][j]`) with `rho_knots_2`. Setting a
+        list of that shape changes the concentration at each knot; a single
         value sets all knots.
         """
         if self._rho_values is None:
             raise AttributeError("The concentration is not given at knots.")
-        return [self._alpha_from_rho(r) for r in self._rho_values]
+        rho = np.asarray(self._rho_values)
+        return ((1 - rho) / np.sqrt(rho)).tolist()
 
     @alphas.setter
-    def alphas(self, alphas: Union[float, Sequence[float]]) -> None:
+    def alphas(self, alphas: Union[float, Sequence[Any]]) -> None:
         if self._rho_knots is None:
             raise AttributeError("The concentration is not given at knots.")
-        values = np.broadcast_to(
-            np.asarray(alphas, dtype=float), (len(self._rho_knots),)
-        )
-        self._rho_values = [self._rho_from_alpha(float(a)) for a in values]
+        shape: Tuple[int, ...] = (len(self._rho_knots),)
+        if self._rho_knots_2 is not None:
+            shape = (len(self._rho_knots), len(self._rho_knots_2))
+        values = np.broadcast_to(np.asarray(alphas, dtype=float), shape)
+        self._rho_values = np.vectorize(self._rho_from_alpha)(values).tolist()
         self._knot_tensors = {}
 
     @staticmethod
@@ -1301,23 +1334,47 @@ class spCauchyLoss(LossFunction):
     ) -> Tensor:
         dim = prediction.size(1)
         assert dim == self._dim
-        assert (
-            target.size(1) == dim + 1
-        ), "The last target column must hold the property at `rho_knots`."
+        n_properties = 1 if self._rho_knots_2 is None else 2
+        assert target.size(1) == dim + n_properties, (
+            "The last target column(s) must hold the property (properties) "
+            "at the knots."
+        )
         assert self._rho_knots is not None
         key = (str(prediction.device), str(prediction.dtype))
         if key not in self._knot_tensors:
             self._knot_tensors[key] = (
                 prediction.new_tensor(self._rho_knots),
+                (
+                    None
+                    if self._rho_knots_2 is None
+                    else prediction.new_tensor(self._rho_knots_2)
+                ),
                 prediction.new_tensor(np.log(self.alphas)),
             )
-        knots, log_alpha = self._knot_tensors[key]
-        x = target[:, dim].float().clamp(knots[0], knots[-1])
-        i = torch.searchsorted(knots, x, right=True).clamp(1, len(knots) - 1)
-        w = (x - knots[i - 1]) / (knots[i] - knots[i - 1])
-        alpha = torch.exp(torch.lerp(log_alpha[i - 1], log_alpha[i], w))
+        knots, knots_2, log_alpha = self._knot_tensors[key]
+        i, w = self._knot_interval(knots, target[:, dim].float())
+        if knots_2 is None:
+            log_a = torch.lerp(log_alpha[i - 1], log_alpha[i], w)
+        else:
+            j, v = self._knot_interval(knots_2, target[:, dim + 1].float())
+            # bilinear: lerp along the second property, then the first
+            low = torch.lerp(log_alpha[i - 1, j - 1], log_alpha[i - 1, j], v)
+            high = torch.lerp(log_alpha[i, j - 1], log_alpha[i, j], v)
+            log_a = torch.lerp(low, high, w)
+        alpha = torch.exp(log_a)
         one_minus_dot = 0.5 * (
             (prediction - target[:, :dim].float()) ** 2
         ).sum(dim=-1)
         # 2 k (1 + k) = 2 / alpha^2; the peak value log(1 + 2k) is dropped
         return (dim - 1) * torch.log1p(2.0 * one_minus_dot / alpha**2)
+
+    @staticmethod
+    def _knot_interval(knots: Tensor, x: Tensor) -> Tuple[Tensor, Tensor]:
+        """Return the upper knot index and the weight of `x` in its interval.
+
+        `x` is clamped to the knot range (constant beyond the knots).
+        """
+        x = x.clamp(knots[0], knots[-1])
+        i = torch.searchsorted(knots, x, right=True).clamp(1, len(knots) - 1)
+        w = (x - knots[i - 1]) / (knots[i] - knots[i - 1])
+        return i, w
