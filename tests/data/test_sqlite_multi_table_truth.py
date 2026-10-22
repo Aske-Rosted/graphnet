@@ -77,6 +77,16 @@ def test_super_selection_uses_sql(database: str) -> None:
     assert selected == [9, 10, 11, 12]
 
 
+def test_super_selection_matching_nothing(database: str) -> None:
+    """A super selection without matches gives an empty dataset."""
+    dataset = _dataset(
+        database,
+        selection="abs(shift) < 3 and energy > 1e9",
+        use_super_selection=True,
+    )
+    assert len(dataset) == 0
+
+
 def test_missing_column_in_joined_tables(database: str) -> None:
     """A column missing from all joined tables is reported once."""
     dataset = _dataset(database)

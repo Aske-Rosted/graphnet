@@ -7,6 +7,7 @@ import os
 import re
 from typing import List, Optional, Tuple, TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
 
 from graphnet.utilities.logging import Logger
@@ -231,14 +232,14 @@ class StringSelectionResolver(Logger):
             df_values = self._load_values_cache(values_cache_path)
 
         else:
+            values = self._dataset.query_table(
+                self._dataset.truth_table,
+                list(variables),
+                selection=(selection if self._use_super_selection else None),
+            )
+            # A super selection that matches no event comes back as shape (0,)
             df_values = pd.DataFrame(
-                data=self._dataset.query_table(
-                    self._dataset.truth_table,
-                    list(variables),
-                    selection=(
-                        selection if self._use_super_selection else None
-                    ),
-                ),
+                data=np.asarray(values).reshape(-1, len(variables)),
                 columns=list(variables),
             )
 
