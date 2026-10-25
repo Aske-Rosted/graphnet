@@ -224,6 +224,22 @@ def test_weighted_sampler_resample(tmp_path: str) -> None:
     fixed = WeightedRandomSampler(dataset, num_samples=50, resample=False)
     assert list(fixed) == list(fixed)
 
+    # One repeat leaves the later draws unchanged
+    reference = WeightedRandomSampler(
+        dataset, num_samples=50, generator=torch.Generator().manual_seed(1)
+    )
+    sampler = WeightedRandomSampler(
+        dataset, num_samples=50, generator=torch.Generator().manual_seed(1)
+    )
+    with pytest.raises(RuntimeError):
+        sampler.repeat_last_draw()
+    draws = [list(reference) for _ in range(3)]
+    assert list(sampler) == draws[0]
+    sampler.repeat_last_draw()
+    assert list(sampler) == draws[0]
+    assert list(sampler) == draws[1]
+    assert list(sampler) == draws[2]
+
 
 def test_weighted_sampler_supports_ensemble_dataset(tmp_path: str) -> None:
     """Test weighted sampling across multiple SQLite files."""

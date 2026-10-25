@@ -26,6 +26,7 @@ _____________________
 
 from typing import (
     Any,
+    Dict,
     List,
     Optional,
     Tuple,
@@ -301,6 +302,9 @@ class WeightedRandomSampler(Sampler[int], Logger):
     the sampled events are resampled each epoch. With `resample=False`
     every iteration yields the same index sequence, e.g. to evaluate a
     validation set on the same events in every epoch.
+    `repeat_last_draw()` makes only the next iteration repeat the
+    previous sequence, e.g. to evaluate a second model on the events of
+    a validation epoch; the draws of later iterations are unaffected.
     """
 
     def __init__(
@@ -355,6 +359,8 @@ class WeightedRandomSampler(Sampler[int], Logger):
         )
         self._seed = seed
         self._rng = np.random.default_rng(seed)
+        self._last_draw_state: Optional[Dict[str, Any]] = None
+        self._repeat = False
 
         self._weights = self._load_weights(weight_table, weight_column)
 
@@ -468,6 +474,12 @@ class WeightedRandomSampler(Sampler[int], Logger):
         """Set whether every iteration draws a new index sequence."""
         self._resample = value
 
+    def repeat_last_draw(self) -> None:
+        """Make the next iteration yield the previous index sequence."""
+        if self._last_draw_state is None:
+            raise RuntimeError("The sampler has not been iterated yet.")
+        self._repeat = True
+
     @property
     def num_samples(self) -> int:
         """Return number of samples per epoch."""
@@ -486,9 +498,16 @@ class WeightedRandomSampler(Sampler[int], Logger):
             f"num_samples={self.num_samples}, replacement={self._replacement}"
             f", resample={self._resample}"
         )
-        if not self._resample:
+        if self._repeat:
+            # Repeat the previous sequence; leaves the generator where it
+            # was after that draw, so later draws are unaffected.
+            assert self._last_draw_state is not None
+            self._rng.bit_generator.state = self._last_draw_state
+            self._repeat = False
+        elif not self._resample:
             # Same sequence on every iteration
             self._rng = np.random.default_rng(self._seed)
+        self._last_draw_state = self._rng.bit_generator.state
         sampled_indices = self._rng.choice(
             len(self._weights),
             size=self.num_samples,
