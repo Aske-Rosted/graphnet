@@ -196,7 +196,7 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
         if stage == "fit" or stage == "validate":
             if self._train_selection is not None:
                 self._train_dataset = self._create_dataset(
-                    self._train_selection
+                    self._train_selection, augment=True
                 )
             if self._val_selection is not None:
                 self._val_dataset = self._create_dataset(self._val_selection)
@@ -547,12 +547,16 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
         return dataset
 
     def _create_dataset(
-        self, selection: Union[List[int], List[List[int]], List[float]]
+        self,
+        selection: Union[List[int], List[List[int]], List[float]],
+        augment: bool = False,
     ) -> Union[EnsembleDataset, Dataset]:
         """Instantiate `dataset_reference`.
 
         Args:
             selection: The selected event id's.
+            augment: Keep the data augmentations of `dataset_args`, if any.
+                Only the training dataset is augmented.
 
         Returns:
             A dataset, either an instance of `EnsembleDataset` or `Dataset`.
@@ -566,6 +570,7 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
                     self._create_single_dataset(
                         selection=selection[dataset_idx],  # type: ignore
                         path=self._dataset_args["path"][dataset_idx],
+                        augment=augment,
                     )
                 )
 
@@ -576,6 +581,7 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
             dataset = self._create_single_dataset(
                 selection=selection,
                 path=self._dataset_args["path"],  # type: ignore
+                augment=augment,
             )
         return dataset
 
@@ -583,12 +589,14 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
         self,
         selection: Union[List[int], List[List[int]], List[float]],
         path: str,
+        augment: bool = False,
     ) -> Dataset:
         """Instantiate a single `Dataset`.
 
         Args:
             selection: A selection for a single dataset.
             path: Path to a single dataset
+            augment: Keep the data augmentations of `dataset_args`, if any.
 
         Returns:
             An instance of `Dataset`.
@@ -596,4 +604,6 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
         tmp_args = deepcopy(self._dataset_args)
         tmp_args["path"] = path
         tmp_args["selection"] = selection
+        if not augment:
+            tmp_args.pop("augmentations", None)
         return self._construct_dataset(tmp_args)
