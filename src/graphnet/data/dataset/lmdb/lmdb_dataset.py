@@ -6,6 +6,7 @@ import numpy as np
 import lmdb
 from tqdm import tqdm
 from torch_geometric.data import Data
+from graphnet.data.augmentation import DataAugmentation
 from graphnet.data.dataset.dataset import Dataset, ColumnMissingException
 from graphnet.data.utilities.lmdb_utilities import (
     get_all_indices,
@@ -45,6 +46,7 @@ class LMDBDataset(Dataset):
         loss_weight_default_value: Optional[float] = None,
         seed: Optional[int] = None,
         labels: Optional[Dict[str, Any]] = None,
+        augmentations: Optional[List[DataAugmentation]] = None,
         # LMDB-specific parameters
         pre_computed_representation: Optional[str] = None,
         repeat_labels_by: Optional[int] = None,
@@ -85,6 +87,8 @@ class LMDBDataset(Dataset):
             seed: Random number generator seed, used for selecting a random
                 subset of events when resolving a string-based selection.
             labels: Dictionary of labels to be added to the dataset.
+            augmentations: Data augmentations applied to the input rows of
+                every event each time it is read (see `Dataset`).
             pre_computed_representation: Name of the pre-computed data
                 representation to use. If None, reads raw tables and computes
                 representations in real-time. If specified, extracts the
@@ -118,7 +122,13 @@ class LMDBDataset(Dataset):
             loss_weight_default_value=loss_weight_default_value,
             seed=seed,
             labels=labels,
+            augmentations=augmentations,
         )
+        if augmentations and pre_computed_representation is not None:
+            raise ValueError(
+                "Data augmentations act on the input rows and cannot be "
+                "applied to a pre-computed data representation."
+            )
 
     # Implementing abstract method(s)
     def _init(self) -> None:
