@@ -20,6 +20,7 @@ import torch
 from torch_geometric.data import Data
 
 from graphnet.constants import GRAPHNET_ROOT_DIR
+from graphnet.data.augmentation import DataAugmentation
 from graphnet.data.utilities.string_selection_resolver import (
     StringSelectionResolver,
 )
@@ -91,6 +92,29 @@ def parse_labels(cfg: dict) -> Dict[str, Label]:
             **cfg["labels"][key]["arguments"]
         )
     return labels
+
+
+def parse_augmentations(cfg: dict) -> List[DataAugmentation]:
+    """Construct the data augmentations from DatasetConfig."""
+    assert cfg["augmentations"] is not None
+
+    augmentations = []
+    for augmentation in cfg["augmentations"]:
+        augmentations.append(
+            load_module(augmentation["class_name"])(
+                **augmentation["arguments"]
+            )
+        )
+    return augmentations
+
+
+def is_training_selection(selection_name: str) -> bool:
+    """Check whether the selection `selection_name` is used for training.
+
+    Training selections are shuffled by `DataLoader.from_dataset_config` and
+    are the only ones to which data augmentations are applied.
+    """
+    return "train" in selection_name.lower()
 
 
 class Dataset(
@@ -167,6 +191,9 @@ class Dataset(
         if cfg["labels"] is not None:
             cfg["labels"] = parse_labels(cfg)
 
+        if cfg.get("augmentations") is not None:
+            cfg["augmentations"] = parse_augmentations(cfg)
+
         if isinstance(cfg["path"], list):
             sources = []
             for path in cfg["path"]:
@@ -193,11 +220,20 @@ class Dataset(
         assert isinstance(config.selection, dict)
         datasets: Dict[str, "Dataset"] = {}
         selections: Dict[str, Union[str, List]] = deepcopy(config.selection)
+        augmentations = config.augmentations
         for key, selection in selections.items():
             config.selection = selection
+            # Augment the training selections only
+            if not is_training_selection(key):
+                config.augmentations = None
+            elif augmentations is not None:
+                Logger(log_folder=None).info(
+                    f"Applying data augmentations to selection '{key}'."
+                )
             dataset = Dataset.from_config(config)
             assert isinstance(dataset, (Dataset, EnsembleDataset))
             datasets[key] = dataset
+            config.augmentations = augmentations
 
         # Reset `selections`.
         config.selection = selections
@@ -259,6 +295,7 @@ class Dataset(
         loss_weight_default_value: Optional[float] = None,
         seed: Optional[int] = None,
         labels: Optional[Dict[str, Any]] = None,
+        augmentations: Optional[List[DataAugmentation]] = None,
     ):
         """Construct Dataset.
 
@@ -306,6 +343,12 @@ class Dataset(
                 events ~ event_no % 5 > 0"`).
             data_representation: Method that defines the data representation.
             labels: Dictionary of labels to be added to the dataset.
+            augmentations: Data augmentations applied, in order, to the input
+                rows of every event each time it is read, before the data
+                representation (see `graphnet.data.augmentation`). Use them
+                for training data only. With a `DatasetConfig` that defines
+                several selections, they are applied to the selections whose
+                name contains "train". Defaults to None.
 
             graph_definition: Method that defines the graph representation.
                 NOTE: DEPRECATED Use `data_representation` instead.
@@ -356,6 +399,7 @@ class Dataset(
 
         self._data_representation = deepcopy(data_representation)
         self._labels = labels
+        self._augmentations = list(augmentations or [])
         if data_representation is None:
             self._string_column = None
         else:
@@ -718,6 +762,9 @@ class Dataset(
             node_features = np.array([]).reshape((0, len(self._features)))
 
         assert isinstance(features, np.ndarray)
+        for augmentation in self._augmentations:
+            node_features = augmentation(node_features, self._features)
+
         # Construct graph data object
         try:
             assert self._data_representation is not None

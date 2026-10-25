@@ -6,6 +6,7 @@ import torch.utils.data
 from torch_geometric.data import Batch, Data
 
 from graphnet.data.dataset import Dataset
+from graphnet.data.dataset.dataset import is_training_selection
 from graphnet.utilities.config import DatasetConfig
 
 
@@ -20,7 +21,7 @@ def collate_fn(graphs: List[Data]) -> Batch:
 
 def do_shuffle(selection_name: str) -> bool:
     """Check whether to shuffle selection with name `selection_name`."""
-    return "train" in selection_name.lower()
+    return is_training_selection(selection_name)
 
 
 class DataLoader(torch.utils.data.DataLoader):
