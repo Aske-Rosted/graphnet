@@ -190,6 +190,57 @@ def test_weighted_sampler_respects_selection_and_shuffle(
     np.testing.assert_allclose(loader.sampler._weights.numpy(), expected)
 
 
+def test_weighted_sampler_resample(tmp_path: str) -> None:
+    """Test that `resample=False` repeats the index sequence."""
+    source_db = os.path.join(
+        EXAMPLE_DATA_DIR, "sqlite", "prometheus", "prometheus-events.db"
+    )
+    target_db = os.path.join(tmp_path, "weighted.db")
+    truth_table = "mc_truth"
+    weight_table = "sampling_weights"
+    event_nos = _get_event_nos(source_db, truth_table)
+    weights = {event_no: 1.0 for event_no in event_nos}
+    _make_weighted_db(source_db, target_db, truth_table, weight_table, weights)
+    dataset = SQLiteDataset(
+        path=target_db,
+        pulsemaps="total",
+        truth_table=truth_table,
+        truth=TRUTH.PROMETHEUS,
+        features=FEATURES.PROMETHEUS,
+        graph_definition=graph_definition,
+        loss_weight_table=weight_table,
+        loss_weight_column="weight",
+    )
+
+    sampler = WeightedRandomSampler(dataset, num_samples=50)
+    assert sampler.resample
+    assert list(sampler) != list(sampler)
+
+    sampler.resample = False
+    first = list(sampler)
+    assert list(sampler) == first
+    assert len(first) == 50
+
+    fixed = WeightedRandomSampler(dataset, num_samples=50, resample=False)
+    assert list(fixed) == list(fixed)
+
+    # One repeat leaves the later draws unchanged
+    reference = WeightedRandomSampler(
+        dataset, num_samples=50, generator=torch.Generator().manual_seed(1)
+    )
+    sampler = WeightedRandomSampler(
+        dataset, num_samples=50, generator=torch.Generator().manual_seed(1)
+    )
+    with pytest.raises(RuntimeError):
+        sampler.repeat_last_draw()
+    draws = [list(reference) for _ in range(3)]
+    assert list(sampler) == draws[0]
+    sampler.repeat_last_draw()
+    assert list(sampler) == draws[0]
+    assert list(sampler) == draws[1]
+    assert list(sampler) == draws[2]
+
+
 def test_weighted_sampler_supports_ensemble_dataset(tmp_path: str) -> None:
     """Test weighted sampling across multiple SQLite files."""
     source_db = os.path.join(

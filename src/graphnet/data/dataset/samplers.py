@@ -26,6 +26,7 @@ _____________________
 
 from typing import (
     Any,
+    Dict,
     List,
     Optional,
     Tuple,
@@ -296,9 +297,14 @@ class LenMatchBatchSampler(BatchSampler, Logger):
 class WeightedRandomSampler(Sampler[int], Logger):
     """A `Sampler` that samples events weighted by a SQLite column.
 
-    The sampler reads weights from SQLite once during construction and
-    samples a fresh index sequence on every iteration, so the sampled
-    events are resampled each epoch.
+    The sampler reads weights from SQLite once during construction and,
+    by default, samples a fresh index sequence on every iteration, so
+    the sampled events are resampled each epoch. With `resample=False`
+    every iteration yields the same index sequence, e.g. to evaluate a
+    validation set on the same events in every epoch.
+    `repeat_last_draw()` makes only the next iteration repeat the
+    previous sequence, e.g. to evaluate a second model on the events of
+    a validation epoch; the draws of later iterations are unaffected.
     """
 
     def __init__(
@@ -309,6 +315,7 @@ class WeightedRandomSampler(Sampler[int], Logger):
         num_samples: Optional[int] = None,
         replacement: bool = True,
         generator: Optional[torch.Generator] = None,
+        resample: bool = True,
     ) -> None:
         """Construct `WeightedRandomSampler`.
 
@@ -324,10 +331,14 @@ class WeightedRandomSampler(Sampler[int], Logger):
             replacement: Sample with replacement. Recommended True when
                 oversampling rare energy bins.
             generator: Optional torch Generator for reproducibility.
+            resample: Draw a new index sequence on every iteration. If
+                False, every iteration yields the same sequence. Defaults to
+                True.
         """
         self._data_source = data_source
         self._num_samples = num_samples
         self._replacement = replacement
+        self._resample = resample
         Logger.__init__(self, class_name=self.__class__.__name__)
 
         if generator is None:
@@ -346,7 +357,10 @@ class WeightedRandomSampler(Sampler[int], Logger):
                 dtype=torch.int64,
             ).item()
         )
+        self._seed = seed
         self._rng = np.random.default_rng(seed)
+        self._last_draw_state: Optional[Dict[str, Any]] = None
+        self._repeat = False
 
         self._weights = self._load_weights(weight_table, weight_column)
 
@@ -451,6 +465,22 @@ class WeightedRandomSampler(Sampler[int], Logger):
         return self._data_source
 
     @property
+    def resample(self) -> bool:
+        """Return whether every iteration draws a new index sequence."""
+        return self._resample
+
+    @resample.setter
+    def resample(self, value: bool) -> None:
+        """Set whether every iteration draws a new index sequence."""
+        self._resample = value
+
+    def repeat_last_draw(self) -> None:
+        """Make the next iteration yield the previous index sequence."""
+        if self._last_draw_state is None:
+            raise RuntimeError("The sampler has not been iterated yet.")
+        self._repeat = True
+
+    @property
     def num_samples(self) -> int:
         """Return number of samples per epoch."""
         if self._num_samples is None:
@@ -466,7 +496,18 @@ class WeightedRandomSampler(Sampler[int], Logger):
         self.info(
             "Generating weighted samples for a new epoch: "
             f"num_samples={self.num_samples}, replacement={self._replacement}"
+            f", resample={self._resample}"
         )
+        if self._repeat:
+            # Repeat the previous sequence; leaves the generator where it
+            # was after that draw, so later draws are unaffected.
+            assert self._last_draw_state is not None
+            self._rng.bit_generator.state = self._last_draw_state
+            self._repeat = False
+        elif not self._resample:
+            # Same sequence on every iteration
+            self._rng = np.random.default_rng(self._seed)
+        self._last_draw_state = self._rng.bit_generator.state
         sampled_indices = self._rng.choice(
             len(self._weights),
             size=self.num_samples,
