@@ -59,6 +59,7 @@ class NeutrinoEventMultitaskTransformer(GNN):
         factor_rel_bias: bool = True,
         rel_bias_widths: Optional[Sequence[float]] = None,
         per_block_rel_bias: bool = False,
+        qk_norm: bool = False,
     ):
         """Construct `NeutrinoEventMultitaskTransformer`.
 
@@ -111,6 +112,12 @@ class NeutrinoEventMultitaskTransformer(GNN):
                 own projection of the (shared) four-distance basis;
                 otherwise all of them use the same one. Requires
                 `embed_bias=False`.
+            qk_norm: If True, the blocks without relative bias (the
+                self-attention blocks from `n_rel` on and the token-only
+                blocks) normalize queries and keys and scale the logits by
+                a learned temperature per head (`QKNormAttention`), which
+                bounds the attention logits. The temperatures are not
+                weight-decayed.
         """
         cross_attention = list(cross_attention or [])
         tot_out = (out_dim if out_dim is not None else hidden_dim) * n_tasks
@@ -142,11 +149,21 @@ class NeutrinoEventMultitaskTransformer(GNN):
 
         self.ESA = nn.ModuleList(
             [
-                (Block_rel if i < n_rel else Block)(
-                    hidden_dim,
-                    num_heads,
-                    mlp_ratio=mlp_ratio,
-                    dropout=dropout,
+                (
+                    Block_rel(
+                        hidden_dim,
+                        num_heads,
+                        mlp_ratio=mlp_ratio,
+                        dropout=dropout,
+                    )
+                    if i < n_rel
+                    else Block(
+                        hidden_dim,
+                        num_heads,
+                        mlp_ratio=mlp_ratio,
+                        dropout=dropout,
+                        qk_norm=qk_norm,
+                    )
                 )
                 for i in range(n_attention_blocks)
             ]
@@ -160,6 +177,7 @@ class NeutrinoEventMultitaskTransformer(GNN):
                     num_heads,
                     mlp_ratio=mlp_ratio,
                     drop_path=drop_path,
+                    qk_norm=qk_norm,
                 )
                 for _ in cross_attention
             ]
@@ -237,8 +255,12 @@ class NeutrinoEventMultitaskTransformer(GNN):
 
     @torch.jit.ignore
     def no_weight_decay(self) -> Set:
-        """Exclude the learned tokens from weight decay."""
-        return {"task_tokens", "shared_tokens"}
+        """Exclude the learned tokens and temperatures from weight decay."""
+        return {"task_tokens", "shared_tokens"} | {
+            name
+            for name, _ in self.named_parameters()
+            if name.endswith("attn.log_temperature")
+        }
 
     def forward(self, data: Data) -> Tensor:
         """Apply learnable forward pass to input data."""
