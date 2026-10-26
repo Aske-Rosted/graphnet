@@ -5,7 +5,7 @@ from typing import Optional, Tuple, Union
 import torch
 import torch.nn as nn
 from torch.functional import Tensor
-from torch.nn.functional import linear
+from torch.nn.functional import linear, scaled_dot_product_attention
 from pytorch_lightning import LightningModule
 
 
@@ -366,6 +366,159 @@ class Block_rel(LightningModule):
         return x
 
 
+class QKNormAttention(nn.Module):
+    """Multi-head attention with normalized queries and keys.
+
+    As `nn.MultiheadAttention` (batch first), except that the query and key
+    of every head are scaled to unit length before their dot product, and
+    the result is multiplied by a learned temperature per head:
+    `logit = tau_h * cos(q, k)`. The size of the attention logits is then
+    bounded by `tau_h`, instead of growing with the norms of the
+    projection weights (attention-logit growth, Dehghani et al. 2023,
+    arXiv:2302.05442; Wortsman et al. 2023, arXiv:2309.14322). The
+    temperatures are parametrized by their logarithm.
+
+    The parameter names are those of `nn.MultiheadAttention`
+    (`in_proj_weight`, `in_proj_bias`, `out_proj`), so its weights load
+    directly; only `log_temperature` is new. Unlike there, the key bias is
+    not redundant: the keys are normalized after it is added.
+    """
+
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int,
+        dropout: float = 0.0,
+        temperature: Optional[float] = None,
+    ):
+        """Construct `QKNormAttention`.
+
+        Args:
+            embed_dim: Dimension of the input and output.
+            num_heads: Number of attention heads.
+            dropout: Dropout probability on the attention weights.
+            temperature: Initial temperature of every head. Defaults to
+                `sqrt(head_dim)`, the logit scale of the unnormalized
+                attention for queries and keys with unit-variance entries.
+        """
+        super().__init__()
+        if embed_dim % num_heads != 0:
+            raise ValueError(
+                f"embed_dim ({embed_dim}) must be divisible by num_heads "
+                f"({num_heads})."
+            )
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        self.dropout = dropout
+        self.in_proj_weight = nn.Parameter(
+            torch.empty(3 * embed_dim, embed_dim)
+        )
+        self.in_proj_bias = nn.Parameter(torch.zeros(3 * embed_dim))
+        self.out_proj = nn.Linear(embed_dim, embed_dim)
+        nn.init.xavier_uniform_(self.in_proj_weight)
+        nn.init.zeros_(self.out_proj.bias)
+        if temperature is None:
+            temperature = self.head_dim**0.5
+        self.log_temperature = nn.Parameter(
+            torch.full((num_heads,), float(temperature)).log()
+        )
+
+    def _project(
+        self, query: Tensor, key: Tensor, value: Tensor
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        """Return the heads of q, k, v, each `[B, num_heads, L, head_dim]`."""
+        if query is key and key is value:
+            q, k, v = linear(
+                query, self.in_proj_weight, self.in_proj_bias
+            ).chunk(3, dim=-1)
+        else:
+            w_q, w_k, w_v = self.in_proj_weight.chunk(3)
+            b_q, b_k, b_v = self.in_proj_bias.chunk(3)
+            q = linear(query, w_q, b_q)
+            k = linear(key, w_k, b_k)
+            v = linear(value, w_v, b_v)
+
+        def heads(x: Tensor) -> Tensor:
+            return x.unflatten(-1, (self.num_heads, self.head_dim)).transpose(
+                1, 2
+            )
+
+        return heads(q), heads(k), heads(v)
+
+    def _normalize(self, q: Tensor, k: Tensor) -> Tuple[Tensor, Tensor]:
+        """Scale queries and keys to unit length, the queries by `tau_h`.
+
+        In float32, so that the normalization is exact under autocast.
+        """
+        tau = self.log_temperature.float().exp()[:, None, None]
+        q32, k32 = q.float(), k.float()
+        q = tau * q32 / q32.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+        k = k32 / k32.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+        return q, k
+
+    def forward(
+        self,
+        query: Tensor,
+        key: Tensor,
+        value: Tensor,
+        attn_mask: Optional[Tensor] = None,
+        key_padding_mask: Optional[Tensor] = None,
+        need_weights: bool = False,
+    ) -> Tuple[Tensor, None]:
+        """Forward pass, with the masks of `nn.MultiheadAttention`.
+
+        Args:
+            query: `[B, L, embed_dim]`.
+            key: `[B, S, embed_dim]`.
+            value: `[B, S, embed_dim]`.
+            attn_mask: `[L, S]` or `[B * num_heads, L, S]`; boolean (True:
+                not attended) or additive float.
+            key_padding_mask: `[B, S]`; boolean (True: padding) or additive
+                float.
+            need_weights: Must be False (the weights are not returned).
+
+        Returns:
+            The output `[B, L, embed_dim]` and None (in place of the
+            attention weights of `nn.MultiheadAttention`).
+        """
+        assert not need_weights, "QKNormAttention does not return weights."
+        batch_size, length, _ = query.shape
+        q, k, v = self._project(query, key, value)
+        q, k = self._normalize(q, k)
+        q, k = q.to(v.dtype), k.to(v.dtype)
+
+        mask = None
+        if attn_mask is not None:
+            mask = _additive_mask(attn_mask, v.dtype)
+            if mask.dim() == 3:
+                mask = mask.view(batch_size, self.num_heads, *mask.shape[1:])
+        if key_padding_mask is not None:
+            padding = _additive_mask(key_padding_mask, v.dtype)
+            padding = padding[:, None, None, :]
+            mask = padding if mask is None else mask + padding
+
+        # the temperature is already in the queries: no 1 / sqrt(head_dim)
+        x = scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=mask,
+            dropout_p=self.dropout if self.training else 0.0,
+            scale=1.0,
+        )
+        x = x.transpose(1, 2).reshape(batch_size, length, self.embed_dim)
+        return self.out_proj(x), None
+
+
+def _additive_mask(mask: Tensor, dtype: torch.dtype) -> Tensor:
+    """Return `mask` as an additive float mask (boolean True -> -inf)."""
+    if mask.dtype == torch.bool:
+        additive = torch.zeros(mask.shape, dtype=dtype, device=mask.device)
+        return additive.masked_fill(mask, -torch.inf)
+    return mask.to(dtype)
+
+
 class Block(LightningModule):
     """Transformer block."""
 
@@ -380,6 +533,7 @@ class Block(LightningModule):
         init_values: Optional[float] = None,
         activation: nn.Module = nn.GELU,
         norm_layer: nn.Module = nn.LayerNorm,
+        qk_norm: bool = False,
     ):
         """Construct 'Block'.
 
@@ -398,12 +552,21 @@ class Block(LightningModule):
                 parameters if not `None`.
             activation: Activation function to use in the `Mlp` layer.
             norm_layer: Normalization layer to use.
+            qk_norm: If True, use `QKNormAttention` (normalized queries and
+                keys, learned temperature per head) instead of
+                `nn.MultiheadAttention`. Same parameter names, plus
+                `attn.log_temperature`.
         """
         super().__init__()
         self.norm1 = norm_layer(input_dim)
-        self.attn = nn.MultiheadAttention(
-            input_dim, num_heads, dropout=attn_drop, batch_first=True
-        )
+        if qk_norm:
+            self.attn = QKNormAttention(
+                input_dim, num_heads, dropout=attn_drop
+            )
+        else:
+            self.attn = nn.MultiheadAttention(
+                input_dim, num_heads, dropout=attn_drop, batch_first=True
+            )
         self.drop_path = (
             DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         )

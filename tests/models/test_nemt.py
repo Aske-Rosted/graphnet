@@ -318,3 +318,102 @@ def test_shared_basis_projection_and_argument_checks() -> None:
         except AssertionError:
             continue
         raise AssertionError(f"accepted {kwargs}")
+
+
+def _mha_and_qk_norm(
+    dim: int = 32, heads: int = 4
+) -> "tuple[torch.nn.MultiheadAttention, Any]":
+    from graphnet.models.components.attention_blocks import QKNormAttention
+
+    torch.manual_seed(0)
+    mha = torch.nn.MultiheadAttention(dim, heads, batch_first=True).eval()
+    with torch.no_grad():
+        mha.in_proj_bias.normal_()
+        mha.out_proj.bias.normal_()
+    attention = QKNormAttention(dim, heads).eval()
+    missing, unexpected = attention.load_state_dict(
+        mha.state_dict(), strict=False
+    )
+    assert missing == ["log_temperature"] and unexpected == []
+    return mha, attention
+
+
+def test_qk_norm_attention_projections_match_multihead_attention() -> None:
+    """Without the normalization `QKNormAttention` is the loaded
+    `nn.MultiheadAttention`, with float, boolean and 2D masks."""
+    mha, attention = _mha_and_qk_norm()
+    scale = attention.head_dim**-0.5
+    attention._normalize = lambda q, k: (q * scale, k)  # type: ignore
+    x = torch.randn(3, 7, 32)
+    padding = torch.zeros(3, 7, dtype=torch.bool)
+    padding[0, 5:] = True
+    padding[2, 3:] = True
+    float_padding = torch.zeros(3, 7).masked_fill(padding, -torch.inf)
+    causal = torch.triu(torch.ones(7, 7, dtype=torch.bool), 1)
+    for masks in (
+        {},
+        {"key_padding_mask": float_padding},
+        {"key_padding_mask": padding},
+        {"key_padding_mask": padding, "attn_mask": causal},
+    ):
+        with torch.no_grad():
+            reference = mha(x, x, x, need_weights=False, **masks)[0]
+            output = attention(x, x, x, **masks)[0]
+        assert torch.allclose(output, reference, atol=1e-5), masks
+
+
+def test_qk_norm_attention_ignores_query_and_key_scale() -> None:
+    """The logits are `tau * cos(q, k)`: scaling the query and key projections
+    (weights and biases) leaves the output unchanged."""
+    _, attention = _mha_and_qk_norm()
+    x = torch.randn(2, 6, 32)
+    with torch.no_grad():
+        reference = attention(x, x, x)[0]
+        attention.in_proj_weight[:64] *= 50.0
+        attention.in_proj_bias[:64] *= 50.0
+        assert torch.allclose(attention(x, x, x)[0], reference, atol=1e-5)
+        attention.log_temperature += 1.0
+        assert not torch.allclose(attention(x, x, x)[0], reference, atol=1e-3)
+
+
+def test_qk_norm_backbone() -> None:
+    """`qk_norm` swaps the attention of the plain and token-only blocks, adds
+    only temperatures, keeps padding local and trains everything."""
+    from graphnet.models.components.attention_blocks import QKNormAttention
+
+    kwargs: Dict[str, Any] = dict(
+        n_attention_blocks=4,
+        n_rel=2,
+        inject_cls_after=2,
+        cross_attention=[2, 3],
+        embed_bias=False,
+        per_block_rel_bias=True,
+        rel_bias_widths=[0.1, 0.3, 1.0],
+    )
+    plain = _net(**kwargs)
+    net = _net(qk_norm=True, **kwargs)
+    assert not any(
+        isinstance(m, QKNormAttention) for m in plain.modules()
+    ), "qk_norm=False must keep nn.MultiheadAttention"
+    for block in list(net.ESA[2:]) + list(net.xTAMS):
+        assert isinstance(block.attn, QKNormAttention)
+    new_keys = set(net.state_dict()) - set(plain.state_dict())
+    assert new_keys == {
+        "ESA.2.attn.log_temperature",
+        "ESA.3.attn.log_temperature",
+        "xTAMS.0.attn.log_temperature",
+        "xTAMS.1.attn.log_temperature",
+    }
+    assert set(plain.state_dict()) <= set(net.state_dict())
+    assert new_keys <= net.no_weight_decay()
+
+    batch = _batch([5, 9])
+    net.train()
+    net(batch).square().sum().backward()
+    for name, parameter in net.named_parameters():
+        assert parameter.grad is not None, name
+    net.eval()
+    with torch.no_grad():
+        together = net(batch)
+        alone = net(Batch.from_data_list([batch.get_example(0)]))
+    assert torch.allclose(together[0], alone[0], atol=1e-5)
