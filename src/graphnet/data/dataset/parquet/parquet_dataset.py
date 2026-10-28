@@ -30,6 +30,9 @@ from graphnet.exceptions.exceptions import ColumnMissingException
 class ParquetDataset(Dataset):
     """Dataset class for Parquet-files converted with `ParquetWriter`."""
 
+    # Only a single truth table is supported (see `SQLiteDataset` for joins).
+    _truth_table: str
+
     def __init__(
         self,
         path: str,
