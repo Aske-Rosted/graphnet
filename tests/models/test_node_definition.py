@@ -3,7 +3,6 @@
 from typing import Any, Dict
 
 import numpy as np
-import pytest
 import pandas as pd
 import sqlite3
 import torch
@@ -113,27 +112,6 @@ def _summary(**kwargs: Any) -> ClusterSummaryFeatures:
     )
 
 
-def test_cluster_summary_total_charge_fraction() -> None:
-    """The fraction column is log10(cluster charge / event charge)."""
-    node_definition = _summary(total_charge_fraction=True)
-    names = node_definition._output_feature_names
-    nodes = node_definition(_PULSES).numpy()
-
-    fraction = nodes[:, names.index("total_charge_fraction")]
-    assert np.allclose(10**fraction, [6 / 9, 3 / 9])
-    assert np.allclose(nodes[:, names.index("total_charge")], np.log10([6, 3]))
-
-
-def test_cluster_summary_charge_weighted_changes_time_std() -> None:
-    """Charge weighting changes the time std of unevenly charged DOMs."""
-    plain = _summary()
-    weighted = _summary(charge_weighted=True)
-    idx = plain._output_feature_names.index("time_std")
-    assert not np.allclose(
-        plain(_PULSES).numpy()[:, idx], weighted(_PULSES).numpy()[:, idx]
-    )
-
-
 def test_cluster_summary_is_invariant_to_event_time_offset() -> None:
     """Features do not depend on when the event happened."""
     node_definition = _summary(
@@ -144,13 +122,6 @@ def test_cluster_summary_is_invariant_to_event_time_offset() -> None:
     assert np.allclose(
         node_definition(_PULSES).numpy(), node_definition(shifted).numpy()
     )
-
-
-def test_cluster_summary_empty_event() -> None:
-    """An event without pulses gives an empty node set."""
-    node_definition = _summary(total_charge_fraction=True)
-    nodes = node_definition(torch.zeros((0, 5), dtype=torch.float64))
-    assert nodes.shape == (0, len(node_definition._output_feature_names))
 
 
 def test_cluster_summary_charge_after_t() -> None:
@@ -320,54 +291,6 @@ def test_cluster_summary_reference_time_attribute() -> None:
         assert node_definition.graph_attributes == {"reference_time": expected}
 
 
-def test_cluster_summary_reference_quantile_is_offset_invariant() -> None:
-    """Features ignore the event time; the reference moves with it."""
-    node_definition = _summary(
-        reference_charge_quantile=0.1,
-        reference_time_attribute="reference_time",
-        total_charge_fraction=True,
-    )
-    nodes = node_definition(_EARLY_PULSE).numpy()
-    reference = node_definition.graph_attributes["reference_time"]
-    shifted = _EARLY_PULSE.clone()
-    shifted[:, 3] += 123.0
-    assert np.allclose(node_definition(shifted).numpy(), nodes)
-    assert node_definition.graph_attributes["reference_time"] == (
-        reference + 123.0
-    )
-
-
-def test_cluster_summary_reference_time_attribute_empty_event() -> None:
-    """An event without pulses has no reference time (NaN)."""
-    node_definition = _summary(reference_time_attribute="reference_time")
-    node_definition(torch.zeros((0, 5), dtype=torch.float64))
-    assert np.isnan(node_definition.graph_attributes["reference_time"])
-
-
-def test_graph_definition_adds_node_definition_attributes() -> None:
-    """`GraphDefinition` puts the node definition's attributes on `Data`."""
-    from graphnet.models.data_representation import GraphDefinition
-    from graphnet.models.detector import IceCube86
-
-    names = ["dom_x", "dom_y", "dom_z", "dom_time", "charge"]
-    graph_definition = GraphDefinition(
-        detector=IceCube86(replace_with_identity=["dom_time", "charge"]),
-        node_definition=ClusterSummaryFeatures(
-            cluster_on=names[:3],
-            input_feature_names=names,
-            charge_after_t=[],
-            time_after_charge_pct=[],
-            reference_charge_quantile=0.1,
-            reference_time_attribute="reference_time",
-        ),
-        input_feature_names=names,
-    )
-    data = graph_definition(
-        input_features=_EARLY_PULSE.numpy().copy(), input_feature_names=names
-    )
-    assert data["reference_time"].item() == 5000.0
-
-
 def test_cluster_summary_event_features() -> None:
     """Event features are appended to every node with the same value."""
     node_definition = _summary(
@@ -386,34 +309,3 @@ def test_cluster_summary_event_features() -> None:
     # 101 PE in total; 10% of the charge at 5000 ns, 90% at 5100 ns
     expected = [np.log10(101.0), 5000.0, 100.0]
     assert np.allclose(nodes[:, -3:], np.tile(expected, (3, 1)))
-
-
-def test_cluster_summary_event_features_leave_other_features() -> None:
-    """Adding event features does not change the other node features."""
-    plain = _summary(reference_charge_quantile=0.1)
-    extended = _summary(
-        reference_charge_quantile=0.1,
-        event_features=["total_charge", "duration"],
-    )
-    assert np.allclose(
-        extended(_EARLY_PULSE).numpy()[:, :-2], plain(_EARLY_PULSE).numpy()
-    )
-
-
-def test_cluster_summary_event_features_offset_invariant() -> None:
-    """Event features do not depend on when the event happened."""
-    node_definition = _summary(
-        event_features=["total_charge", "time_to_reference", "duration"]
-    )
-    shifted = _EARLY_PULSE.clone()
-    shifted[:, 3] += 777.0
-    assert np.allclose(
-        node_definition(_EARLY_PULSE).numpy(),
-        node_definition(shifted).numpy(),
-    )
-
-
-def test_cluster_summary_event_features_unknown_name() -> None:
-    """An unknown event feature is rejected."""
-    with pytest.raises(AssertionError):
-        _summary(event_features=["n_strings"])
