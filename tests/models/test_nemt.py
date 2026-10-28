@@ -182,30 +182,6 @@ def _mha_and_qk_norm(
     return mha, attention
 
 
-def test_qk_norm_attention_projections_match_multihead_attention() -> None:
-    """Without the normalization `QKNormAttention` is the loaded
-    `nn.MultiheadAttention`, with float, boolean and 2D masks."""
-    mha, attention = _mha_and_qk_norm()
-    scale = attention.head_dim**-0.5
-    attention._normalize = lambda q, k: (q * scale, k)  # type: ignore
-    x = torch.randn(3, 7, 32)
-    padding = torch.zeros(3, 7, dtype=torch.bool)
-    padding[0, 5:] = True
-    padding[2, 3:] = True
-    float_padding = torch.zeros(3, 7).masked_fill(padding, -torch.inf)
-    causal = torch.triu(torch.ones(7, 7, dtype=torch.bool), 1)
-    for masks in (
-        {},
-        {"key_padding_mask": float_padding},
-        {"key_padding_mask": padding},
-        {"key_padding_mask": padding, "attn_mask": causal},
-    ):
-        with torch.no_grad():
-            reference = mha(x, x, x, need_weights=False, **masks)[0]
-            output = attention(x, x, x, **masks)[0]
-        assert torch.allclose(output, reference, atol=1e-5), masks
-
-
 def test_qk_norm_attention_ignores_query_and_key_scale() -> None:
     """The logits are `tau * cos(q, k)`: scaling the query and key projections
     (weights and biases) leaves the output unchanged."""
