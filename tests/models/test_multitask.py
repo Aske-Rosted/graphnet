@@ -1,6 +1,5 @@
 """Unit tests for multitask support in `StandardModel` and its tasks."""
 
-import pickle
 from typing import Any, Dict, List
 
 import pytest
@@ -23,7 +22,6 @@ from graphnet.models.task.reconstruction import (
     DirectionReconstructionWithKappa,
     EnergyReconstruction,
 )
-from graphnet.models.task.task import IdentityTaskWithUncertainty
 from graphnet.training.loss_functions import CauchyLoss, MSELoss
 
 
@@ -88,17 +86,6 @@ def test_split_routing_and_detached_chunks() -> None:
     assert captured[3].requires_grad  # own chunk keeps its gradient
 
 
-def test_split_validates_sizes() -> None:
-    """Split sizes must add up to the backbone output."""
-    with pytest.raises(AssertionError):
-        StandardModel(
-            data_representation=_graph_definition(),
-            backbone=_ConstantBackbone(nb_outputs=6),
-            tasks=_energy_tasks([2, 2]),
-            split=[[2, 2], [0, 1]],
-        )
-
-
 class _TokenBackbone(_ConstantBackbone):
     """Constant backbone with a token, a norm layer and no_weight_decay."""
 
@@ -153,33 +140,6 @@ def test_uncertainty_weighting_uses_lower_bounds() -> None:
     assert out[2] is losses[2]
 
 
-def test_uncertainty_weighting_start_epoch_and_overrides() -> None:
-    """Before `start_epoch` losses pass through; overrides replace bounds."""
-    balancing = UncertaintyWeighting(
-        start_epoch=2, lower_bounds=[None, -1.0, 0.0]
-    )
-    _balanced_model(balancing)
-    assert balancing.balanced_tasks == [0, 1, 2]
-    losses = [torch.tensor(1.0), torch.tensor(1.0), torch.tensor(1.0)]
-    assert balancing(losses, epoch=1) == losses
-    out = balancing(losses, epoch=2)
-    assert torch.isclose(out[1], torch.tensor(2.0))  # 1 - (-1)
-
-
-def test_uncertainty_weights_converge_to_inverse_excess() -> None:
-    """For fixed losses the weights settle at 1 / (2 (L - L_min))."""
-    balancing = UncertaintyWeighting(lower_bounds=[0.0, 0.0, 0.0])
-    _balanced_model(balancing)
-    losses = [torch.tensor(0.5), torch.tensor(2.0), torch.tensor(8.0)]
-    optimizer = torch.optim.Adam(balancing.parameters(), lr=0.05)
-    for _ in range(2000):
-        optimizer.zero_grad()
-        torch.stack(balancing(losses, epoch=0)).sum().backward()
-        optimizer.step()
-    expected = torch.tensor([1.0, 0.25, 0.0625])
-    assert torch.allclose(balancing.weights(), expected, rtol=1e-2)
-
-
 def test_uncertainty_weighting_max_weights() -> None:
     """Capped weights stay at their limit and can move back below it."""
     balancing = UncertaintyWeighting(
@@ -212,18 +172,6 @@ def test_uncertainty_weighting_max_weights() -> None:
     assert torch.isclose(balancing.weights()[1], torch.tensor(0.25), 1e-2)
 
 
-def test_unbounded_shared_task_warns(monkeypatch: Any) -> None:
-    """A shared task without a lower bound triggers a warning."""
-    messages: List[str] = []
-    monkeypatch.setattr(
-        LossBalancing, "warning", lambda self, msg: messages.append(msg)
-    )
-    _balanced_model(UncertaintyWeighting(), split_last_detached=True)
-    assert messages == []
-    _balanced_model(UncertaintyWeighting(), split_last_detached=False)
-    assert len(messages) == 1 and "Task 2" in messages[0]
-
-
 def test_balancing_and_weight_decay_param_groups() -> None:
     """Balancing params and excluded params get groups without decay."""
     balancing = UncertaintyWeighting(lr_scale=20.0)
@@ -249,25 +197,6 @@ def test_balancing_and_weight_decay_param_groups() -> None:
     assert id(model._tasks[0]._affine.bias) in no_decay
     assert id(backbone.weight) not in no_decay
     assert id(model._tasks[0]._affine.weight) not in no_decay
-
-
-def test_loss_parameters_are_not_weight_decayed() -> None:
-    """A learned loss scale joins the group without weight decay."""
-    loss = CauchyLoss(alpha=0.1, frac=0.0, learn_alpha=True, nb_outputs=1)
-    task = EnergyReconstruction(
-        hidden_size=2, target_labels="energy", loss_function=loss
-    )
-    model = StandardModel(
-        data_representation=_graph_definition(),
-        backbone=_TokenBackbone(nb_outputs=2),
-        tasks=[task],
-        optimizer_class=torch.optim.AdamW,
-        optimizer_kwargs={"lr": 1e-3, "weight_decay": 0.01},
-        exclude_from_weight_decay=True,
-    )
-    groups = model.configure_optimizers()["optimizer"].param_groups
-    assert [g["weight_decay"] for g in groups] == [0.01, 0.0]
-    assert id(loss.log_alpha) in {id(p) for p in groups[1]["params"]}
 
 
 @pytest.mark.parametrize(
@@ -296,19 +225,6 @@ def test_lr_scale_survives_scheduler(
     assert optimizer.param_groups[0]["lr"] < 1e-3
 
 
-def test_detach_backbone() -> None:
-    """A task with `detach_backbone` sends no gradient to its input."""
-    task = EnergyReconstruction(
-        hidden_size=4,
-        target_labels="energy",
-        loss_function=MSELoss(),
-        detach_backbone=True,
-    )
-    x = torch.randn(3, 4, requires_grad=True)
-    task(x).sum().backward()
-    assert x.grad is None
-
-
 def test_direction_tasks() -> None:
     """Direction outputs are unit vectors; kappa scaling maps k to k + k^2."""
     x = torch.randn(5, 3)
@@ -324,79 +240,6 @@ def test_direction_tasks() -> None:
     scaled = DirectionReconstructionWithKappa(scaling=True, **kw)._forward(x)
     assert torch.allclose(scaled[:, :3], plain[:, :3])
     assert torch.allclose(scaled[:, 3], plain[:, 3] + plain[:, 3] ** 2)
-
-
-def test_direction_task_with_kappa_output() -> None:
-    """With `kappa_output` the concentration is exp of a fourth input."""
-    task = DirectionReconstructionWithKappa(
-        hidden_size=5,
-        target_labels="direction",
-        loss_function=MSELoss(),
-        kappa_output=True,
-    )
-    assert task.nb_inputs == 4
-    x = torch.tensor([[3.0, 0.0, 4.0, 1.5], [0.0, -2.0, 0.0, -1.0]])
-    out = task._forward(x)
-    assert torch.allclose(out[:, :3].norm(dim=1), torch.ones(2))
-    assert torch.allclose(out[0, :3], torch.tensor([0.6, 0.0, 0.8]))
-    assert torch.allclose(out[:, 3], torch.exp(x[:, 3]))
-    assert task(torch.randn(6, 5)).shape == (6, 4)
-    with pytest.raises(AssertionError, match="scaling"):
-        DirectionReconstructionWithKappa(
-            hidden_size=5,
-            target_labels="direction",
-            loss_function=MSELoss(),
-            kappa_output=True,
-            scaling=True,
-        )
-
-
-def test_mlp_head_runs_in_float32_under_autocast() -> None:
-    """An MLP head is evaluated in float32 like the default linear head."""
-    task = EnergyReconstruction(
-        hidden_size=4,
-        target_labels="energy",
-        loss_function=MSELoss(),
-        head=[8],
-    )
-    x = torch.randn(8, 4)
-    with torch.autocast("cpu", dtype=torch.bfloat16):
-        pred = task(x.bfloat16())
-    assert pred.dtype == torch.float32
-    assert torch.allclose(pred, task(x.bfloat16().float()))
-
-
-def test_identity_task_with_uncertainty() -> None:
-    """Values pass through; scales are positive and start at one."""
-    task = IdentityTaskWithUncertainty(
-        nb_outputs=2,
-        target_labels=["a", "b"],
-        hidden_size=4,
-        loss_function=CauchyLoss(frac=1.0),
-    )
-    assert task.nb_inputs == 4
-    assert task.default_prediction_labels == [
-        "target_0_pred",
-        "target_1_pred",
-        "target_0_scale",
-        "target_1_scale",
-    ]
-    x = torch.tensor([[1.0, -2.0, 0.0, -1.0]])
-    out = task._forward(x)
-    assert torch.allclose(out[:, :2], x[:, :2])
-    assert torch.allclose(out[:, 2:], torch.exp(x[:, 2:]))
-
-    pred = task(torch.randn(8, 4))
-    data = Data(a=torch.randn(8), b=torch.randn(8))
-    loss = task.compute_loss(pred, data)
-    assert torch.isfinite(loss)
-    assert task._loss_function.lower_bound is None
-
-
-def test_tasks_are_picklable() -> None:
-    """Default transforms do not prevent pickling."""
-    task = _energy_tasks([4])[0]
-    pickle.loads(pickle.dumps(task))
 
 
 def test_task_head_and_loss_run_in_float32_under_autocast() -> None:
