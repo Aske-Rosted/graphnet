@@ -35,6 +35,19 @@ def _batch(sizes: list) -> Batch:
     return Batch.from_data_list([Data(x=torch.randn(n, 6)) for n in sizes])
 
 
+def test_output_shape() -> None:
+    """One `out_dim` block per task and event."""
+    net = _net()
+    assert net.nb_outputs == 3 * 8
+    assert net(_batch([5, 9])).shape == (2, 24)
+
+
+def test_output_shape_with_token_multiplier() -> None:
+    """Several tokens per task are projected to a single `out_dim` block."""
+    net = _net(token_multiplier=2)
+    assert net(_batch([5, 9])).shape == (2, 24)
+
+
 def test_padding_does_not_leak_between_events() -> None:
     """An event's output does not depend on the other events in the batch."""
     net = _net()
@@ -69,6 +82,46 @@ def test_example_config_builds_and_runs() -> None:
     with torch.no_grad():
         preds = model(Batch.from_data_list([graph]))
     assert [p.shape[1] for p in preds] == [1, 1, 4]
+
+
+def test_spacetime_encoder_uses_configured_time_column() -> None:
+    """The interval is built from the configured time column and scale."""
+    from graphnet.models.components.embedding import SpacetimeEncoder
+
+    encoder = SpacetimeEncoder(
+        seq_length=2,
+        output_dim=1,
+        columns=(0, 1, 2, 4),
+        time_scale=0.6,
+        clip=None,
+        apply_sin_emb=False,
+    )
+    with torch.no_grad():
+        encoder.projection.weight.fill_(1.0)
+        encoder.projection.bias.fill_(0.0)
+    # Same position, times 0 and 1 in column 4; column 3 is a decoy.
+    x = torch.tensor([[[0.0, 0.0, 0.0, 5.0, 0.0], [0.0, 0.0, 0.0, -5.0, 1.0]]])
+    interval = encoder(x)[0, :, :, 0]
+    # Timelike separation: -(1 * 0.6)
+    assert torch.allclose(interval, torch.tensor([[0.0, -0.6], [-0.6, 0.0]]))
+
+
+def test_closed_gate_leaves_tokens_unchanged() -> None:
+    """With the gates closed, the token-only blocks have no effect."""
+    net = _net()
+    batch = _batch([5, 9])
+    with torch.no_grad():
+        for gate in net.gates:
+            gate.fill_(-1e4)
+        reference = net(batch)
+        for i in range(len(net.xTAMS)):
+            net.xTAMS[i] = _RandomBlock()
+        assert torch.allclose(net(batch), reference)
+
+
+class _RandomBlock(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.randn_like(x) * 100
 
 
 def test_spacetime_encoder_with_sinusoid_matches_epjc() -> None:
