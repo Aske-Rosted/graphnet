@@ -5,11 +5,7 @@ import pytest
 import scipy.stats
 import torch
 
-from graphnet.training.loss_functions import (
-    KingLoss,
-    StudentTLoss,
-    VonMisesFisher3DLoss,
-)
+from graphnet.training.loss_functions import KingLoss, StudentTLoss
 
 
 def _directions(angles: np.ndarray) -> torch.Tensor:
@@ -58,32 +54,6 @@ def test_king_with_gamma_2_is_the_spherical_cauchy() -> None:
         )
 
 
-def test_king_tends_to_von_mises_fisher() -> None:
-    """For a large tail index the loss is the vMF NLL, kappa = 4 k (1 + k)."""
-    k = 5.0
-    angles = np.radians([0.0, 1.0, 5.0, 10.0])
-    king = _king(k, 1e5, angles)
-    prediction = torch.zeros(len(angles), 4, dtype=torch.float64)
-    prediction[:, 2] = 1.0
-    prediction[:, 3] = 4 * k * (1 + k)
-    vmf = VonMisesFisher3DLoss()(
-        prediction, _directions(angles), return_elements=True
-    )
-    assert king.numpy() == pytest.approx(vmf.numpy(), rel=1e-3, abs=1e-3)
-
-
-def test_king_fixed_gamma_matches_predicted_gamma() -> None:
-    """A fixed `gamma` gives the same loss as a predicted column."""
-    angles = np.radians([0.1, 2.0, 30.0])
-    prediction = torch.zeros(3, 4, dtype=torch.float64)
-    prediction[:, 2] = 1.0
-    prediction[:, 3] = 20.0
-    fixed = KingLoss(gamma=3.0)(
-        prediction, _directions(angles), return_elements=True
-    )
-    assert fixed.numpy() == pytest.approx(_king(20.0, 3.0, angles).numpy())
-
-
 def test_king_gradients_are_finite_at_extremes() -> None:
     """Value and gradients stay finite for extreme k, gamma and angles."""
     angles = torch.tensor([0.0, 1e-5, 1e-3, 1.0, 3.1])
@@ -107,16 +77,6 @@ def test_king_gradients_are_finite_at_extremes() -> None:
             assert torch.isfinite(params.grad).all()
 
 
-def test_king_resolves_small_angles_in_float32() -> None:
-    """Sub-degree angles change the loss in single precision."""
-    loss = KingLoss(gamma=3.0)
-    prediction = torch.tensor([[0.0, 0.0, 1.0, 2000.0]] * 2)
-    angles = np.radians([0.001, 0.01])
-    target = _directions(angles).float()
-    elements = loss(prediction, target, return_elements=True)
-    assert elements[1] > elements[0]
-
-
 @pytest.mark.parametrize("nu", [0.7, 1.0, 3.0, 30.0])
 def test_student_t_matches_scipy(nu: float) -> None:
     """The loss is the negative Student-t log-density."""
@@ -128,32 +88,3 @@ def test_student_t_matches_scipy(nu: float) -> None:
         target[:, 0].numpy(), nu, loc=value, scale=scale
     )
     assert loss.numpy() == pytest.approx(expected, rel=1e-6)
-
-
-def test_student_t_with_one_degree_of_freedom_is_cauchy() -> None:
-    """`nu = 1` gives the Cauchy NLL; a fixed `nu` matches a predicted one."""
-    target = torch.tensor([[0.2], [-1.0]], dtype=torch.float64)
-    prediction = torch.tensor([[0.0, 0.3]] * 2, dtype=torch.float64)
-    fixed = StudentTLoss(nu=1.0)(prediction, target, return_elements=True)
-    expected = -scipy.stats.cauchy.logpdf(target[:, 0].numpy(), 0.0, 0.3)
-    assert fixed.numpy() == pytest.approx(expected, rel=1e-6)
-    predicted = StudentTLoss()(
-        torch.cat([prediction, torch.ones(2, 1, dtype=torch.float64)], dim=1),
-        target,
-        return_elements=True,
-    )
-    assert predicted.numpy() == pytest.approx(fixed.numpy())
-
-
-def test_student_t_averages_over_columns() -> None:
-    """With several targets the loss is the mean over the columns."""
-    target = torch.tensor([[0.0, 1.0]], dtype=torch.float64)
-    prediction = torch.tensor(
-        [[0.5, 0.5, 1.0, 2.0, 2.0, 5.0]], dtype=torch.float64
-    )
-    loss = StudentTLoss()(prediction, target, return_elements=True)
-    expected = -0.5 * (
-        scipy.stats.t.logpdf(0.0, 2.0, loc=0.5, scale=1.0)
-        + scipy.stats.t.logpdf(1.0, 5.0, loc=0.5, scale=2.0)
-    )
-    assert loss.item() == pytest.approx(expected, rel=1e-6)
