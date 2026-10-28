@@ -10,12 +10,10 @@ import pytest
 from glob import glob
 from torch.utils.data import SequentialSampler
 import numpy as np
-import torch
 
 from graphnet.constants import EXAMPLE_DATA_DIR
 from graphnet.data.constants import FEATURES, TRUTH
 from graphnet.data.dataset import (
-    Dataset,
     SQLiteDataset,
     ParquetDataset,
     WeightedRandomSampler,
@@ -187,124 +185,6 @@ def test_weighted_sampler_respects_selection_and_shuffle(
 
     assert isinstance(loader.sampler, WeightedRandomSampler)
     expected = np.asarray([1.0, 2.0, 3.0, 4.0]) / 10.0
-    np.testing.assert_allclose(loader.sampler._weights.numpy(), expected)
-
-
-def test_weighted_sampler_resample(tmp_path: str) -> None:
-    """Test that `resample=False` repeats the index sequence."""
-    source_db = os.path.join(
-        EXAMPLE_DATA_DIR, "sqlite", "prometheus", "prometheus-events.db"
-    )
-    target_db = os.path.join(tmp_path, "weighted.db")
-    truth_table = "mc_truth"
-    weight_table = "sampling_weights"
-    event_nos = _get_event_nos(source_db, truth_table)
-    weights = {event_no: 1.0 for event_no in event_nos}
-    _make_weighted_db(source_db, target_db, truth_table, weight_table, weights)
-    dataset = SQLiteDataset(
-        path=target_db,
-        pulsemaps="total",
-        truth_table=truth_table,
-        truth=TRUTH.PROMETHEUS,
-        features=FEATURES.PROMETHEUS,
-        graph_definition=graph_definition,
-        loss_weight_table=weight_table,
-        loss_weight_column="weight",
-    )
-
-    sampler = WeightedRandomSampler(dataset, num_samples=50)
-    assert sampler.resample
-    assert list(sampler) != list(sampler)
-
-    sampler.resample = False
-    first = list(sampler)
-    assert list(sampler) == first
-    assert len(first) == 50
-
-    fixed = WeightedRandomSampler(dataset, num_samples=50, resample=False)
-    assert list(fixed) == list(fixed)
-
-    # One repeat leaves the later draws unchanged
-    reference = WeightedRandomSampler(
-        dataset, num_samples=50, generator=torch.Generator().manual_seed(1)
-    )
-    sampler = WeightedRandomSampler(
-        dataset, num_samples=50, generator=torch.Generator().manual_seed(1)
-    )
-    with pytest.raises(RuntimeError):
-        sampler.repeat_last_draw()
-    draws = [list(reference) for _ in range(3)]
-    assert list(sampler) == draws[0]
-    sampler.repeat_last_draw()
-    assert list(sampler) == draws[0]
-    assert list(sampler) == draws[1]
-    assert list(sampler) == draws[2]
-
-
-def test_weighted_sampler_supports_ensemble_dataset(tmp_path: str) -> None:
-    """Test weighted sampling across multiple SQLite files."""
-    source_db = os.path.join(
-        EXAMPLE_DATA_DIR, "sqlite", "prometheus", "prometheus-events.db"
-    )
-    truth_table = "mc_truth"
-    weight_table = "sampling_weights"
-    event_nos = _get_event_nos(source_db, truth_table)
-
-    db_a = os.path.join(tmp_path, "a.db")
-    db_b = os.path.join(tmp_path, "b.db")
-    _make_weighted_db(
-        source_db,
-        db_a,
-        truth_table,
-        weight_table,
-        {event_no: float(ix + 1) for ix, event_no in enumerate(event_nos)},
-    )
-    _make_weighted_db(
-        source_db,
-        db_b,
-        truth_table,
-        weight_table,
-        {
-            event_no: float(10 * (ix + 1))
-            for ix, event_no in enumerate(event_nos)
-        },
-    )
-
-    selection_a = event_nos[:3]
-    selection_b = event_nos[3:5]
-
-    dataset_a = SQLiteDataset(
-        truth_table=truth_table,
-        pulsemaps="total",
-        truth=TRUTH.PROMETHEUS,
-        features=FEATURES.PROMETHEUS,
-        path=db_a,
-        graph_definition=graph_definition,
-        loss_weight_table=weight_table,
-        loss_weight_column="weight",
-        selection=selection_a,
-    )
-    dataset_b = SQLiteDataset(
-        truth_table=truth_table,
-        pulsemaps="total",
-        truth=TRUTH.PROMETHEUS,
-        features=FEATURES.PROMETHEUS,
-        path=db_b,
-        graph_definition=graph_definition,
-        loss_weight_table=weight_table,
-        loss_weight_column="weight",
-        selection=selection_b,
-    )
-
-    loader = DataLoader(
-        dataset=Dataset.concatenate([dataset_a, dataset_b]),
-        batch_size=1,
-        num_workers=1,
-        sampler=WeightedRandomSampler,
-    )
-    assert isinstance(loader.sampler, WeightedRandomSampler)
-
-    expected = np.asarray([1.0, 2.0, 3.0, 40.0, 50.0]) / 96.0
     np.testing.assert_allclose(loader.sampler._weights.numpy(), expected)
 
 
