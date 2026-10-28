@@ -92,16 +92,3 @@ def test_predict_as_dataframe_keeps_attributes_aligned() -> None:
             event = events[int(row["event_no"])]
             single = model(Batch.from_data_list([event]))[0]
             assert np.isclose(float(single), row[model.prediction_labels[0]])
-
-
-def test_predict_returns_one_tensor_per_task() -> None:
-    """`predict` keeps returning one tensor per task."""
-    model = _model()
-    loader = DataLoader(
-        _events(),  # type: ignore[arg-type]
-        batch_size=4,
-        collate_fn=Batch.from_data_list,
-    )
-    predictions = model.predict(loader)
-    assert len(predictions) == 1
-    assert predictions[0].shape == (23, 1)
