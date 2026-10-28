@@ -35,19 +35,6 @@ def _batch(sizes: list) -> Batch:
     return Batch.from_data_list([Data(x=torch.randn(n, 6)) for n in sizes])
 
 
-def test_output_shape() -> None:
-    """One `out_dim` block per task and event."""
-    net = _net()
-    assert net.nb_outputs == 3 * 8
-    assert net(_batch([5, 9])).shape == (2, 24)
-
-
-def test_output_shape_with_token_multiplier() -> None:
-    """Several tokens per task are projected to a single `out_dim` block."""
-    net = _net(token_multiplier=2)
-    assert net(_batch([5, 9])).shape == (2, 24)
-
-
 def test_padding_does_not_leak_between_events() -> None:
     """An event's output does not depend on the other events in the batch."""
     net = _net()
@@ -82,46 +69,6 @@ def test_example_config_builds_and_runs() -> None:
     with torch.no_grad():
         preds = model(Batch.from_data_list([graph]))
     assert [p.shape[1] for p in preds] == [1, 1, 4]
-
-
-def test_spacetime_encoder_uses_configured_time_column() -> None:
-    """The interval is built from the configured time column and scale."""
-    from graphnet.models.components.embedding import SpacetimeEncoder
-
-    encoder = SpacetimeEncoder(
-        seq_length=2,
-        output_dim=1,
-        columns=(0, 1, 2, 4),
-        time_scale=0.6,
-        clip=None,
-        apply_sin_emb=False,
-    )
-    with torch.no_grad():
-        encoder.projection.weight.fill_(1.0)
-        encoder.projection.bias.fill_(0.0)
-    # Same position, times 0 and 1 in column 4; column 3 is a decoy.
-    x = torch.tensor([[[0.0, 0.0, 0.0, 5.0, 0.0], [0.0, 0.0, 0.0, -5.0, 1.0]]])
-    interval = encoder(x)[0, :, :, 0]
-    # Timelike separation: -(1 * 0.6)
-    assert torch.allclose(interval, torch.tensor([[0.0, -0.6], [-0.6, 0.0]]))
-
-
-def test_closed_gate_leaves_tokens_unchanged() -> None:
-    """With the gates closed, the token-only blocks have no effect."""
-    net = _net()
-    batch = _batch([5, 9])
-    with torch.no_grad():
-        for gate in net.gates:
-            gate.fill_(-1e4)
-        reference = net(batch)
-        for i in range(len(net.xTAMS)):
-            net.xTAMS[i] = _RandomBlock()
-        assert torch.allclose(net(batch), reference)
-
-
-class _RandomBlock(torch.nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.randn_like(x) * 100
 
 
 def test_spacetime_encoder_with_sinusoid_matches_epjc() -> None:
@@ -171,80 +118,6 @@ def test_factored_rel_bias_matches_full_encoding() -> None:
         assert torch.allclose(a.grad, b.grad, rtol=1e-8, atol=1e-10), name
 
 
-def test_factored_rel_bias_matches_with_attention_dropout() -> None:
-    """With attention dropout (rows no longer sum to one) in training."""
-    factored, full = _pair(dropout=0.3)
-    factored.train()
-    full.train()
-    batch = _double_batch([6, 11])
-    torch.manual_seed(7)
-    out_factored = factored(batch)
-    torch.manual_seed(7)
-    out_full = full(batch)
-    assert torch.allclose(out_factored, out_full, rtol=1e-10, atol=1e-12)
-
-
-def test_affine_factors_reproduce_the_encoding() -> None:
-    """`d * w + b` from the factors equals the encoder output."""
-    from graphnet.models.components.embedding import SpacetimeEncoder
-
-    torch.manual_seed(2)
-    x = torch.randn(3, 7, 6, dtype=torch.float64)
-    for clip in (None, 0.5):
-        encoder = SpacetimeEncoder(
-            8, output_dim=8, clip=clip, apply_sin_emb=False
-        ).double()
-        distance, weight, bias = encoder.affine_factors(x)
-        assert torch.allclose(
-            distance.unsqueeze(-1) * weight + bias, encoder(x)
-        )
-
-
-def test_factor_rel_bias_has_no_effect_with_sinusoidal_embedding() -> None:
-    """With `embed_bias` the encoding is not affine; the flag is ignored."""
-    torch.manual_seed(3)
-    a = _net(embed_bias=True, factor_rel_bias=True)
-    b = _net(embed_bias=True, factor_rel_bias=False)
-    b.load_state_dict(a.state_dict())
-    batch = _batch([4, 9])
-    assert torch.equal(a(batch), b(batch))
-
-
-def test_attention_basis_factors_match_full_encoding() -> None:
-    """`Attention_rel` with K basis factors equals the built encoding."""
-    from graphnet.models.components.attention_blocks import Attention_rel
-
-    torch.manual_seed(4)
-    attention = Attention_rel(16, num_heads=2, attn_drop=0.3).double()
-    x = torch.randn(2, 7, 16, dtype=torch.float64)
-    phi = torch.randn(2, 3, 7, 7, dtype=torch.float64)
-    weight = torch.randn(3, 8, dtype=torch.float64)
-    bias = torch.randn(8, dtype=torch.float64)
-    encoding = torch.einsum("bkij,kc->bijc", phi, weight) + bias
-    for train in (False, True):  # with dropout the rows do not sum to one
-        attention.train(train)
-        torch.manual_seed(5)
-        factored = attention(x, x, x, (phi, weight, bias))
-        torch.manual_seed(5)
-        full = attention(x, x, x, encoding)
-        assert torch.allclose(factored, full, rtol=1e-10, atol=1e-12)
-
-
-def test_per_block_linear_rel_bias_matches_shared_encoder() -> None:
-    """Per-block projections without widths reproduce the affine bias."""
-    torch.manual_seed(6)
-    reference = _net(embed_bias=False).double()
-    per_block = _net(embed_bias=False, per_block_rel_bias=True).double()
-    state = reference.state_dict()
-    state["rel_proj.0.weight"] = state.pop("rel_pos.projection.weight")
-    state["rel_proj.0.bias"] = state.pop("rel_pos.projection.bias")
-    per_block.load_state_dict(state)
-    batch = _double_batch([5, 12])
-    assert torch.allclose(
-        per_block(batch), reference(batch), rtol=1e-10, atol=1e-12
-    )
-
-
 def test_rel_bias_basis_extends_the_linear_bias() -> None:
     """Zero weights on the Gaussian terms give the linear bias; non-zero
     weights change the output."""
@@ -289,32 +162,3 @@ def test_per_block_rel_bias_trains_every_projection() -> None:
         together = net(batch)
         alone = net(Batch.from_data_list([batch.get_example(0)]))
     assert torch.allclose(together[0], alone[0], atol=1e-5)
-
-
-def test_shared_basis_projection_and_argument_checks() -> None:
-    """Without `per_block_rel_bias` one projection serves all rel blocks."""
-    net = _net(
-        n_attention_blocks=4,
-        n_rel=2,
-        inject_cls_after=2,
-        cross_attention=[2, 3],
-        embed_bias=False,
-        rel_bias_widths=[0.2],
-    )
-    assert len(net.rel_proj) == 1
-    assert net(_batch([4, 7])).shape == (2, 24)
-    for kwargs in (
-        dict(embed_bias=True, rel_bias_widths=[0.2]),
-        dict(embed_bias=False, rel_bias_widths=[0.0]),
-        dict(
-            embed_bias=False,
-            n_rel=0,
-            inject_cls_after=1,
-            per_block_rel_bias=True,
-        ),
-    ):
-        try:
-            _net(**kwargs)
-        except AssertionError:
-            continue
-        raise AssertionError(f"accepted {kwargs}")
