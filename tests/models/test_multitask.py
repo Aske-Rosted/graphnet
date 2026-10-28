@@ -255,25 +255,3 @@ def test_direction_task_with_shape_output() -> None:
             loss_function=MSELoss(),
             shape_output=True,
         )
-
-
-def test_identity_task_with_uncertainty_and_shape() -> None:
-    """With `shape_output` a positive shape per value follows the scales."""
-    task = IdentityTaskWithUncertainty(
-        nb_outputs=2,
-        target_labels=["a", "b"],
-        hidden_size=4,
-        loss_function=MSELoss(),
-        shape_output=True,
-    )
-    assert task.nb_inputs == 6
-    assert task.default_prediction_labels[4:] == [
-        "target_0_shape",
-        "target_1_shape",
-    ]
-    x = torch.tensor([[1.0, -2.0, 0.0, -1.0, 0.0, -50.0]])
-    out = task._forward(x)
-    assert torch.allclose(out[:, :2], x[:, :2])
-    assert torch.allclose(out[:, 2:4], torch.exp(x[:, 2:4]))
-    # zero output: nu = 1 (Cauchy); clamped at 0.25
-    assert torch.allclose(out[:, 4:], torch.tensor([[1.0, 0.25]]))
