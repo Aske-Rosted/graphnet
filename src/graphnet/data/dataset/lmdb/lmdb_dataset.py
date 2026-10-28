@@ -24,6 +24,9 @@ class LMDBDataset(Dataset):
        (skipping DataRepresentation computation)
     """
 
+    # Only a single truth table is supported (see `SQLiteDataset` for joins).
+    _truth_table: str
+
     def __init__(
         self,
         path: Union[str, List[str]],
@@ -234,7 +237,7 @@ class LMDBDataset(Dataset):
 
     def query_table(
         self,
-        table: str,
+        table: Union[str, List[str]],
         columns: Union[List[str], str],
         sequential_index: Optional[int] = None,
         selection: Optional[str] = None,
@@ -242,7 +245,8 @@ class LMDBDataset(Dataset):
         """Query table at a specific index, optionally with some selection.
 
         Args:
-            table: Table name (extractor name) to query.
+            table: Table name (extractor name) to query. Joined tables are
+                not supported.
             columns: Columns to read out.
             sequential_index: Sequentially index of the event to query.
             selection: Selection to be imposed (not fully supported for LMDB).
@@ -250,6 +254,10 @@ class LMDBDataset(Dataset):
         Returns:
             Numpy array containing the values in `columns`.
         """
+        if not isinstance(table, str):
+            raise NotImplementedError(
+                "LMDBDataset does not support joined tables."
+            )
         # Convert columns to list if string
         if isinstance(columns, str):
             columns = [columns]
