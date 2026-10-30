@@ -417,3 +417,23 @@ def test_qk_norm_backbone() -> None:
         together = net(batch)
         alone = net(Batch.from_data_list([batch.get_example(0)]))
     assert torch.allclose(together[0], alone[0], atol=1e-5)
+
+
+def test_isolated_task_tokens_do_not_see_each_other() -> None:
+    """Without token-only blocks, isolated tasks do not depend on each other's
+    tokens."""
+    net = _net(
+        n_attention_blocks=4,
+        cross_attention=[],
+        isolate_task_tokens=True,
+        qk_norm=True,
+    )
+    batch = _batch([5, 9])
+    with torch.no_grad():
+        reference = net(batch)
+        # random, not constant: LayerNorm removes a shift of all channels
+        net.task_tokens[:, 1] += torch.randn(net.task_tokens.shape[-1])
+        perturbed = net(batch)
+    changed = (perturbed - reference).abs().reshape(2, 3, 8).amax(dim=(0, 2))
+    assert changed[1] > 1e-3
+    assert changed[0] == 0 and changed[2] == 0

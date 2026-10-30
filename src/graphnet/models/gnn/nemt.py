@@ -20,6 +20,9 @@ from graphnet.models.components.embedding import (
 from graphnet.models.gnn.gnn import GNN
 from graphnet.models.utils import array_to_sequence
 
+# pair terms of the relative-bias basis (`pair_features`)
+PAIR_FEATURES = ("distance", "time_difference", "dz")
+
 
 class NeutrinoEventMultitaskTransformer(GNN):
     """Transformer with learned task tokens for multitask reconstruction.
@@ -34,6 +37,12 @@ class NeutrinoEventMultitaskTransformer(GNN):
     final block are projected to `out_dim` and concatenated, giving
     `n_tasks * out_dim` outputs that can be routed to tasks with
     `StandardModel(split=...)`.
+
+    With `isolate_task_tokens` the task tokens are read-out queries: in the
+    self-attention blocks each task attends to the nodes, the shared tokens
+    and its own tokens, and nothing attends to the task tokens, so the tasks
+    exchange information only through the gated token-only blocks, which
+    then hold only the task tokens.
     """
 
     def __init__(
@@ -60,6 +69,8 @@ class NeutrinoEventMultitaskTransformer(GNN):
         rel_bias_widths: Optional[Sequence[float]] = None,
         per_block_rel_bias: bool = False,
         qk_norm: bool = False,
+        pair_features: Optional[Sequence[str]] = None,
+        isolate_task_tokens: bool = False,
     ):
         """Construct `NeutrinoEventMultitaskTransformer`.
 
@@ -118,6 +129,19 @@ class NeutrinoEventMultitaskTransformer(GNN):
                 a learned temperature per head (`QKNormAttention`), which
                 bounds the attention logits. The temperatures are not
                 weight-decayed.
+            pair_features: Pair terms added to the relative-bias basis
+                (requires `embed_bias=False`), in units of the position
+                columns, for query node `i` and key node `j`:
+                `"distance"` the spatial distance `|r_i - r_j|`,
+                `"time_difference"` the signed `(t_i - t_j)` times
+                `spacetime_time_scale`, `"dz"` the signed `z_i - z_j`. The
+                four-distance alone does not separate space from time and
+                is symmetric in `i, j`; these terms give the attention the
+                causal order and the depth. Each adds one basis term.
+            isolate_task_tokens: If True, the task tokens are read-out
+                queries (see the class docstring): no node, shared token or
+                other task attends to a task's tokens in the self-attention
+                blocks, and the token-only blocks hold the task tokens only.
         """
         cross_attention = list(cross_attention or [])
         tot_out = (out_dim if out_dim is not None else hidden_dim) * n_tasks
@@ -169,7 +193,10 @@ class NeutrinoEventMultitaskTransformer(GNN):
             ]
         )
 
-        n_tokens = (n_tasks + shared_tokens) * token_multiplier
+        # with isolated task tokens the token-only blocks hold no shared tokens
+        n_tokens = (
+            n_tasks if isolate_task_tokens else n_tasks + shared_tokens
+        ) * token_multiplier
         self.xTAMS = nn.ModuleList(
             [
                 Block(
@@ -204,20 +231,27 @@ class NeutrinoEventMultitaskTransformer(GNN):
         # basis / per-block projections of the four-distance, instead of
         # `rel_pos`: the distance is computed once, each projection owns
         # its weights (`rel_pos` would leave unused parameters)
+        pair_features = list(pair_features or [])
+        unknown = set(pair_features) - set(PAIR_FEATURES)
+        assert not unknown, f"Unknown pair features {sorted(unknown)}."
+        self._pair_features = pair_features
         self._basis_rel_bias = (
-            rel_bias_widths is not None or per_block_rel_bias
+            rel_bias_widths is not None
+            or per_block_rel_bias
+            or bool(pair_features)
         )
         if self._basis_rel_bias:
-            assert (
-                not embed_bias
-            ), "`rel_bias_widths` / `per_block_rel_bias` need embed_bias=False."
+            assert not embed_bias, (
+                "`rel_bias_widths` / `per_block_rel_bias` / `pair_features` "
+                "need embed_bias=False."
+            )
             assert n_rel > 0, "`rel_bias_widths` needs a block with n_rel > 0."
             widths = [float(w) for w in (rel_bias_widths or [])]
             assert all(w > 0 for w in widths), "Widths must be positive."
             self._rel_bias_widths = widths
             self._spacetime_columns = (0, 1, 2, spacetime_time_index)
             self._spacetime_time_scale = spacetime_time_scale
-            n_basis = 1 + len(widths)
+            n_basis = 1 + len(widths) + len(pair_features)
             self.rel_proj = nn.ModuleList(
                 [
                     nn.Linear(n_basis, head_dim)
@@ -252,6 +286,7 @@ class NeutrinoEventMultitaskTransformer(GNN):
         self.cross_attention = cross_attention
         self.token_multiplier = token_multiplier
         self.pre_emb_scale = pre_emb_scale
+        self.isolate_task_tokens = isolate_task_tokens
 
     @torch.jit.ignore
     def no_weight_decay(self) -> Set:
@@ -289,6 +324,9 @@ class NeutrinoEventMultitaskTransformer(GNN):
             n_shared = shared.shape[1]
             tokens = torch.cat([shared, tokens], 1)
         n_tokens = n_shared + n_task_tokens
+        # tokens updated by the token-only blocks
+        xtam_start = n_shared if self.isolate_task_tokens else 0
+        token_mask: Optional[Tensor] = None
 
         x = self.embedding(self.pre_emb_scale * x).flatten(-2)
         x = self.emb_mlp(x)
@@ -297,25 +335,37 @@ class NeutrinoEventMultitaskTransformer(GNN):
             if i == self.inject_cls_after:
                 x = torch.cat([tokens, x], 1)
                 attn_mask = create_attn_mask(mask, add_tokens=n_tokens)
+                if self.isolate_task_tokens:
+                    token_mask = create_readout_mask(
+                        n_shared,
+                        n_task_tokens,
+                        x.shape[1],
+                        self.token_multiplier,
+                        device=x.device,
+                    )
 
             if i < self.n_rel:
                 if self._basis_rel_bias:
                     proj = self.rel_proj[min(i, len(self.rel_proj) - 1)]
                     rel_pos_bias = self._basis_factors(basis, proj)
                 x = block(x, attn_mask, rel_pos_bias)
+            elif i >= self.inject_cls_after:
+                x = block(x, token_mask, attn_mask)
             else:
                 x = block(x, None, attn_mask)
 
             if i in self.cross_attention:
                 idx = self.cross_attention.index(i)
-                token_part, x = x[:, :n_tokens], x[:, n_tokens:]
+                token_part = x[:, xtam_start:n_tokens]
                 # Gated residual update: interpolate between the tokens and
                 # the output of the token-only block.
                 gate = torch.sigmoid(self.gates[idx])
                 token_part = token_part + gate * (
                     self.xTAMS[idx](token_part) - token_part
                 )
-                x = torch.cat([token_part, x], 1)
+                x = torch.cat(
+                    [x[:, :xtam_start], token_part, x[:, n_tokens:]], 1
+                )
 
         # Task tokens of the final block (shared tokens are dropped).
         x = x[:, n_shared:n_tokens]
@@ -328,20 +378,43 @@ class NeutrinoEventMultitaskTransformer(GNN):
         return x.flatten(1, 2)
 
     def _rel_bias_basis(self, x: Tensor) -> Tensor:
-        """Return the four-distance basis, `[B, L, L]` or `[B, K, L, L]`."""
+        """Return the relative-bias basis, `[B, L, L]` or `[B, K, L, L]`."""
         distance = signed_four_distance(
             x, self._spacetime_time_scale, self._spacetime_columns
         )
-        if not self._rel_bias_widths:
+        if not self._rel_bias_widths and not self._pair_features:
             return distance
         return torch.stack(
             [distance]
             + [
                 torch.exp(-((distance / width) ** 2))
                 for width in self._rel_bias_widths
-            ],
+            ]
+            + self._pair_terms(x),
             1,
         )
+
+    def _pair_terms(self, x: Tensor) -> List[Tensor]:
+        """Return the `pair_features` terms, each `[B, L, L]`."""
+        xi, yi, zi, ti = self._spacetime_columns
+        terms = []
+        for name in self._pair_features:
+            if name == "distance":
+                # stacked columns, not a list index (a GPU sync per call)
+                pos = torch.stack(
+                    [x[:, :, xi], x[:, :, yi], x[:, :, zi]], dim=-1
+                )
+                term = (pos[:, :, None] - pos[:, None, :]).pow(2).sum(-1)
+                term = term.sqrt()
+            elif name == "time_difference":
+                time = x[:, :, ti]
+                term = (time[:, :, None] - time[:, None, :]) * (
+                    self._spacetime_time_scale
+                )
+            else:  # "dz"
+                term = x[:, :, zi, None] - x[:, None, :, zi]
+            terms.append(term)
+        return terms
 
     @staticmethod
     def _basis_factors(
@@ -351,6 +424,34 @@ class NeutrinoEventMultitaskTransformer(GNN):
         if basis.dim() == 3:  # linear in the distance: as `affine_factors`
             return basis, proj.weight[:, 0], proj.bias
         return basis, proj.weight.t(), proj.bias
+
+
+def create_readout_mask(
+    n_shared: int,
+    n_task_tokens: int,
+    length: int,
+    token_multiplier: int = 1,
+    device: Optional[torch.device] = None,
+) -> Tensor:
+    """Create the additive attention mask of isolated task tokens.
+
+    For a sequence `[shared tokens, task tokens, nodes]` of `length`: the
+    task tokens (groups of `token_multiplier` per task) are attended only by
+    their own task's tokens, so each task reads the shared tokens and nodes
+    without seeing, or being seen by, the other tasks.
+
+    Returns:
+        Float mask of shape [length, length], 0 where attended and -inf
+        where not (rows are queries).
+    """
+    task = torch.full((length,), -1, dtype=torch.long, device=device)
+    task[n_shared : n_shared + n_task_tokens] = (
+        torch.arange(n_task_tokens, device=device) // token_multiplier
+    )
+    is_task_key = task[None, :] >= 0
+    blocked = is_task_key & (task[:, None] != task[None, :])
+    readout_mask = torch.zeros(length, length, device=device)
+    return readout_mask.masked_fill(blocked, -torch.inf)
 
 
 def create_attn_mask(mask: Tensor, add_tokens: int = 0) -> Tensor:
