@@ -2,7 +2,7 @@
 
 from abc import abstractmethod
 from contextlib import nullcontext
-from typing import Any, TYPE_CHECKING, List, Tuple, Union
+from typing import Any, TYPE_CHECKING, Dict, List, Tuple, Union
 from typing import Callable, ContextManager, Optional
 import numpy as np
 from copy import deepcopy
@@ -69,6 +69,7 @@ class Task(Model):
         transform_inference: Optional[Callable] = None,
         transform_support: Optional[Tuple] = None,
         loss_weight: Optional[str] = None,
+        reference_labels: Optional[Dict[str, str]] = None,
     ):
         """Construct `Task`.
 
@@ -102,6 +103,16 @@ class Task(Model):
                 is tested on the range [-1e6, 1e6].
             loss_weight: Name of the attribute in `data` containing per-event
                 loss weights.
+            reference_labels: Predictions that are relative to a per-event
+                reference, mapped to the attribute in `data` holding it, e.g.
+                `{"time_pred": "reference_time"}` for a time relative to a
+                time reference that the graph definition adds to each event.
+                The prediction and the target at the same position are
+                relative to it: in training the reference is subtracted from
+                that target column before `transform_target`, and in
+                inference `StandardModel` adds it back to the prediction
+                after `transform_inference`, so the model returns the
+                absolute quantity.
         """
         # Base class constructor
         super().__init__()
@@ -124,6 +135,18 @@ class Task(Model):
         self._prediction_labels = prediction_labels
         self._inference = False
         self._loss_weight = loss_weight
+        self._reference_columns: List[Tuple[int, str]] = []
+        for label, attribute in (reference_labels or {}).items():
+            assert label in prediction_labels, (
+                f"reference_labels: '{label}' is not a prediction label "
+                f"{prediction_labels}"
+            )
+            column = prediction_labels.index(label)
+            assert column < len(target_labels), (
+                f"reference_labels: '{label}' (column {column}) has no "
+                f"target column {target_labels}"
+            )
+            self._reference_columns.append((column, attribute))
 
         # Named identity rather than lambdas, so that tasks stay picklable
         # (e.g. for multi-process data loading and DDP spawning).
@@ -140,6 +163,32 @@ class Task(Model):
             transform_inference,
             transform_support,
         )
+
+    @property
+    def reference_attributes(self) -> List[str]:
+        """Return the attributes in `data` holding per-event references."""
+        return list(dict.fromkeys(a for _, a in self._reference_columns))
+
+    def add_references(
+        self, prediction: Union[Tensor, Data], data: List[Data]
+    ) -> Union[Tensor, Data]:
+        """Add the per-event references to an inference-mode prediction.
+
+        Training-mode predictions are returned unchanged: there the target is
+        made relative instead (see `reference_labels`).
+        """
+        if not (self._inference and self._reference_columns):
+            return prediction
+        assert isinstance(prediction, Tensor), "references need a Tensor"
+        prediction = prediction.clone()
+        for column, attribute in self._reference_columns:
+            reference = torch.cat([d[attribute].reshape(-1) for d in data]).to(
+                prediction.device, torch.float64
+            )
+            prediction[:, column] = (
+                prediction[:, column].double() + reference
+            ).to(prediction.dtype)
+        return prediction
 
     @final
     def _transform_prediction(
@@ -383,9 +432,13 @@ class StandardLearnedTask(LearnedTask):
     def _compute_loss(self, pred: Union[Tensor, Data], data: Data) -> Tensor:
         if isinstance(pred, Tensor):
             pred = pred.float()
-        target = torch.stack(
-            [data[label] for label in self._target_labels], dim=1
-        )
+        columns = [data[label] for label in self._target_labels]
+        for column, attribute in self._reference_columns:
+            # in float64: e.g. times of ~1e4 ns relative to a ~1e4 ns reference
+            columns[column] = (
+                columns[column].double() - data[attribute].double()
+            ).to(columns[column].dtype)
+        target = torch.stack(columns, dim=1)
         target = self._transform_target(target)
         if self._loss_weight is not None:
             weights = torch.as_tensor(
