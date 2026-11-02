@@ -10,6 +10,7 @@ from torch_geometric.data import Data, Batch
 
 from graphnet.utilities.config import ModelConfig
 from graphnet.deployment import DeploymentModule
+from graphnet.deployment.deployment_module import add_time_references
 from graphnet.data.extractors.icecube import I3FeatureExtractor
 from graphnet.utilities.imports import has_icecube_package
 
@@ -37,6 +38,7 @@ class I3InferenceModule(DeploymentModule):
         features: Optional[List[str]] = None,
         prediction_columns: Optional[Union[List[str], None]] = None,
         pulsemap: Optional[str] = None,
+        reference_times: Optional[Dict[str, str]] = None,
     ):
         """General class for inference on I3Frames (physics).
 
@@ -53,6 +55,13 @@ class I3InferenceModule(DeploymentModule):
                                Will help define the named entry in the I3Frame.
                                 E.g. ['energy_reco']. Optional.
             pulsemap: the pulsmap that the model is expecting as input.
+            reference_times: Prediction columns whose values are relative to
+                an event-level time reference, mapped to the graph attribute
+                that holds the reference, e.g. `{"HEPTime": "reference_time"}`
+                for a time target relative to the `reference_time_attribute`
+                of `ClusterSummaryFeatures`. The reference is added back, so
+                these columns are written as absolute times, and the
+                reference itself is written as `<model_name>_<attribute>`.
         """
         super().__init__(
             model_config=model_config,
@@ -74,6 +83,24 @@ class I3InferenceModule(DeploymentModule):
         self._gcd_file = gcd_file
         self.model_name = model_name
         self._features = features
+        self._reference_times = dict(reference_times or {})
+        unknown = set(self._reference_times) - set(self.prediction_columns)
+        assert not unknown, f"reference_times: unknown columns {unknown}"
+        node_reference = getattr(
+            self._graph_definition._node_definition,
+            "_reference_time_attribute",
+            None,
+        )
+        if (
+            node_reference is not None
+            and node_reference not in self._reference_times.values()
+        ):
+            self.warning(
+                f"The node definition adds the time reference "
+                f"'{node_reference}' to each graph, but `reference_times` "
+                "does not use it: time predictions relative to it are "
+                "written as relative times."
+            )
 
         # Set GCD file for pulsemap extractor
         for i3_extractor in self._i3_extractors:
@@ -88,8 +115,15 @@ class I3InferenceModule(DeploymentModule):
         # Check dimensions of predictions and prediction columns
         dim = self._check_dimensions(predictions=predictions)
 
+        # Relative times -> absolute times
+        predictions, references = add_time_references(
+            predictions, data, self.prediction_columns, self._reference_times
+        )
+
         # Build Dictionary from predictions
         data = self._create_dictionary(dim=dim, predictions=predictions)
+        for name, value in references.items():
+            data[self.model_name + "_" + name] = I3Double(value)
 
         # Submit Dictionary to frame
         frame = self._add_to_frame(frame=frame, data=data)
