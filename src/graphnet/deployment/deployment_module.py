@@ -1,7 +1,7 @@
 """Class(es) for deploying GraphNeT models in icetray as I3Modules."""
 
 from abc import abstractmethod
-from typing import Any, List, Union, Dict
+from typing import Any, List, Union, Dict, Optional, Tuple
 
 import numpy as np
 from torch import Tensor, load
@@ -10,6 +10,41 @@ from torch_geometric.data import Data, Batch
 from graphnet.models import Model
 from graphnet.utilities.config import ModelConfig
 from graphnet.utilities.logging import Logger
+
+
+def add_time_references(
+    predictions: np.ndarray,
+    data: Optional[Data],
+    prediction_columns: List[str],
+    reference_times: Dict[str, str],
+) -> Tuple[np.ndarray, Dict[str, float]]:
+    """Add the event's time references to relative time predictions.
+
+    Arguments:
+        predictions: Predictions of one event, shape [1, n_columns].
+        data: The event's graph (batch of one), or None for an event
+            without pulses (then the references are NaN).
+        prediction_columns: Column names of `predictions`.
+        reference_times: Prediction column -> graph attribute holding the
+            time reference of that column.
+
+    Returns:
+        The predictions with the references added (float64), and the
+        references by attribute name.
+    """
+    predictions = np.array(predictions, dtype=np.float64)
+    references: Dict[str, float] = {}
+    for column, attribute in reference_times.items():
+        if attribute not in references:
+            references[attribute] = (
+                float(data[attribute].reshape(-1)[0])
+                if data is not None
+                else float("nan")
+            )
+        predictions[:, prediction_columns.index(column)] += references[
+            attribute
+        ]
+    return predictions, references
 
 
 class DeploymentModule(Logger):
