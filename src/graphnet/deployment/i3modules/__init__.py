@@ -6,4 +6,9 @@ IceCube detector configurations.
 """
 
 from .deprecated_methods import *  # noqa: F403
-from graphnet.deployment.icecube import I3InferenceModule, I3PulseCleanerModule
+from graphnet.deployment.icecube import (
+    I3InferenceModule,
+    I3MultipleModelInferenceModule,
+    I3ParticleInferenceModule,
+    I3PulseCleanerModule,
+)
