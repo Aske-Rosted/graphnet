@@ -417,6 +417,7 @@ class SpacetimeEncoder(LightningModule):
         scale: float = 1024.0,
         clip: Optional[float] = 4.0,
         n_freq: float = 10000.0,
+        apply_sin_emb: bool = True,
     ):
         """Construct `SpacetimeEncoder`.
 
@@ -439,10 +440,16 @@ class SpacetimeEncoder(LightningModule):
                 leave it unbounded. The tail is heavy, so without a bound a
                 few far-separated pairs dominate.
             n_freq: Span of the frequency ladder.
+            apply_sin_emb: If False, the (optionally clipped) four-distance
+                itself is projected, without the sinusoidal embedding;
+                `scale` and `n_freq` are then unused.
         """
         super().__init__()
         self.sin_emb = SinusoidalPosEmb(dim=seq_length, n_freq=n_freq)
-        self.projection = nn.Linear(seq_length, output_dim or seq_length)
+        self.apply_sin_emb = apply_sin_emb
+        self.projection = nn.Linear(
+            seq_length if apply_sin_emb else 1, output_dim or seq_length
+        )
         self.columns = columns
         self.time_scale = time_scale
         self.scale = scale
@@ -453,6 +460,8 @@ class SpacetimeEncoder(LightningModule):
         four_distance = signed_four_distance(x, self.time_scale, self.columns)
         if self.clip is not None:
             four_distance = four_distance.clip(-self.clip, self.clip)
+        if not self.apply_sin_emb:
+            return self.projection(four_distance.unsqueeze(-1))
         return self.projection(self.sin_emb(self.scale * four_distance))
 
 

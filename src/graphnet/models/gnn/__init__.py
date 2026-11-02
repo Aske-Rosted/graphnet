@@ -6,3 +6,4 @@ from .dynedge_jinst import DynEdgeJINST
 from .dynedge_kaggle_tito import DynEdgeTITO
 from .RNN_tito import RNN_TITO
 from .particlenet import ParticleNeT
+from .nemt import NeutrinoEventMultitaskTransformer

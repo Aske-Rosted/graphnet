@@ -9,6 +9,7 @@ from typing import Any, Optional, Union, List, Dict
 
 import numpy as np
 import scipy.special
+import scipy.stats
 import torch
 from torch import Tensor
 from torch import nn
@@ -29,6 +30,29 @@ class LossFunction(Model):
     def __init__(self, **kwargs: Any) -> None:
         """Construct `LossFunction`, saving model config."""
         super().__init__(**kwargs)
+
+    @property
+    def lower_bound(self) -> Optional[float]:
+        """Return a lower bound of the (unweighted, averaged) loss, if known.
+
+        The bound is the value the loss cannot go below for any prediction
+        and target, e.g. 0 for squared errors. It is used to measure how far
+        a task is from its best possible loss, e.g. for balancing several
+        losses. `None` means that no finite bound is known, as for
+        likelihoods with a predicted concentration or width, which can
+        become arbitrarily confident.
+
+        NOTE: With per-event `weights`, the bound scales with the mean
+        weight.
+        """
+        return None
+
+    def monitored_values(self) -> Dict[str, float]:
+        """Return quantities of the loss worth logging during training.
+
+        E.g. the current value of a learned scale. Empty by default.
+        """
+        return {}
 
     @final
     def forward(  # type: ignore[override]
@@ -67,6 +91,11 @@ class LossFunction(Model):
 class MAELoss(LossFunction):
     """Mean absolute error loss."""
 
+    @property
+    def lower_bound(self) -> float:
+        """Return 0; the loss is non-negative."""
+        return 0.0
+
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Implement loss calculation."""
         return torch.mean(torch.abs(prediction - target), dim=-1)
@@ -74,6 +103,11 @@ class MAELoss(LossFunction):
 
 class MSELoss(LossFunction):
     """Mean squared error loss."""
+
+    @property
+    def lower_bound(self) -> float:
+        """Return 0; the loss is non-negative."""
+        return 0.0
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Implement loss calculation."""
@@ -112,6 +146,11 @@ class LogCoshLoss(LossFunction):
         See [https://github.com/keras-team/keras/blob/v2.6.0/keras/losses.py#L1580-L1617] # noqa: E501
         """
         return x + softplus(-2.0 * x) - np.log(2.0)
+
+    @property
+    def lower_bound(self) -> float:
+        """Return 0; the loss is non-negative."""
+        return 0.0
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Implement loss calculation."""
@@ -159,6 +198,11 @@ class CrossEntropyLoss(LossFunction):
             )
 
         self._loss = nn.CrossEntropyLoss(reduction="none")
+
+    @property
+    def lower_bound(self) -> float:
+        """Return 0; the loss is non-negative."""
+        return 0.0
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Transform outputs to angle and prepare prediction."""
@@ -219,6 +263,11 @@ class BinaryCrossEntropyLoss(LossFunction):
         super().__init__(*args, **kwargs)
         self._from_logits = from_logits
 
+    @property
+    def lower_bound(self) -> float:
+        """Return 0; the loss is non-negative."""
+        return 0.0
+
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         if self._from_logits:
             return binary_cross_entropy_with_logits(
@@ -228,6 +277,47 @@ class BinaryCrossEntropyLoss(LossFunction):
             return binary_cross_entropy(
                 prediction.float(), target.float(), reduction="none"
             )
+
+
+class FocalBinaryCrossEntropyLoss(BinaryCrossEntropyLoss):
+    """Compute the focal binary cross entropy loss.
+
+    Down-weights well-classified examples by a factor `(1 - p_t)**gamma`
+    and balances the two classes with `alpha`, following Lin et al.,
+    "Focal Loss for Dense Object Detection" (https://arxiv.org/abs/1708.02002).
+    """
+
+    def __init__(
+        self,
+        gamma: float = 2.0,
+        alpha: float = 0.25,
+        from_logits: bool = False,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        """Construct FocalBinaryCrossEntropyLoss.
+
+        Args:
+            gamma: Focusing parameter. `gamma = 0` recovers the (alpha
+                weighted) binary cross entropy.
+            alpha: Weight of the positive class; the negative class is
+                weighted by `1 - alpha`.
+            from_logits: Whether the predictions are logits (raw scores)
+                rather than probabilities.
+        """
+        super().__init__(from_logits, *args, **kwargs)
+        self._gamma = gamma
+        self._alpha = alpha
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        bce = super()._forward(prediction, target)
+        probability = prediction.float()
+        if self._from_logits:
+            probability = torch.sigmoid(probability)
+        target = target.float()
+        alpha_t = self._alpha * target + (1 - self._alpha) * (1 - target)
+        p_t = probability * target + (1 - probability) * (1 - target)
+        return alpha_t * (1 - p_t) ** self._gamma * bce
 
 
 class LogCMK(torch.autograd.Function):
@@ -477,6 +567,11 @@ class VonMisesFisher2DLoss(VonMisesFisherLoss):
 class EuclideanDistanceLoss(LossFunction):
     """Mean squared error in three dimensions."""
 
+    @property
+    def lower_bound(self) -> float:
+        """Return 0; the loss is non-negative."""
+        return 0.0
+
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Calculate 3D Euclidean distance between predicted and target.
 
@@ -626,6 +721,14 @@ class EnsembleLoss(LossFunction):
             self._prediction_keys = None
         super().__init__(*args, **kwargs)
 
+    @property
+    def lower_bound(self) -> Optional[float]:
+        """Return the weighted sum of the parts' bounds, if all are known."""
+        bounds = [loss.lower_bound for loss in self._loss_functions]
+        if any(b is None for b in bounds) or any(f < 0 for f in self._factors):
+            return None
+        return float(sum(f * b for f, b in zip(self._factors, bounds)))
+
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Calculate loss using multiple loss functions.
 
@@ -678,6 +781,11 @@ class RMSEVonMisesFisher3DLoss(EnsembleLoss):
 class NegCosLoss(LossFunction):
     """Negative Cosine error loss."""
 
+    @property
+    def lower_bound(self) -> float:
+        """Return -1, the negative cosine of aligned vectors."""
+        return -1.0
+
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
         """Implement loss calculation."""
         # Check(s)
@@ -690,3 +798,417 @@ class NegCosLoss(LossFunction):
         orig_norm = torch.nn.functional.normalize(target, dim=1)
         elements = -(reco_norm * orig_norm).sum(dim=1)
         return elements
+
+
+class CauchyLoss(LossFunction):
+    """Cauchy (Lorentzian) loss with a fixed, learned or predicted scale.
+
+    The homoscedastic term of one output column is
+    `log(1 + (|x - y| / alpha)**2) + log(alpha)`. The scale `alpha` sets
+    which residual size the loss is most sensitive to (its gradient peaks at
+    `|x - y| = alpha`).
+
+    Columns can be combined into `groups` that share a scale and enter
+    through the length of their joint residual `r`, as in the multivariate
+    Cauchy distribution in `d` dimensions:
+    `(1 + d) / 2 * log(1 + (|r| / alpha)**2) + d * log(alpha)`. Unlike a sum
+    over columns this does not depend on how the residual is oriented with
+    respect to the coordinate axes within the group. A group of one column
+    is the term above. The loss is the sum over groups divided by the number
+    of columns.
+
+    The scale is either
+
+    - fixed (default): a float, or one value per group (column),
+    - learned (`learn_alpha`): one scale per group (column), trained with
+      the model as the maximum-likelihood Cauchy scale of the residuals, so
+      it tightens as the predictions improve and no manual schedule is
+      needed. With `n_conditions > 0`, the last `n_conditions` columns of
+      the target are conditioning variables `c` (not regressed) and
+      `log(alpha) = a + c @ B` is linear in them, e.g. separate scales for
+      tracks and cascades when conditioning on the true trackness.
+    - predicted: if the prediction carries more columns than the target,
+      the extra columns are read as per-element scales `sigma` and enter the
+      heteroscedastic term `log(1 + (|x - y| / sigma)**2) + log(sigma)`.
+      `frac` blends the two terms: 0 is purely homoscedastic, 1 purely
+      heteroscedastic.
+    """
+
+    def __init__(
+        self,
+        alpha: Union[float, List[float]] = 1.0,
+        frac: float = 1.0,
+        learn_alpha: bool = False,
+        nb_outputs: Optional[int] = None,
+        n_conditions: int = 0,
+        groups: Optional[List[List[int]]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Construct CauchyLoss.
+
+        Args:
+            alpha: Scale of the homoscedastic term; with `learn_alpha` its
+                initial value. A float, or one value per group (per output
+                column without `groups`).
+            frac: Weight of the heteroscedastic term; the homoscedastic term
+                is weighted by `1 - frac`.
+            learn_alpha: If True, the scale is a learned parameter per
+                group (column). Requires `frac = 0` and `groups` or
+                `nb_outputs`.
+            nb_outputs: Number of regressed target columns.
+            n_conditions: Number of trailing target columns that condition
+                the learned scale instead of being regressed.
+            groups: Partition of the output columns into groups with a
+                common scale and a rotation-invariant term, e.g.
+                `[[0, 1], [2], [3]]` for (x, y), z and t. Requires
+                `frac = 0`. Defaults to one group per column.
+        """
+        super().__init__(**kwargs)
+        self._frac = frac
+        self._learn_alpha = learn_alpha
+        self._n_conditions = n_conditions
+        self._last_bound: Optional[float] = None
+        self._residual_scales: Optional[Tensor] = None
+
+        self._group_index: Optional[Tensor] = None
+        self._group_size: Optional[Tensor] = None
+        if groups is not None:
+            assert frac == 0, "`groups` require `frac = 0`."
+            columns = sorted(column for group in groups for column in group)
+            assert columns == list(
+                range(len(columns))
+            ), "`groups` must contain every output column exactly once."
+            assert nb_outputs in (None, len(columns))
+            index = torch.empty(len(columns), dtype=torch.long)
+            for number, group in enumerate(groups):
+                index[group] = number
+            self._group_index = index
+            self._group_size = torch.tensor(
+                [float(len(group)) for group in groups]
+            )
+
+        n_scales = len(groups) if groups is not None else nb_outputs
+        self._n_scales = n_scales
+        if not isinstance(alpha, (int, float)):
+            assert frac == 0, "One alpha per column requires `frac = 0`."
+        log_alpha = self._as_log_alpha(alpha)
+
+        if learn_alpha:
+            assert frac == 0, "`learn_alpha` requires `frac = 0`."
+            assert (
+                n_scales is not None
+            ), "`learn_alpha` needs `groups` or `nb_outputs`."
+            parameter = torch.zeros(1 + n_conditions, n_scales)
+            parameter[0] = log_alpha
+            self.log_alpha = torch.nn.Parameter(parameter)
+        else:
+            assert n_conditions == 0, "Conditions require `learn_alpha`."
+            self._fixed_alpha = alpha
+            self._fixed_log_alpha = log_alpha
+        if frac == 0:
+            self._last_bound = self._bound(log_alpha.unsqueeze(0))
+
+    def _as_log_alpha(self, alpha: Union[float, List[float]]) -> Tensor:
+        """Return log(alpha) with one entry per group (column)."""
+        if isinstance(alpha, (int, float)):
+            return torch.full((self._n_scales or 1,), float(np.log(alpha)))
+        assert self._n_scales in (None, len(alpha)), (
+            f"Got {len(alpha)} values of alpha for {self._n_scales} "
+            "groups (columns)."
+        )
+        return torch.log(torch.as_tensor(alpha, dtype=torch.float))
+
+    @property
+    def alpha(self) -> Union[float, List[float]]:
+        """Return the fixed scale(s).
+
+        The fixed scale can be set during training, e.g. to anneal it
+        from a wide to a narrow value. Not available for a learned scale
+        or a purely predicted one (`frac = 1`).
+        """
+        if self._learn_alpha:
+            raise AttributeError("The scale is learned; see `alphas()`.")
+        if self._frac == 1:
+            raise AttributeError("The scale is predicted; alpha is unused.")
+        return self._fixed_alpha
+
+    @alpha.setter
+    def alpha(self, alpha: Union[float, List[float]]) -> None:
+        if self._learn_alpha:
+            raise AttributeError("The scale is learned and cannot be set.")
+        self._fixed_alpha = alpha
+        self._fixed_log_alpha = self._as_log_alpha(alpha)
+        if self._frac == 0:
+            self._last_bound = self._bound(self._fixed_log_alpha.unsqueeze(0))
+
+    # Name of the attribute before the scale became a property.
+    _alpha = alpha
+
+    def _sizes(self, log_alpha: Tensor) -> Tensor:
+        """Return the number of columns of each scale."""
+        if self._group_size is None:
+            return torch.ones(1).to(log_alpha)
+        return self._group_size.to(log_alpha)
+
+    def _bound(self, log_alpha: Tensor) -> float:
+        """Return the batch-mean minimum of the homoscedastic loss."""
+        sizes = self._sizes(log_alpha).expand(log_alpha.shape[-1])
+        per_event = (sizes * log_alpha.detach()).sum(dim=-1) / sizes.sum()
+        return float(per_event.mean())
+
+    @property
+    def lower_bound(self) -> Optional[float]:
+        """Return the (size-weighted) mean log(alpha) for `frac = 0`.
+
+        Each term is minimal at zero residual, where it equals `d *
+        log(alpha)`. For a learned scale this is the bound at the
+        current scale for the most recent batch. With a heteroscedastic
+        part (`frac > 0`) the scale is predicted and the loss has no
+        meaningful lower bound.
+        """
+        if self._frac != 0:
+            return None
+        return self._last_bound
+
+    def alphas(self) -> Tensor:
+        """Return the current scale of each group (column).
+
+        For a conditioned scale this is the scale at zero conditions.
+        """
+        if self._learn_alpha:
+            return torch.exp(self.log_alpha[0].detach())
+        return torch.exp(self._fixed_log_alpha)
+
+    def monitored_values(self) -> Dict[str, float]:
+        """Return the scales worth following during training.
+
+        For a fixed scale: `residual_scale_<i>`, the Cauchy scale of the
+        residuals of group (column) `i` in the most recent batch, estimated
+        from their median. It shows which fixed `alpha` would match the
+        current residuals. For a learned scale: the scales (and their
+        condition slopes).
+        """
+        if not self._learn_alpha:
+            if self._residual_scales is None:
+                return {}
+            return {
+                f"residual_scale_{i}": float(scale)
+                for i, scale in enumerate(self._residual_scales)
+            }
+        values = {
+            f"alpha_{i}": float(alpha) for i, alpha in enumerate(self.alphas())
+        }
+        for c, slopes in enumerate(self.log_alpha[1:].detach()):
+            for i, slope in enumerate(slopes):
+                values[f"log_alpha_{i}_slope_{c}"] = float(slope)
+        return values
+
+    def _log_alpha(self, conditions: Optional[Tensor], like: Tensor) -> Tensor:
+        """Return log(alpha), broadcastable to [N, n_scales]."""
+        if not self._learn_alpha:
+            return self._fixed_log_alpha.to(like).unsqueeze(0)
+        log_alpha = self.log_alpha[0].unsqueeze(0)
+        if conditions is not None:
+            log_alpha = (
+                log_alpha + conditions.to(log_alpha) @ self.log_alpha[1:]
+            )
+        return log_alpha
+
+    def _homoscedastic(
+        self,
+        prediction: Tensor,
+        target: Tensor,
+        conditions: Optional[Tensor] = None,
+    ) -> Tensor:
+        squared = (prediction - target) ** 2
+        log_alpha = self._log_alpha(conditions, squared)
+        if self._group_index is not None:
+            assert squared.size(1) == self._group_index.numel(), (
+                f"`groups` cover {self._group_index.numel()} columns, got "
+                f"{squared.size(1)}."
+            )
+            squared = (
+                torch.zeros(
+                    squared.size(0), log_alpha.size(1), dtype=squared.dtype
+                )
+                .to(squared.device)
+                .index_add_(1, self._group_index.to(squared.device), squared)
+            )
+        sizes = self._sizes(log_alpha)
+        if not self._learn_alpha:
+            self._residual_scales = self._scale_estimate(squared, sizes)
+        terms = (1 + sizes) / 2 * torch.log1p(
+            squared * torch.exp(-2 * log_alpha)
+        ) + sizes * log_alpha
+        n_columns = prediction.size(1)
+        if self._frac == 0:
+            self._last_bound = float(
+                (sizes * log_alpha.detach())
+                .expand_as(terms)
+                .sum(dim=-1)
+                .mean()
+                / n_columns
+            )
+        return (1 - self._frac) * terms.sum(dim=-1) / n_columns
+
+    @staticmethod
+    def _scale_estimate(squared: Tensor, sizes: Tensor) -> Tensor:
+        """Estimate the Cauchy scale of each group from the median residual.
+
+        For a `d`-dimensional Cauchy distribution with scale `alpha`,
+        `|r|**2 / (d * alpha**2)` follows an F(d, 1) distribution.
+        """
+        with torch.no_grad():
+            median = squared.detach().float().median(dim=0).values.cpu()
+            d = sizes.cpu().expand(median.shape[0]).double().numpy()
+            reference = d * scipy.stats.f.ppf(0.5, d, 1)
+            return torch.sqrt(median / torch.as_tensor(reference).float())
+
+    def _heteroscedastic(
+        self, prediction: Tensor, target: Tensor, uncertainty: Tensor
+    ) -> Tensor:
+        return self._frac * torch.mean(
+            torch.log1p((torch.abs(prediction - target) / uncertainty) ** 2)
+            + torch.log(uncertainty),
+            dim=-1,
+        )
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        """Implement loss calculation."""
+        assert prediction.dim() == 2
+        if target.dim() != prediction.dim():
+            target = target.squeeze(1)
+
+        conditions = None
+        if self._n_conditions > 0:
+            conditions = target[:, -self._n_conditions :]
+            target = target[:, : -self._n_conditions]
+
+        # Columns beyond the target width are per-element scales.
+        uncertainty = prediction[:, target.size(1) :]
+        prediction = prediction[:, : target.size(1)]
+        assert prediction.size() == target.size(), (
+            f"Prediction size {prediction.size()} and target size "
+            f"{target.size()} do not match."
+        )
+
+        if self._frac == 0:
+            if uncertainty.shape[1] > 0:
+                self.warning_once(
+                    "Uncertainty columns are provided but `frac` is 0; "
+                    "they are ignored."
+                )
+            return self._homoscedastic(prediction, target, conditions)
+
+        uncertainty = torch.clamp(uncertainty, min=1e-6)
+        if self._frac == 1:
+            return self._heteroscedastic(prediction, target, uncertainty)
+        return self._homoscedastic(prediction, target) + self._heteroscedastic(
+            prediction, target, uncertainty
+        )
+
+
+class spCauchyLoss(LossFunction):
+    """Spherical Cauchy negative log-likelihood.
+
+    The prediction holds a direction `mu` (first `d` columns, unit norm) and
+    a non-negative magnitude `k` (last column), mapped to the concentration
+    `rho = k / (1 + k)` in `[0, 1)`. The spherical Cauchy density on the unit
+    sphere in `d` dimensions is
+
+        f(x) = C_d * ((1 - rho^2) / (1 + rho^2 - 2 rho mu.x))^(d - 1),
+
+    with a constant `C_d` independent of `rho`. In terms of `k` the ratio is
+    `(1 + 2k) / (1 + 2k(1 + k)(1 - mu.x))`, which is evaluated directly to
+    stay accurate for large `k` (where `1 - rho` underflows). The constant is
+    omitted from the loss.
+
+    Distribution: Kato, S. & McCullagh, P. (2020), "Some properties of a
+    Cauchy family on the sphere derived from the Möbius transformations",
+    Bernoulli 26(4), https://arxiv.org/abs/1510.07679. Regression framework:
+    Tsagris, M., Papastamoulis, P. & Kato, S. (2025), Statistics and
+    Computing 35:51, https://arxiv.org/abs/2409.03292.
+
+    With a fixed concentration `rho` the prediction holds the direction only
+    and the loss is, up to a constant, the rotation-invariant Cauchy loss
+    `(d - 1) * log(1 + |mu - x|**2 / alpha**2)` of the chord between
+    prediction and target, with `alpha**2 = (1 - rho)**2 / rho`.
+    """
+
+    def __init__(
+        self, rho: Optional[float] = None, dim: int = 3, **kwargs: Any
+    ) -> None:
+        """Construct spCauchyLoss.
+
+        Args:
+            rho: Fixed concentration in `[0, 1)`. If None (default), the
+                concentration is predicted per event (last column of the
+                prediction).
+            dim: Dimension `d` of the vectors; only used for the lower
+                bound of the loss with a fixed `rho`.
+        """
+        super().__init__(**kwargs)
+        assert rho is None or 0 <= rho < 1, "`rho` must be in [0, 1)."
+        self._rho = rho
+        self._dim = dim
+
+    @property
+    def alpha(self) -> float:
+        """Return the scale of the equivalent Cauchy loss on the chord.
+
+        `alpha**2 = (1 - rho)**2 / rho` for a fixed `rho`, approximately the
+        angular scale in radians. Setting it changes `rho`, e.g. to anneal
+        the loss from a wide to a narrow scale. Not available for a
+        predicted concentration.
+        """
+        if self._rho is None:
+            raise AttributeError("The concentration is predicted.")
+        return float((1 - self._rho) / np.sqrt(self._rho))
+
+    @alpha.setter
+    def alpha(self, alpha: float) -> None:
+        if self._rho is None:
+            raise AttributeError("The concentration is predicted.")
+        # k (1 + k) = 1 / alpha^2 with k = rho / (1 - rho)
+        k = 0.5 * (np.sqrt(1 + 4 / alpha**2) - 1)
+        self._rho = float(k / (1 + k))
+
+    # Same attribute name as the scale of `CauchyLoss`.
+    _alpha = alpha
+
+    @property
+    def lower_bound(self) -> Optional[float]:
+        """Return the loss of an exact prediction for a fixed `rho`.
+
+        With a predicted concentration the loss is unbounded.
+        """
+        if self._rho is None:
+            return None
+        k = self._rho / (1 - self._rho)
+        return float(-(self._dim - 1) * np.log1p(2 * k))
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        assert prediction.dim() == 2
+        assert target.dim() == 2
+        assert prediction.size(0) == target.size(0)
+
+        prediction = prediction.float()
+        if self._rho is None:
+            # Last column is the magnitude setting the concentration rho.
+            dim = prediction.size(1) - 1
+            k = prediction[:, dim]
+        else:
+            dim = prediction.size(1)
+            assert dim == self._dim
+            k = torch.full_like(prediction[:, 0], self._rho / (1 - self._rho))
+        assert dim > 1
+        assert target.size(1) == dim
+
+        mu = prediction[:, :dim]
+        # 1 - mu.x from the chord between the unit vectors: `1 - dot` would
+        # round to steps of ~6e-8 (0.02 deg) in single precision.
+        one_minus_dot = 0.5 * ((mu - target.float()) ** 2).sum(dim=-1)
+        log_density = torch.log1p(2.0 * k) - torch.log1p(
+            2.0 * k * (1.0 + k) * one_minus_dot
+        )
+        return -(dim - 1) * log_density

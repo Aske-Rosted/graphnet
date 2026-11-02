@@ -1,7 +1,7 @@
 """Suggested Model subclass that enables simple user syntax."""
 
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional, Union, Type
+from typing import Any, Dict, Iterator, List, Optional, Union, Type
 
 import numpy as np
 import torch
@@ -233,11 +233,21 @@ class EasySyntax(Model):
             label for task in self._tasks for label in task._prediction_labels
         ]
 
+    def _optimizer_parameters(self) -> Union[Iterator, List[Dict]]:
+        """Return the parameters (or parameter groups) to optimize."""
+        return self.parameters()
+
     def configure_optimizers(self) -> Dict[str, Any]:
-        """Configure the model's optimizer(s)."""
+        """Configure the model's optimizer(s).
+
+        Parameter groups may carry an `lr_scale`: their learning rate is
+        the (scheduled) learning rate times this factor.
+        """
         optimizer = self._optimizer_class(
-            self.parameters(), **self._optimizer_kwargs
+            self._optimizer_parameters(), **self._optimizer_kwargs
         )
+        for group in optimizer.param_groups:
+            group.setdefault("lr_scale", 1.0)
         config = {
             "optimizer": optimizer,
         }
@@ -253,7 +263,26 @@ class EasySyntax(Model):
                     },
                 }
             )
+        # Applied after the scheduler set its initial learning rates
+        _apply_lr_scale(optimizer, inverse=False)
         return config
+
+    def lr_scheduler_step(self, scheduler: Any, metric: Any) -> None:
+        """Step the scheduler, keeping each parameter group's `lr_scale`.
+
+        The scale is removed before the step, so that schedulers setting
+        (or multiplying) learning rates see their own values, and
+        applied again afterwards.
+        """
+        optimizer = getattr(scheduler, "optimizer", None)
+        if optimizer is not None:
+            _apply_lr_scale(optimizer, inverse=True)
+        if metric is None:
+            scheduler.step()
+        else:
+            scheduler.step(metric)
+        if optimizer is not None:
+            _apply_lr_scale(optimizer, inverse=False)
 
     def training_step(
         self, train_batch: Union[Data, List[Data]], batch_idx: int
@@ -513,3 +542,13 @@ class EasySyntax(Model):
                 "patience=5 and monitor = 'val_loss'."
             )
         return callbacks
+
+
+def _apply_lr_scale(optimizer: torch.optim.Optimizer, inverse: bool) -> None:
+    """Multiply (or divide) each group's learning rate by its `lr_scale`."""
+    for group in optimizer.param_groups:
+        scale = group.get("lr_scale", 1.0)
+        if scale != 1.0:
+            group["lr"] = (
+                group["lr"] / scale if inverse else group["lr"] * scale
+            )

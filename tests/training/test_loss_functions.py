@@ -8,7 +8,17 @@ from torch import Tensor
 from torch.autograd import grad
 
 from graphnet.training.loss_functions import (
+    BinaryCrossEntropyLoss,
+    CauchyLoss,
+    EnsembleLoss,
+    FocalBinaryCrossEntropyLoss,
     LogCoshLoss,
+    LossFunction,
+    MAELoss,
+    MSELoss,
+    NegCosLoss,
+    RMSELoss,
+    spCauchyLoss,
     VonMisesFisherLoss,
     VonMisesFisher3DLoss,
 )
@@ -482,3 +492,97 @@ def test_vmf3d_loss_fp32_high_kappa_small_angle() -> None:
     assert torch.all(torch.isfinite(elements))
     elements.sum().backward()
     assert torch.all(torch.isfinite(prediction_extreme.grad))
+
+
+@pytest.mark.parametrize("from_logits", [True, False])
+def test_focal_bce_reduces_to_weighted_bce(from_logits: bool) -> None:
+    """With gamma=0 the focal loss is the alpha-weighted BCE."""
+    torch.manual_seed(0)
+    logits = torch.randn(64, 1)
+    prediction = logits if from_logits else torch.sigmoid(logits)
+    target = torch.randint(0, 2, (64, 1)).float()
+    alpha = 0.3
+
+    focal = FocalBinaryCrossEntropyLoss(
+        gamma=0.0, alpha=alpha, from_logits=from_logits
+    )
+    bce = BinaryCrossEntropyLoss(from_logits=from_logits)
+    alpha_t = alpha * target + (1 - alpha) * (1 - target)
+    expected = alpha_t * bce(prediction, target, return_elements=True)
+
+    assert torch.allclose(
+        focal(prediction, target, return_elements=True), expected, atol=1e-6
+    )
+
+
+def test_cauchy_homoscedastic_closed_form() -> None:
+    """With frac=0 the loss is log(1 + (r/alpha)^2) + log(alpha)."""
+    alpha = 0.5
+    prediction = torch.tensor([[0.0, 1.0], [2.0, -1.0]])
+    target = torch.tensor([[0.5, 1.0], [0.0, 0.0]])
+    residual = (prediction - target).abs()
+    expected = torch.mean(
+        torch.log1p((residual / alpha) ** 2) + np.log(alpha), dim=-1
+    )
+
+    loss = CauchyLoss(alpha=alpha, frac=0.0)
+    assert torch.allclose(
+        loss(prediction, target, return_elements=True), expected
+    )
+
+
+@pytest.mark.parametrize("k", [0.3, 2.0, 10.0])
+def test_sp_cauchy_density_is_normalized(k: float) -> None:
+    """Exp(-loss) / (4 pi) integrates to one over the sphere (d = 3)."""
+    n = 400_000
+    i = torch.arange(n, dtype=torch.float64) + 0.5
+    z = 1 - 2 * i / n
+    phi = torch.pi * (1 + 5**0.5) * i
+    r = torch.sqrt(1 - z**2)
+    points = torch.stack([r * torch.cos(phi), r * torch.sin(phi), z], dim=1)
+    mu = torch.tensor([0.0, 0.0, 1.0]).expand(n, 3)
+    prediction = torch.cat([mu, torch.full((n, 1), k)], dim=1)
+
+    loss = spCauchyLoss()(prediction, points.float(), return_elements=True)
+    integral = torch.exp(-loss.double()).mean()  # mean over uniform points
+    assert torch.isclose(
+        integral, torch.tensor(1.0, dtype=torch.float64), rtol=1e-3
+    )
+
+
+def test_sp_cauchy_large_concentration_is_finite() -> None:
+    """Very confident predictions give finite losses and gradients."""
+    target = torch.tensor([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0]])
+    prediction = torch.tensor(
+        [[0.0, 0.0, 1.0, 1e8], [0.0, 0.0, 1.0, 1e8]], requires_grad=True
+    )
+    loss = spCauchyLoss()(prediction, target, return_elements=True)
+    loss.sum().backward()
+    assert torch.isfinite(loss).all()
+    assert torch.isfinite(prediction.grad).all()
+    assert loss[0] < loss[1]
+
+
+@pytest.mark.parametrize(
+    "loss",
+    [
+        MAELoss(),
+        MSELoss(),
+        RMSELoss(),
+        LogCoshLoss(),
+        NegCosLoss(),
+        CauchyLoss(alpha=0.04, frac=0.0),
+        CauchyLoss(alpha=3.0, frac=0.0),
+        EnsembleLoss([MSELoss(), CauchyLoss(alpha=0.1, frac=0.0)], [2.0, 1.0]),
+    ],
+)
+def test_lower_bound_holds_and_is_reached(loss: LossFunction) -> None:
+    """The loss never goes below its bound and reaches it when exact."""
+    torch.manual_seed(0)
+    target = torch.randn(256, 3)
+    prediction = target + torch.randn(256, 3)
+    bound = loss.lower_bound
+    assert bound is not None
+    elements = loss(prediction, target, return_elements=True)
+    assert (elements >= bound - 1e-6).all()
+    assert torch.isclose(loss(target, target), torch.tensor(bound), atol=1e-6)
