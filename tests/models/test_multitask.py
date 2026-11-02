@@ -539,3 +539,41 @@ def test_identity_task_with_uncertainty_and_shape() -> None:
     assert torch.allclose(out[:, 2:4], torch.exp(x[:, 2:4]))
     # zero output: nu = 1 (Cauchy); clamped at 0.25
     assert torch.allclose(out[:, 4:], torch.tensor([[1.0, 0.25]]))
+
+
+def test_reference_labels_round_trip() -> None:
+    """A referenced target is relative in training, the prediction absolute in
+    inference."""
+    from graphnet.models.task import IdentityTask
+
+    model = StandardModel(
+        data_representation=_graph_definition(),
+        backbone=_ConstantBackbone(nb_outputs=2),
+        tasks=[
+            IdentityTask(
+                nb_outputs=2,
+                hidden_size=2,
+                target_labels=["pos", "t"],
+                prediction_labels=["pos_pred", "t_pred"],
+                reference_labels={"t_pred": "t_ref"},
+                loss_function=MSELoss(),
+            )
+        ],
+    )
+    # truth columns in float32, the reference (a graph attribute) in float64
+    data = _batch()
+    data.pos = torch.tensor([1.0, 2.0, 3.0])
+    data.t = torch.tensor([10010.0, 20020.0, 30030.0])
+    data.t_ref = torch.tensor([10000.0, 20000.0, 30000.0], dtype=torch.float64)
+
+    pred = model(data)[0]
+    target = torch.stack([data.pos, torch.tensor([10.0, 20.0, 30.0])], dim=1)
+    expected = MSELoss()(pred, target)
+    assert torch.allclose(model.compute_loss([pred], [data]), expected)
+
+    model.inference()
+    absolute = model(data)[0]
+    assert torch.equal(absolute[:, 0], pred[:, 0])
+    assert torch.allclose(
+        absolute[:, 1].double(), pred[:, 1].double() + data.t_ref
+    )

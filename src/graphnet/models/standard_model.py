@@ -168,6 +168,10 @@ class StandardModel(EasySyntax):
                 data_merged[task._loss_weight] = torch.cat(
                     [d[task._loss_weight] for d in data], dim=0
                 )
+            for attribute in task.reference_attributes:
+                data_merged[attribute] = torch.cat(
+                    [d[attribute].reshape(-1) for d in data], dim=0
+                )
 
         return [
             task.compute_loss(pred, data_merged)
@@ -246,12 +250,17 @@ class StandardModel(EasySyntax):
         x = torch.cat(x_list, dim=0)
 
         if self._split_sizes is None:
-            return [task(x) for task in self._tasks]
-
-        chunks = x.split(list(self._split_sizes), dim=-1)
+            preds = [task(x) for task in self._tasks]
+        else:
+            chunks = x.split(list(self._split_sizes), dim=-1)
+            preds = [
+                task(self._route(chunks, indices))
+                for indices, task in zip(self._split_indices, self._tasks)
+            ]
+        # inference: relative predictions back to absolute (`reference_labels`)
         return [
-            task(self._route(chunks, indices))
-            for indices, task in zip(self._split_indices, self._tasks)
+            task.add_references(pred, data)
+            for task, pred in zip(self._tasks, preds)
         ]
 
     @staticmethod
