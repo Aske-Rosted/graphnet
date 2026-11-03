@@ -225,17 +225,15 @@ def test_multiple_model_map(tmp_path: Any) -> None:
     torch.manual_seed(2)
     single = _save(_model(single_output=True), tmp_path, "score")
     multi = _save(_model(), tmp_path, "nemt")
-    frames = _run(
-        I3MultipleModelInferenceModule(
-            key_name="Scores",
-            pulsemap_extractor=_extractor(),
-            gcd_file=GCD_FILE,
-            model_config=[single["model_config"], multi["model_config"]],
-            state_dict=[single["state_dict"], multi["state_dict"]],
-            model_name=["bundle", "nemt"],
-        ),
-        ("Scores",),
+    kwargs = dict(
+        key_name="Scores",
+        pulsemap_extractor=_extractor(),
+        gcd_file=GCD_FILE,
+        model_config=[single["model_config"], multi["model_config"]],
+        state_dict=[single["state_dict"], multi["state_dict"]],
+        model_name=["bundle", "nemt"],
     )
+    frames = _run(I3MultipleModelInferenceModule(**kwargs), ("Scores",))
     for frame in frames:
         scores = dict(frame["Scores"])
         expected = {"bundle", "nemt_reference_time"} | {
@@ -243,3 +241,15 @@ def test_multiple_model_map(tmp_path: Any) -> None:
         }
         assert set(scores) == expected
         assert all(isinstance(v, float) for v in scores.values())
+
+    # first_column_only: `<model_name>` -> the first column only (the map
+    # layout deployed bundle-classifier selections read)
+    first = _run(
+        I3MultipleModelInferenceModule(first_column_only=True, **kwargs),
+        ("Scores",),
+    )
+    for frame, all_columns in zip(first, frames):
+        scores = dict(frame["Scores"])
+        assert set(scores) == {"bundle", "nemt"}
+        assert scores["bundle"] == all_columns["Scores"]["bundle"]
+        assert scores["nemt"] == all_columns["Scores"]["nemt_PosX"]

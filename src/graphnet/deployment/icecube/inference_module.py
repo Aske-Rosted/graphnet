@@ -17,6 +17,7 @@ from typing import (
 )
 
 import numpy as np
+import torch
 from torch_geometric.data import Data, Batch
 
 from graphnet.utilities.config import ModelConfig
@@ -113,6 +114,8 @@ class I3InferenceModule(DeploymentModule):
         overwrite: bool = False,
         requirements: Optional[Callable[["I3Frame"], bool]] = None,
         record_runtimes: bool = False,
+        num_threads: Optional[int] = None,
+        inference_speed_check: Optional[bool] = None,
     ):
         """General class for inference on I3Frames (physics).
 
@@ -152,6 +155,10 @@ class I3InferenceModule(DeploymentModule):
             record_runtimes: If True, write the time spent per frame on data
                 representation, inference and writing (and their total) as an
                 `I3MapStringDouble` named `<first model_name>_Speed`.
+            num_threads: If given, `torch.set_num_threads(num_threads)` is
+                called before each frame's inference (other modules in the
+                tray may change the number of threads).
+            inference_speed_check: Deprecated name of `record_runtimes`.
         """
         super().__init__(
             model_config=model_config,
@@ -159,6 +166,12 @@ class I3InferenceModule(DeploymentModule):
             prediction_columns=prediction_columns,
             device=device,
         )
+        if inference_speed_check is not None:
+            self.warning(
+                "`inference_speed_check` is deprecated; use "
+                "`record_runtimes`."
+            )
+            record_runtimes = record_runtimes or inference_speed_check
         # Checks
         assert isinstance(gcd_file, str), "gcd_file must be string"
         names = model_name if isinstance(model_name, list) else [model_name]
@@ -194,6 +207,7 @@ class I3InferenceModule(DeploymentModule):
         self._overwrite = overwrite
         self._requirements = requirements
         self._record_runtimes = record_runtimes
+        self._num_threads = num_threads
 
         # Set GCD file for pulsemap extractor
         for i3_extractor in self._i3_extractors:
@@ -246,6 +260,8 @@ class I3InferenceModule(DeploymentModule):
         """Write predictions from model(s) to frame."""
         if self._requirements is not None and not self._requirements(frame):
             return True
+        if self._num_threads is not None:
+            torch.set_num_threads(self._num_threads)
         start = perf_counter()
         # Extract the pulses once for all models
         feature_dicts = [extractor(frame) for extractor in self._i3_extractors]
@@ -505,19 +521,39 @@ class I3MultipleModelInferenceModule(I3InferenceModule):
     The outputs go into one `I3MapStringDouble` named `key_name`: a model
     with a single prediction column under `<model_name>`, otherwise each
     column under `<model_name>_<column>` (and its references under
-    `<model_name>_<attribute>`).
+    `<model_name>_<attribute>`). With `first_column_only`, every model's
+    first prediction column only, under `<model_name>`.
     """
 
-    def __init__(self, key_name: str, **kwargs: Any):
+    def __init__(
+        self,
+        key_name: str,
+        first_column_only: bool = False,
+        multiple_models: Optional[bool] = None,
+        **kwargs: Any,
+    ):
         """Construct `I3MultipleModelInferenceModule`.
 
         Arguments:
             key_name: Name of the `I3MapStringDouble` in the frame. Runtimes
                 (`record_runtimes`) are written as `<key_name>_Speed`.
+            first_column_only: If True, write only each model's first
+                prediction column (of its first task), under `<model_name>`;
+                e.g. the first-class probability of a classifier. This is
+                the map layout of the earlier `multiple_models=True` modules.
+            multiple_models: Deprecated: True means `first_column_only`.
             **kwargs: Arguments of `I3InferenceModule`.
         """
         super().__init__(**kwargs)
+        if multiple_models is not None:
+            self.warning(
+                "`multiple_models` is deprecated: several models are always "
+                "supported; `multiple_models=True` now means "
+                "`first_column_only=True`."
+            )
+            first_column_only = first_column_only or multiple_models
         self._key_name = key_name
+        self._first_column_only = first_column_only
 
     def _runtimes_key(self) -> str:
         return self._key_name + "_Speed"
@@ -525,6 +561,9 @@ class I3MultipleModelInferenceModule(I3InferenceModule):
     def _write(self, frame: I3Frame, outputs: List[_ModelOutput]) -> None:
         scores: Dict[str, float] = {}
         for output in outputs:
+            if self._first_column_only:
+                scores[output.name] = float(next(iter(output.values.values())))
+                continue
             if len(output.values) == 1 and not output.references:
                 scores[output.name] = float(*output.values.values())
                 continue
