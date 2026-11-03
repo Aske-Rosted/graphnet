@@ -1,4 +1,5 @@
-exclude: '^(versioneer.py|src/graphnet/_version.py|docs/)'
+# vendored/: code copied verbatim from other forks for deployment, kept comparable to its source
+exclude: '^(versioneer.py|src/graphnet/_version.py|docs/|src/graphnet/.*/vendored/(?!__init__\.py|README\.md).*)'
 repos:
   - repo: https://github.com/psf/black
     rev: 26.3.1
