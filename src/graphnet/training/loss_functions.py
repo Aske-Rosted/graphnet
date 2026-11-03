@@ -170,10 +170,18 @@ class CrossEntropyLoss(LossFunction):
     def __init__(
         self,
         options: Union[int, List[Any], Dict[Any, int]],
+        ratio: Optional[float] = None,
         *args: Any,
         **kwargs: Any,
     ):
-        """Construct CrossEntropyLoss."""
+        """Construct CrossEntropyLoss.
+
+        Args:
+            options: The classes (see the class docstring).
+            ratio: Weight of the first class relative to the others. If
+                given (also 1), the class weights are part of the module's
+                state (`_loss.weight`), as in models trained with it.
+        """
         # Base class constructor
         super().__init__(*args, **kwargs)
 
@@ -197,7 +205,11 @@ class CrossEntropyLoss(LossFunction):
                 f"Class options of type {type(self._options)} not supported"
             )
 
-        self._loss = nn.CrossEntropyLoss(reduction="none")
+        weight = None
+        if ratio is not None:
+            weight = torch.ones(self._nb_classes)
+            weight[0] = ratio
+        self._loss = nn.CrossEntropyLoss(weight=weight, reduction="none")
 
     @property
     def lower_bound(self) -> float:
